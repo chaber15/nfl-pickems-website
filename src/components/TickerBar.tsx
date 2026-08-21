@@ -23,14 +23,17 @@ export function TickerBar({ games }: TickerBarProps) {
 
   return (
     <div className="sticky top-0 z-40 overflow-hidden bg-[var(--ticker-bg)] py-2 text-sm">
-      <div className="ticker-track flex w-max whitespace-nowrap">
+      <div className="ticker-track flex w-max items-center whitespace-nowrap">
         {doubled.map((item, i) => (
-          <span
-            key={`${item.line}-${i}`}
-            className={`inline-flex items-center px-6 font-mono ${item.tone}`}
-          >
-            {item.line}
-            <span className="mx-4 text-[#64748b]">|</span>
+          <span key={`${item.line}-${i}`} className="inline-flex items-center">
+            <span
+              className={`inline-flex min-w-[11rem] items-center justify-center px-5 text-center font-mono ${item.tone}`}
+            >
+              {item.line}
+            </span>
+            <span className="inline-flex w-4 shrink-0 justify-center text-[#64748b]" aria-hidden>
+              |
+            </span>
           </span>
         ))}
       </div>
