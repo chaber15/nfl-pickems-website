@@ -61,3 +61,20 @@ export function weekLabel(seasonType: number, week: number): string {
   return buildWeekOptions().find((o) => o.seasonType === seasonType && o.week === week)?.label
     ?? `Week ${week}`;
 }
+
+/** Compact label for the stepper control */
+export function shortWeekLabel(seasonType: number, week: number): string {
+  if (seasonType === 1) return `Pre ${week}`;
+  if (seasonType === 3) {
+    if (week === 1) return "Wild Card";
+    if (week === 2) return "Divisional";
+    if (week === 3) return "Conference";
+    return "Super Bowl";
+  }
+  return `Week ${week}`;
+}
+
+export function weekOptionIndex(seasonType: number, week: number): number {
+  return buildWeekOptions().findIndex((o) => o.seasonType === seasonType && o.week === week);
+}
+

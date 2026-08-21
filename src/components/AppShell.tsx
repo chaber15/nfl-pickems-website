@@ -18,8 +18,8 @@ interface AppShellProps {
 
 export function AppShell({ children, games = [], banner, showWeekSelector = true }: AppShellProps) {
   const { username, logout } = useAuth();
-  const { isDemo, label } = useWeek();
-  const displayBanner = banner ?? (isDemo ? "PRESEASON WEEK 2 - DEMO" : undefined);
+  const { isDemo } = useWeek();
+  const displayBanner = banner ?? (isDemo ? "DEMO MODE" : undefined);
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-page text-[var(--text-primary)]">
@@ -36,13 +36,8 @@ export function AppShell({ children, games = [], banner, showWeekSelector = true
               />
               <div className="min-w-0">
                 {displayBanner && (
-                  <p className="font-display mb-1 text-xl text-[var(--accent-gold)] sm:text-2xl">
+                  <p className="font-display mb-0.5 text-lg text-[var(--accent-gold)] sm:text-xl">
                     {displayBanner}
-                  </p>
-                )}
-                {!displayBanner && (
-                  <p className="font-display mb-1 text-xl text-[var(--text-muted)] sm:text-2xl">
-                    {label}
                   </p>
                 )}
                 {username && (
