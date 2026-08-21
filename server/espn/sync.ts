@@ -1,6 +1,13 @@
 import { eq, and } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { fetchScoreboard, fetchCurrentScoreboard, applyAtsToGame } from "../../shared/espnClient";
+import {
+  computeLineLockAt,
+  isPastLineLock,
+  resolveLineFields,
+  snapshotLine,
+  type LineSnapshot,
+} from "../../shared/lineLock";
 import type { GameData } from "../../shared/types";
 
 function spreadToCents(spread: number | null): number | null {
@@ -67,6 +74,15 @@ async function ensureWeek(seasonId: string, weekNumber: number, seasonType: numb
   return created;
 }
 
+function existingLineSnapshot(game: typeof schema.games.$inferSelect): LineSnapshot {
+  return {
+    spread: centsToSpread(game.spread),
+    favoriteSide: game.favoriteSide,
+    oddsAway: game.oddsAway,
+    oddsHome: game.oddsHome,
+  };
+}
+
 export async function syncEspnWeek(seasonType?: number, week?: number) {
   const board =
     seasonType != null && week != null
@@ -85,10 +101,23 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
   }
 
   const weekRow = await ensureWeek(season.id, board.week, board.seasonType, board.games[0]?.phase ?? "regular");
+  const lockAt = computeLineLockAt(board.games.map((g) => g.kickoffAt));
+  const pastLock = isPastLineLock(lockAt);
 
   let upserted = 0;
   for (const g of board.games) {
-    const graded = applyAtsToGame(g);
+    const [existing] = await db.select().from(schema.games).where(eq(schema.games.espnEventId, g.espnEventId)).limit(1);
+    const incoming = snapshotLine(g);
+    const existingSnap = existing ? existingLineSnapshot(existing) : null;
+    const lockedLine = resolveLineFields(existingSnap, incoming, pastLock);
+    const graded = applyAtsToGame({
+      ...g,
+      spread: lockedLine.spread,
+      favoriteSide: lockedLine.favoriteSide,
+      oddsAway: lockedLine.oddsAway,
+      oddsHome: lockedLine.oddsHome,
+    });
+
     const values = {
       weekId: weekRow.id,
       espnEventId: graded.espnEventId,
@@ -108,7 +137,6 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
       updatedAt: new Date(),
     };
 
-    const [existing] = await db.select().from(schema.games).where(eq(schema.games.espnEventId, graded.espnEventId)).limit(1);
     if (existing) {
       await db.update(schema.games).set(values).where(eq(schema.games.id, existing.id));
     } else {
@@ -117,7 +145,13 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
     upserted++;
   }
 
-  return { upserted, week: board.week, seasonType: board.seasonType };
+  return {
+    upserted,
+    week: board.week,
+    seasonType: board.seasonType,
+    linesLocked: pastLock,
+    lockAt: lockAt?.toISOString() ?? null,
+  };
 }
 
 export async function getGamesForWeek(seasonType: number, weekNumber: number): Promise<GameData[]> {

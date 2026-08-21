@@ -4,8 +4,8 @@ import { AppShell } from "../components/AppShell";
 import { apiStats } from "../lib/api";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
-import { fetchScoreboard } from "@shared/espnClient";
 import { getStoredPicks } from "../lib/localStorage";
+import { loadWeekGames } from "../lib/loadWeekGames";
 import { computeUserStats } from "@shared/statsCompute";
 
 function StatCard({ label, value }: { label: string; value: string }) {
@@ -39,7 +39,7 @@ export function StatsPage() {
             /* fall through */
           }
         }
-        const board = await fetchScoreboard(seasonType, week);
+        const board = await loadWeekGames(seasonType, week, weekKey);
         setGames(board.games);
         const picks = getStoredPicks(weekKey);
         setStats(computeUserStats(board.games, picks));

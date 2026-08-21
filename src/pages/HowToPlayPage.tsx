@@ -54,8 +54,8 @@ export function HowToPlayPage() {
             </li>
             <li>
               <strong className="text-[var(--text-primary)]">Confidence P&amp;L</strong> — units won/lost
-              on your ★ bets at the posted odds. Weeks without exactly 5 ★ bets are skipped (except
-              playoffs).
+              on your ★ bets using the posted spread juice (vig). Example: −125 risks 1.25 to win 1; +125
+              risks 1 to win 1.25. Weeks without exactly 5 ★ bets are skipped (except playoffs).
             </li>
             <li>
               <strong className="text-[var(--text-primary)]">Hypothetical P&amp;L</strong> (on Stats) —
@@ -75,8 +75,11 @@ export function HowToPlayPage() {
 
         <Section title="Tips">
           <ul className="list-disc space-y-2 pl-5">
+            <li>
+              Spread and juice freeze at <strong className="text-[var(--text-primary)]">8:00 AM Eastern on
+              Wednesday</strong> so everyone plays the same line. Scores still update after that.
+            </li>
             <li>Picks lock at kickoff — you can change them until then.</li>
-            <li>Lines come from ESPN and may move until kickoff.</li>
             <li>Username only — pick a name the family will recognize.</li>
           </ul>
         </Section>

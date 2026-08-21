@@ -7,6 +7,25 @@ export function formatSpread(spread: number, side: PickSide, _favoriteSide: Favo
   return `${sign}${value % 1 === 0 ? value.toFixed(0) : value.toFixed(1)}`;
 }
 
+/** American juice / vig, e.g. -110 or +105 */
+export function formatJuice(odds: number | null | undefined): string | null {
+  if (odds == null || !Number.isFinite(odds)) return null;
+  const n = Math.round(odds);
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
+export function juiceForSide(
+  game: Pick<GameData, "oddsAway" | "oddsHome" | "favoriteSide">,
+  side: PickSide,
+): number | null {
+  if (!game.favoriteSide) return null;
+  if (side === "favorite") {
+    return game.favoriteSide === "home" ? game.oddsHome : game.oddsAway;
+  }
+  return game.favoriteSide === "home" ? game.oddsAway : game.oddsHome;
+}
+
+
 export function teamForSide(game: Pick<GameData, "awayTeam" | "homeTeam" | "favoriteSide">, side: PickSide): string {
   if (!game.favoriteSide) return side === "favorite" ? "Favorite" : "Underdog";
   if (side === "favorite") {

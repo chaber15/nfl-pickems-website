@@ -13,6 +13,7 @@ export interface GameData {
   kickoffAt: string;
   spread: number | null;
   favoriteSide: FavoriteSide | null;
+  /** Spread juice / vig (American), e.g. -110 — not moneyline */
   oddsAway: number | null;
   oddsHome: number | null;
   atsResult: AtsResult;

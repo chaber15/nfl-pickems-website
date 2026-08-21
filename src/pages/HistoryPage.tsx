@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Star } from "@phosphor-icons/react";
-import { fetchScoreboard } from "@shared/espnClient";
 import { buildHistoryRows } from "@shared/statsCompute";
 import type { GameData, HistoryRow } from "@shared/types";
 import { AppShell } from "../components/AppShell";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
 import { getStoredPicks } from "../lib/localStorage";
+import { loadWeekGames } from "../lib/loadWeekGames";
 import { apiHistory } from "../lib/api";
 
 function outcomeLabel(row: HistoryRow): string {
@@ -39,7 +39,7 @@ export function HistoryPage() {
             /* fall through to local */
           }
         }
-        const board = await fetchScoreboard(seasonType, week);
+        const board = await loadWeekGames(seasonType, week, weekKey);
         setGames(board.games);
         const picks = getStoredPicks(weekKey);
         setRows(buildHistoryRows(board.games, picks));

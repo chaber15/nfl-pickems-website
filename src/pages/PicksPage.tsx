@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchScoreboard } from "@shared/espnClient";
 import type { GameData, PickSide, UserPick } from "@shared/types";
 import { countConfidenceBets, isGameLocked, isPlayoffPhase } from "@shared/scoring";
+import {
+  computeLineLockAt,
+  formatLineLockLabel,
+  hasCompleteLine,
+  isPastLineLock,
+  snapshotLine,
+} from "@shared/lineLock";
 import { toUserPickMap } from "@shared/statsCompute";
 import { AppShell } from "../components/AppShell";
 import { GameCard, GameCardSkeleton } from "../components/GameCard";
@@ -9,8 +15,18 @@ import { ConfidenceBetCounter } from "../components/ConfidenceBetCounter";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
 import { getStoredPicks, updateStoredPick } from "../lib/localStorage";
+import { loadWeekGames } from "../lib/loadWeekGames";
 import { apiGames, apiSavePick, apiUserPicks } from "../lib/api";
 
+function lockInfoForGames(games: GameData[]) {
+  const lockAt = computeLineLockAt(games.map((g) => g.kickoffAt));
+  const locked =
+    isPastLineLock(lockAt) && games.some((g) => hasCompleteLine(snapshotLine(g)));
+  return {
+    linesLocked: locked,
+    lockLabel: lockAt ? formatLineLockLabel(lockAt) : null,
+  };
+}
 export function PicksPage() {
   const { username, useBackend } = useAuth();
   const { seasonType, week, weekKey, isDemo, ready } = useWeek();
@@ -18,6 +34,8 @@ export function PicksPage() {
   const [picks, setPicks] = useState<Record<string, UserPick>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [linesLocked, setLinesLocked] = useState(false);
+  const [lockLabel, setLockLabel] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -25,19 +43,31 @@ export function PicksPage() {
     setError("");
     try {
       let loadedGames: GameData[] = [];
+      let locked = false;
+      let label: string | null = null;
+
       if (useBackend) {
         try {
           const res = await apiGames(seasonType, week);
           loadedGames = res.games;
+          const info = lockInfoForGames(loadedGames);
+          locked = info.linesLocked;
+          label = info.lockLabel;
         } catch {
-          const board = await fetchScoreboard(seasonType, week);
+          const board = await loadWeekGames(seasonType, week, weekKey);
           loadedGames = board.games;
+          locked = board.linesLocked;
+          label = board.lockLabel;
         }
       } else {
-        const board = await fetchScoreboard(seasonType, week);
+        const board = await loadWeekGames(seasonType, week, weekKey);
         loadedGames = board.games;
+        locked = board.linesLocked;
+        label = board.lockLabel;
       }
       setGames(loadedGames);
+      setLinesLocked(locked);
+      setLockLabel(label);
 
       if (useBackend) {
         try {
@@ -131,6 +161,16 @@ export function PicksPage() {
         <div className="space-y-3">
           <h2 className="font-display text-3xl sm:text-4xl">Make Your Picks</h2>
           <ConfidenceBetCounter count={confCount} phase={phase} />
+          {linesLocked && lockLabel && (
+            <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card-elevated)] px-4 py-3 text-sm font-semibold">
+              Spread &amp; juice locked since {lockLabel}. Everyone bets the same line.
+            </div>
+          )}
+          {!linesLocked && lockLabel && (
+            <div className="rounded-2xl border-2 border-dashed border-[var(--border-card)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-muted)]">
+              Lines update until {lockLabel}, then freeze for the week.
+            </div>
+          )}
           {demoUnlock && (
             <div className="rounded-2xl border-2 border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 px-4 py-3 text-sm font-semibold">
               Demo unlock: these games are final on ESPN. Picks stay editable so you can try the UI.

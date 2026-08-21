@@ -15,19 +15,24 @@ interface EspnTeam {
 
 interface EspnOddsBlock {
   spread?: number;
-  awayTeamOdds?: {
-    favorite?: boolean;
-    close?: { spread?: { american?: string }; moneyLine?: { american?: string } };
-    moneyLine?: number;
-    spreadOdds?: number;
+  awayTeamOdds?: EspnSideOdds;
+  homeTeamOdds?: EspnSideOdds;
+}
+
+interface EspnSideOdds {
+  favorite?: boolean;
+  moneyLine?: number;
+  spreadOdds?: number;
+  close?: {
+    spread?: { american?: string };
+    moneyLine?: { american?: string };
   };
-  homeTeamOdds?: {
-    favorite?: boolean;
-    close?: { spread?: { american?: string }; moneyLine?: { american?: string } };
-    moneyLine?: number;
-    spreadOdds?: number;
+  current?: {
+    spread?: { american?: string };
+    moneyLine?: { american?: string };
   };
 }
+
 
 interface EspnEvent {
   id: string;
@@ -72,6 +77,16 @@ function mapStatus(name?: string, completed?: boolean): GameData["status"] {
   return "scheduled";
 }
 
+/** Spread juice / vig only — never moneyline. Used for confidence P/L units. */
+function extractSpreadJuice(side: EspnSideOdds | undefined): number | null {
+  if (!side) return null;
+  return (
+    parseAmericanOdds(side.current?.spread?.american) ??
+    parseAmericanOdds(side.close?.spread?.american) ??
+    parseAmericanOdds(side.spreadOdds)
+  );
+}
+
 function extractOdds(oddsBlock: EspnOddsBlock | undefined): {
   spread: number | null;
   favoriteSide: "home" | "away" | null;
@@ -87,27 +102,26 @@ function extractOdds(oddsBlock: EspnOddsBlock | undefined): {
   if (oddsBlock.homeTeamOdds?.favorite) favoriteSide = "home";
   else if (oddsBlock.awayTeamOdds?.favorite) favoriteSide = "away";
 
-  const oddsAway =
-    parseAmericanOdds(oddsBlock.awayTeamOdds?.close?.spread?.american) ??
-    parseAmericanOdds(oddsBlock.awayTeamOdds?.spreadOdds) ??
-    parseAmericanOdds(oddsBlock.awayTeamOdds?.close?.moneyLine?.american) ??
-    parseAmericanOdds(oddsBlock.awayTeamOdds?.moneyLine);
-
-  const oddsHome =
-    parseAmericanOdds(oddsBlock.homeTeamOdds?.close?.spread?.american) ??
-    parseAmericanOdds(oddsBlock.homeTeamOdds?.spreadOdds) ??
-    parseAmericanOdds(oddsBlock.homeTeamOdds?.close?.moneyLine?.american) ??
-    parseAmericanOdds(oddsBlock.homeTeamOdds?.moneyLine);
-
-  return { spread, favoriteSide, oddsAway, oddsHome };
+  return {
+    spread,
+    favoriteSide,
+    oddsAway: extractSpreadJuice(oddsBlock.awayTeamOdds),
+    oddsHome: extractSpreadJuice(oddsBlock.homeTeamOdds),
+  };
 }
 
 async function fetchOddsFallback(eventId: string, competitionId: string): Promise<EspnOddsBlock | null> {
   try {
     const res = await fetch(`${ODDS_URL}/${eventId}/competitions/${competitionId}/odds`);
     if (!res.ok) return null;
-    const data = (await res.json()) as { items?: Array<{ $ref?: string }> };
-    const ref = data.items?.[0]?.$ref;
+    const data = (await res.json()) as { items?: Array<EspnOddsBlock & { $ref?: string }> };
+    const item = data.items?.[0];
+    if (!item) return null;
+    // List payload often already includes full odds; prefer that over fragile $ref fetches.
+    if (item.awayTeamOdds || item.homeTeamOdds || item.spread != null) {
+      return item;
+    }
+    const ref = item.$ref?.replace(/^http:\/\//, "https://");
     if (!ref) return null;
     const detailRes = await fetch(ref);
     if (!detailRes.ok) return null;
@@ -126,7 +140,8 @@ function parseEvent(event: EspnEvent, oddsBlock?: EspnOddsBlock | null): GameDat
   if (!home || !away) return null;
 
   const embeddedOdds = comp.odds?.[0];
-  const odds = extractOdds(embeddedOdds ?? oddsBlock ?? undefined);
+  // Prefer the caller-supplied block (often the odds API with juice) over scoreboard embeds.
+  const odds = extractOdds(oddsBlock ?? embeddedOdds ?? undefined);
   const seasonType = event.season?.type ?? 1;
   const weekNumber = event.week?.number ?? 1;
 
@@ -185,8 +200,16 @@ export async function fetchScoreboard(
   for (const event of events) {
     const comp = event.competitions[0];
     let oddsBlock: EspnOddsBlock | null = comp?.odds?.[0] ?? null;
-    if (!oddsBlock && comp) {
-      oddsBlock = await fetchOddsFallback(event.id, comp.id);
+    const embedded = extractOdds(oddsBlock ?? undefined);
+    const needsJuice =
+      !oddsBlock ||
+      embedded.oddsAway == null ||
+      embedded.oddsHome == null ||
+      embedded.spread == null ||
+      !embedded.favoriteSide;
+    if (needsJuice && comp) {
+      const fallback = await fetchOddsFallback(event.id, comp.id);
+      if (fallback) oddsBlock = fallback;
     }
     const game = parseEvent(event, oddsBlock);
     if (game) games.push(game);

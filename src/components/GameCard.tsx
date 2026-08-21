@@ -1,7 +1,7 @@
 import { Check, X, Star } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "motion/react";
 import type { FavoriteSide, GameData, PickSide, UserPick } from "@shared/types";
-import { formatKickoff, formatPick, formatSpread } from "@shared/pickDisplay";
+import { formatKickoff, formatPick, formatSpread, formatJuice, juiceForSide } from "@shared/pickDisplay";
 import { isGameLocked } from "@shared/scoring";
 import { teamLogoSrc, teamLocationName } from "../lib/teamLogos";
 
@@ -70,6 +70,7 @@ function PickButton({
     game.spread != null && pickSide && game.favoriteSide
       ? formatSpread(game.spread, pickSide, game.favoriteSide)
       : null;
+  const juice = pickSide ? formatJuice(juiceForSide(game, pickSide)) : null;
 
   return (
     <motion.button
@@ -93,6 +94,11 @@ function PickButton({
       </span>
       <span className="w-full truncate text-sm font-semibold leading-tight">{location}</span>
       {spread && <span className="font-mono text-base font-bold">{spread}</span>}
+      {juice && (
+        <span className={`font-mono text-xs ${selected ? "opacity-80" : "text-[var(--text-muted)]"}`}>
+          juice {juice}
+        </span>
+      )}
     </motion.button>
   );
 }

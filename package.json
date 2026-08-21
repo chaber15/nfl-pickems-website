@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types shared/scoring.test.ts",
+    "test": "node --experimental-strip-types shared/scoring.test.ts && node --experimental-strip-types shared/lineLock.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"

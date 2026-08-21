@@ -5,8 +5,8 @@ import { AppShell } from "../components/AppShell";
 import { apiLeaderboard } from "../lib/api";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
-import { fetchScoreboard } from "@shared/espnClient";
 import { getStoredPicks } from "../lib/localStorage";
+import { loadWeekGames } from "../lib/loadWeekGames";
 import { computeLeaderboardFromLocal } from "@shared/statsCompute";
 
 export function LeaderboardPage() {
@@ -32,7 +32,7 @@ export function LeaderboardPage() {
             /* fall through */
           }
         }
-        const board = await fetchScoreboard(seasonType, week);
+        const board = await loadWeekGames(seasonType, week, weekKey);
         setGames(board.games);
         const picks = getStoredPicks(weekKey);
         if (username) {
