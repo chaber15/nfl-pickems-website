@@ -1,0 +1,101 @@
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { apiMe, apiLogin, apiLogout, isDemoMode, type AuthUser } from "./api";
+import { getStoredUsername, setStoredUsername } from "./localStorage";
+
+interface AuthContextValue {
+  user: AuthUser | null;
+  username: string | null;
+  loading: boolean;
+  useBackend: boolean;
+  login: (username: string) => Promise<void>;
+  logout: () => Promise<void>;
+  setLocalUsername: (username: string) => void;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [username, setUsername] = useState<string | null>(getStoredUsername());
+  const [loading, setLoading] = useState(true);
+  const [useBackend, setUseBackend] = useState(false);
+
+  useEffect(() => {
+    if (isDemoMode()) {
+      setUseBackend(false);
+      setLoading(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        const { user: u } = await apiMe();
+        if (u) {
+          setUser(u);
+          setUsername(u.username);
+          setStoredUsername(u.username);
+          setUseBackend(true);
+        }
+      } catch {
+        setUseBackend(false);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const login = useCallback(async (name: string) => {
+    const normalized = name.trim().toLowerCase();
+    if (isDemoMode()) {
+      setStoredUsername(normalized);
+      setUsername(normalized);
+      setUser(null);
+      setUseBackend(false);
+      return;
+    }
+    try {
+      const { user: u } = await apiLogin(normalized);
+      setUser(u);
+      setUsername(u.username);
+      setStoredUsername(u.username);
+      setUseBackend(true);
+    } catch {
+      setStoredUsername(normalized);
+      setUsername(normalized);
+      setUser(null);
+      setUseBackend(false);
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    if (!isDemoMode()) {
+      try {
+        await apiLogout();
+      } catch {
+        /* ignore */
+      }
+    }
+    setUser(null);
+    setUsername(null);
+    setUseBackend(false);
+    localStorage.removeItem("pickems_username");
+  }, []);
+
+  const setLocalUsername = useCallback((name: string) => {
+    const normalized = name.trim().toLowerCase();
+    setStoredUsername(normalized);
+    setUsername(normalized);
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{ user, username, loading, useBackend, login, logout, setLocalUsername }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
+}

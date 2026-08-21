@@ -1,0 +1,222 @@
+import type { GameData, WeekPhase } from "./types";
+import { computeAtsResult, parseAmericanOdds } from "./scoring";
+
+const SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
+const ODDS_URL = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events";
+
+interface EspnTeam {
+  homeAway: "home" | "away";
+  team: {
+    displayName: string;
+    abbreviation: string;
+  };
+  score?: string;
+}
+
+interface EspnOddsBlock {
+  spread?: number;
+  awayTeamOdds?: {
+    favorite?: boolean;
+    close?: { spread?: { american?: string }; moneyLine?: { american?: string } };
+    moneyLine?: number;
+    spreadOdds?: number;
+  };
+  homeTeamOdds?: {
+    favorite?: boolean;
+    close?: { spread?: { american?: string }; moneyLine?: { american?: string } };
+    moneyLine?: number;
+    spreadOdds?: number;
+  };
+}
+
+interface EspnEvent {
+  id: string;
+  date: string;
+  competitions: Array<{
+    id: string;
+    date: string;
+    competitors: EspnTeam[];
+    odds?: EspnOddsBlock[];
+    status?: {
+      type?: {
+        name?: string;
+        completed?: boolean;
+        state?: string;
+      };
+    };
+  }>;
+  season?: { type?: number };
+  week?: { number?: number };
+}
+
+interface EspnScoreboard {
+  events?: EspnEvent[];
+  season?: { type?: number };
+  week?: { number?: number };
+}
+
+function mapPhase(seasonType: number, weekNumber: number): WeekPhase {
+  if (seasonType === 1) return "preseason";
+  if (seasonType === 3) {
+    if (weekNumber === 1) return "wildcard";
+    if (weekNumber === 2) return "divisional";
+    if (weekNumber === 3) return "conf";
+    return "superbowl";
+  }
+  return "regular";
+}
+
+function mapStatus(name?: string, completed?: boolean): GameData["status"] {
+  if (completed || name === "STATUS_FINAL") return "final";
+  if (name === "STATUS_IN_PROGRESS" || name === "STATUS_HALFTIME") return "in_progress";
+  return "scheduled";
+}
+
+function extractOdds(oddsBlock: EspnOddsBlock | undefined): {
+  spread: number | null;
+  favoriteSide: "home" | "away" | null;
+  oddsAway: number | null;
+  oddsHome: number | null;
+} {
+  if (!oddsBlock) {
+    return { spread: null, favoriteSide: null, oddsAway: null, oddsHome: null };
+  }
+
+  const spread = oddsBlock.spread != null ? Math.abs(Number(oddsBlock.spread)) : null;
+  let favoriteSide: "home" | "away" | null = null;
+  if (oddsBlock.homeTeamOdds?.favorite) favoriteSide = "home";
+  else if (oddsBlock.awayTeamOdds?.favorite) favoriteSide = "away";
+
+  const oddsAway =
+    parseAmericanOdds(oddsBlock.awayTeamOdds?.close?.spread?.american) ??
+    parseAmericanOdds(oddsBlock.awayTeamOdds?.spreadOdds) ??
+    parseAmericanOdds(oddsBlock.awayTeamOdds?.close?.moneyLine?.american) ??
+    parseAmericanOdds(oddsBlock.awayTeamOdds?.moneyLine);
+
+  const oddsHome =
+    parseAmericanOdds(oddsBlock.homeTeamOdds?.close?.spread?.american) ??
+    parseAmericanOdds(oddsBlock.homeTeamOdds?.spreadOdds) ??
+    parseAmericanOdds(oddsBlock.homeTeamOdds?.close?.moneyLine?.american) ??
+    parseAmericanOdds(oddsBlock.homeTeamOdds?.moneyLine);
+
+  return { spread, favoriteSide, oddsAway, oddsHome };
+}
+
+async function fetchOddsFallback(eventId: string, competitionId: string): Promise<EspnOddsBlock | null> {
+  try {
+    const res = await fetch(`${ODDS_URL}/${eventId}/competitions/${competitionId}/odds`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { items?: Array<{ $ref?: string }> };
+    const ref = data.items?.[0]?.$ref;
+    if (!ref) return null;
+    const detailRes = await fetch(ref);
+    if (!detailRes.ok) return null;
+    return (await detailRes.json()) as EspnOddsBlock;
+  } catch {
+    return null;
+  }
+}
+
+function parseEvent(event: EspnEvent, oddsBlock?: EspnOddsBlock | null): GameData | null {
+  const comp = event.competitions[0];
+  if (!comp) return null;
+
+  const home = comp.competitors.find((c) => c.homeAway === "home");
+  const away = comp.competitors.find((c) => c.homeAway === "away");
+  if (!home || !away) return null;
+
+  const embeddedOdds = comp.odds?.[0];
+  const odds = extractOdds(embeddedOdds ?? oddsBlock ?? undefined);
+  const seasonType = event.season?.type ?? 1;
+  const weekNumber = event.week?.number ?? 1;
+
+  const game: GameData = {
+    id: event.id,
+    espnEventId: event.id,
+    awayTeam: away.team.displayName,
+    awayAbbrev: away.team.abbreviation,
+    homeTeam: home.team.displayName,
+    homeAbbrev: home.team.abbreviation,
+    kickoffAt: comp.date || event.date,
+    spread: odds.spread,
+    favoriteSide: odds.favoriteSide,
+    oddsAway: odds.oddsAway,
+    oddsHome: odds.oddsHome,
+    atsResult: null,
+    status: mapStatus(comp.status?.type?.name, comp.status?.type?.completed),
+    awayScore: away.score != null ? Number(away.score) : undefined,
+    homeScore: home.score != null ? Number(home.score) : undefined,
+    weekNumber,
+    seasonType,
+    phase: mapPhase(seasonType, weekNumber),
+  };
+
+  return applyAtsToGame(game);
+}
+
+export function applyAtsToGame(game: GameData): GameData {
+  if (
+    game.status !== "final" ||
+    game.spread == null ||
+    !game.favoriteSide ||
+    game.awayScore == null ||
+    game.homeScore == null
+  ) {
+    return game;
+  }
+  return {
+    ...game,
+    atsResult: computeAtsResult(game.homeScore, game.awayScore, game.spread, game.favoriteSide),
+  };
+}
+
+export async function fetchScoreboard(
+  seasonType = 1,
+  week = 2,
+): Promise<{ games: GameData[]; seasonType: number; week: number }> {
+  const url = `${SCOREBOARD_URL}?seasontype=${seasonType}&week=${week}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`ESPN scoreboard failed: ${res.status}`);
+  const data = (await res.json()) as EspnScoreboard;
+
+  const events = data.events ?? [];
+  const games: GameData[] = [];
+
+  for (const event of events) {
+    const comp = event.competitions[0];
+    let oddsBlock: EspnOddsBlock | null = comp?.odds?.[0] ?? null;
+    if (!oddsBlock && comp) {
+      oddsBlock = await fetchOddsFallback(event.id, comp.id);
+    }
+    const game = parseEvent(event, oddsBlock);
+    if (game) games.push(game);
+  }
+
+  games.sort((a, b) => new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime());
+
+  return {
+    games,
+    seasonType: data.season?.type ?? seasonType,
+    week: data.week?.number ?? week,
+  };
+}
+
+export async function fetchCurrentScoreboard(): Promise<{ games: GameData[]; seasonType: number; week: number }> {
+  const res = await fetch(SCOREBOARD_URL);
+  if (!res.ok) throw new Error(`ESPN scoreboard failed: ${res.status}`);
+  const data = (await res.json()) as EspnScoreboard;
+  const seasonType = data.season?.type ?? 2;
+  const week = data.week?.number ?? 1;
+  return fetchScoreboard(seasonType, week);
+}
+
+/** Detect current NFL week from ESPN calendar (no week params). */
+export async function detectCurrentWeek(): Promise<{ seasonType: number; week: number }> {
+  const res = await fetch(SCOREBOARD_URL);
+  if (!res.ok) throw new Error(`ESPN scoreboard failed: ${res.status}`);
+  const data = (await res.json()) as EspnScoreboard;
+  return {
+    seasonType: data.season?.type ?? 2,
+    week: data.week?.number ?? 1,
+  };
+}

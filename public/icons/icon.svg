@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="96" fill="#22c55e"/>
+  <ellipse cx="256" cy="256" rx="180" ry="110" stroke="#f8faf8" stroke-width="16"/>
+  <line x1="256" y1="146" x2="256" y2="366" stroke="#f8faf8" stroke-width="8"/>
+  <text x="256" y="280" text-anchor="middle" fill="#f8faf8" font-family="monospace" font-size="72" font-weight="bold">P</text>
+</svg>

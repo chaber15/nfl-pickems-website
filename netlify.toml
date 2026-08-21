@@ -1,0 +1,28 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[dev]
+  command = "vite"
+  targetPort = 5173
+
+[dev.environment]
+  VITE_USE_BACKEND = "true"
+
+[functions]
+  node_bundler = "esbuild"
+  included_files = ["shared/**", "server/**"]
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[functions."sync-espn"]
+  schedule = "*/30 * * * *"

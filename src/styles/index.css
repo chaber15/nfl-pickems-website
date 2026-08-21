@@ -1,0 +1,37 @@
+@import "tailwindcss";
+@import "./fonts.css";
+@import "./theme.css";
+
+@theme {
+  --color-page: var(--bg-page);
+  --color-card: var(--bg-card);
+  --color-card-elevated: var(--bg-card-elevated);
+  --color-border: var(--border-card);
+  --color-primary: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-accent: var(--accent-green);
+  --color-gold: var(--accent-gold);
+  --color-danger: var(--accent-red);
+  --color-sky: var(--accent-blue);
+  --radius-card: 16px;
+}
+
+html {
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  background-color: var(--bg-page);
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background-color: var(--bg-page);
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+.font-tabular {
+  font-variant-numeric: tabular-nums;
+}

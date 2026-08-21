@@ -1,0 +1,17 @@
+{
+  "name": "NFL Pick'ems",
+  "short_name": "Pick'ems",
+  "description": "Family NFL spread pick'em pool",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8faf8",
+  "theme_color": "#f8faf8",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
