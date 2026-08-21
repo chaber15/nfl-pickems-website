@@ -8,6 +8,7 @@ import {
   SignOut,
 } from "@phosphor-icons/react";
 import { useAuth } from "../lib/authContext";
+import { NFL_LOGO_SRC } from "../lib/teamLogos";
 
 const links = [
   { to: "/", label: "Picks", icon: Football },
@@ -21,9 +22,12 @@ export function Sidebar() {
 
   return (
     <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r-2 lg:border-[var(--border-card)] lg:bg-[var(--sidebar-bg)] lg:px-4 lg:py-6">
-      <h1 className="font-pixel mb-8 px-2 text-xs leading-relaxed text-[var(--text-primary)]">
-        NFL PICK&apos;EMS
-      </h1>
+      <div className="mb-8 flex items-center gap-3 px-2">
+        <img src={NFL_LOGO_SRC} alt="NFL" className="h-10 w-auto object-contain" />
+        <h1 className="font-pixel text-xs leading-relaxed text-[var(--text-primary)]">
+          NFL PICK&apos;EMS
+        </h1>
+      </div>
       <nav className="flex flex-1 flex-col gap-2">
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink

@@ -4,3 +4,7 @@ dist
 .env.*
 !.env.example
 .drizzle
+.DS_Store
+pixelated nfl logos
+nfl logos
+NFL Logo.jpeg

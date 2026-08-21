@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../lib/authContext";
+import { NFL_LOGO_SRC } from "../lib/teamLogos";
 
 export function UsernameGate({ children }: { children: React.ReactNode }) {
   const { username, loading, login } = useAuth();
@@ -38,7 +39,10 @@ export function UsernameGate({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-page px-4">
       <div className="w-full max-w-md rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-8 shadow-[var(--shadow-card)]">
-        <h1 className="font-pixel mb-2 text-center text-sm leading-relaxed">NFL PICK&apos;EMS</h1>
+        <div className="mb-4 flex flex-col items-center gap-3">
+          <img src={NFL_LOGO_SRC} alt="NFL" className="h-14 w-auto object-contain" />
+          <h1 className="font-pixel text-center text-sm leading-relaxed">NFL PICK&apos;EMS</h1>
+        </div>
         <p className="mb-6 text-center text-sm text-[var(--text-muted)]">
           Enter a username to start picking. No password needed for family play.
         </p>
