@@ -93,7 +93,7 @@ function PickButton({
       whileTap={reduce || disabled ? undefined : { scale: 0.98 }}
       className={`flex min-h-14 w-full items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-colors ${
         selected
-          ? "border-[var(--accent-green)] bg-[var(--accent-green)] text-white"
+          ? "border-[var(--accent-green)] bg-[var(--accent-green)] text-[var(--accent-on-green)]"
           : side === "favorite"
             ? "border-[var(--accent-blue)] bg-[var(--bg-card)] text-[var(--text-primary)]"
             : "border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-primary)]"
@@ -184,7 +184,7 @@ export function GameCard({ game, userPick, onPick, onToggleConfidence, confidenc
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-center gap-1">
-            <span className="font-pixel text-[10px] tracking-widest text-[var(--text-muted)]">VS</span>
+            <span className="font-display text-lg tracking-[0.2em] text-[var(--text-muted)]">VS</span>
             <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Pre-game</span>
           </div>
           <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
@@ -264,7 +264,7 @@ export function GameCard({ game, userPick, onPick, onToggleConfidence, confidenc
           onClick={onToggleConfidence}
           className={`mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border-2 px-4 text-sm font-bold transition-colors ${
             isConfidence
-              ? "border-[var(--accent-gold)] bg-[var(--accent-gold)] text-[#1a2e1a]"
+              ? "border-[var(--accent-gold)] bg-[var(--accent-gold)] text-[#0e1116]"
               : "border-[var(--accent-gold)] bg-transparent text-[var(--text-primary)]"
           } disabled:cursor-not-allowed disabled:opacity-50`}
         >

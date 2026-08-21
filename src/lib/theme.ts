@@ -16,7 +16,7 @@ export function applyTheme(mode: ThemeMode) {
   const dark = resolveDark(mode);
   document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", dark ? "#1a3a1a" : "#f8faf8");
+  if (meta) meta.setAttribute("content", dark ? "#0e1116" : "#f4f6f8");
 }
 
 export function setThemeMode(mode: ThemeMode) {

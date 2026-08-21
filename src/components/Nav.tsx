@@ -4,6 +4,7 @@ import {
   Trophy,
   ClockCounterClockwise,
   ChartBar,
+  Question,
   ShieldCheck,
   SignOut,
 } from "@phosphor-icons/react";
@@ -15,6 +16,7 @@ const links = [
   { to: "/history", label: "History", icon: ClockCounterClockwise },
   { to: "/leaderboard", label: "Leaders", icon: Trophy },
   { to: "/stats", label: "Stats", icon: ChartBar },
+  { to: "/how-to-play", label: "How", icon: Question },
 ];
 
 export function Sidebar() {
@@ -24,8 +26,8 @@ export function Sidebar() {
     <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r-2 lg:border-[var(--border-card)] lg:bg-[var(--sidebar-bg)] lg:px-4 lg:py-6">
       <div className="mb-8 flex items-center gap-3 px-2">
         <img src={NFL_LOGO_SRC} alt="NFL" className="h-10 w-auto object-contain" />
-        <h1 className="font-pixel text-xs leading-relaxed text-[var(--text-primary)]">
-          NFL PICK&apos;EMS
+        <h1 className="font-display text-2xl text-[var(--text-primary)]">
+          NFL Pick&apos;ems
         </h1>
       </div>
       <nav className="flex flex-1 flex-col gap-2">
@@ -36,7 +38,7 @@ export function Sidebar() {
             className={({ isActive }) =>
               `flex min-h-12 items-center gap-3 rounded-2xl px-4 text-sm font-semibold transition-colors ${
                 isActive
-                  ? "bg-[var(--accent-green)] text-white"
+                  ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]"
                   : "text-[var(--text-primary)] hover:bg-[var(--bg-card-elevated)]"
               }`
             }
@@ -50,7 +52,7 @@ export function Sidebar() {
             to="/admin"
             className={({ isActive }) =>
               `flex min-h-12 items-center gap-3 rounded-2xl px-4 text-sm font-semibold ${
-                isActive ? "bg-[var(--accent-green)] text-white" : "text-[var(--text-primary)]"
+                isActive ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]" : "text-[var(--text-primary)]"
               }`
             }
           >
@@ -75,7 +77,8 @@ export function BottomNav() {
   const { user } = useAuth();
   const allLinks = user?.isAdmin ? [...links, { to: "/admin", label: "Admin", icon: ShieldCheck }] : links;
 
-  const cols = allLinks.length >= 5 ? "grid-cols-5" : "grid-cols-4";
+  const cols =
+    allLinks.length >= 6 ? "grid-cols-6" : allLinks.length >= 5 ? "grid-cols-5" : "grid-cols-4";
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t-2 border-[var(--border-card)] bg-[var(--bg-card)] pb-[env(safe-area-inset-bottom)] lg:hidden">

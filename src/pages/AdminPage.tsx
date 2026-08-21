@@ -38,7 +38,7 @@ export function AdminPage() {
       return (
         <AppShell showWeekSelector={false}>
           <div className="mx-auto max-w-3xl rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-8 text-center">
-            <h2 className="font-pixel mb-3 text-sm leading-relaxed">Admin</h2>
+            <h2 className="font-display mb-3 text-3xl">Admin</h2>
             <p className="text-sm text-[var(--text-muted)]">
               Admin tools need the Netlify API and database. Run with{" "}
               <span className="font-mono">npx netlify dev</span> and a{" "}
@@ -78,7 +78,7 @@ export function AdminPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-3xl space-y-6">
-        <h2 className="font-pixel text-sm leading-relaxed">Admin</h2>
+        <h2 className="font-display text-3xl sm:text-4xl">Admin</h2>
 
         {error && (
           <p className="rounded-2xl border-2 border-[var(--accent-red)] bg-[var(--accent-red)]/10 px-4 py-3 text-sm text-[var(--accent-red)]">
@@ -98,7 +98,7 @@ export function AdminPage() {
               type="button"
               onClick={handleSync}
               disabled={syncing}
-              className="min-h-11 rounded-2xl bg-[var(--accent-green)] px-4 font-bold text-white disabled:opacity-60"
+              className="min-h-11 rounded-2xl bg-[var(--accent-green)] px-4 font-bold text-[var(--accent-on-green)] disabled:opacity-60"
             >
               {syncing ? "Syncing..." : "Sync now"}
             </button>

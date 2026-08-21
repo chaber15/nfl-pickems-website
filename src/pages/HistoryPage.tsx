@@ -54,7 +54,7 @@ export function HistoryPage() {
   return (
     <AppShell games={games}>
       <div className="mx-auto max-w-5xl space-y-6">
-        <h2 className="font-pixel text-sm leading-relaxed">Previous Picks</h2>
+        <h2 className="font-display text-3xl sm:text-4xl">Previous Picks</h2>
 
         {loading ? (
           <div className="space-y-3">

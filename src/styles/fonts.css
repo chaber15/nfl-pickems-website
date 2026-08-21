@@ -4,12 +4,15 @@
 @import "@fontsource/outfit/700.css";
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/600.css";
-@import "@fontsource/press-start-2p/400.css";
+@import "@fontsource/bebas-neue/400.css";
+@import "@fontsource/archivo-black/400.css";
 
 :root {
   --font-body: "Outfit", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --font-pixel: "Press Start 2P", monospace;
+  /* Condensed sports titles — Retro Bowl energy without pixel crunch */
+  --font-display: "Bebas Neue", "Archivo Black", Impact, sans-serif;
+  --font-display-heavy: "Archivo Black", "Bebas Neue", Impact, sans-serif;
 }
 
 .font-body {
@@ -20,6 +23,24 @@
   font-family: var(--font-mono);
 }
 
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+
+.font-display-heavy {
+  font-family: var(--font-display-heavy);
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+/* Back-compat for older class name */
 .font-pixel {
-  font-family: var(--font-pixel);
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  line-height: 1.05;
+  text-transform: uppercase;
 }

@@ -1,9 +1,10 @@
 import { randomBytes } from "crypto";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, sql } from "drizzle-orm";
 import { getDb, schema } from "./db";
 
 const SESSION_COOKIE = "pickems_session";
 const SESSION_DAYS = 30;
+const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
 export function getSessionCookieName() {
   return SESSION_COOKIE;
@@ -63,16 +64,31 @@ export async function getUserFromSession(token: string | undefined) {
 
 export async function registerOrLogin(username: string) {
   const db = getDb();
-  const normalized = username.trim().toLowerCase();
-  if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
+  const display = username.trim();
+  if (!USERNAME_RE.test(display)) {
     throw new Error("Username must be 3-20 chars: letters, numbers, underscore");
   }
+  const key = display.toLowerCase();
 
-  const [existing] = await db.select().from(schema.users).where(eq(schema.users.username, normalized)).limit(1);
+  const [existing] = await db
+    .select()
+    .from(schema.users)
+    .where(sql`lower(${schema.users.username}) = ${key}`)
+    .limit(1);
+
   if (existing) {
     if (existing.isBanned) throw new Error("Account banned");
-    const token = await createSession(existing.id);
-    return { user: existing, token, created: false };
+    let user = existing;
+    if (existing.username !== display) {
+      const [updated] = await db
+        .update(schema.users)
+        .set({ username: display })
+        .where(eq(schema.users.id, existing.id))
+        .returning();
+      user = updated ?? existing;
+    }
+    const token = await createSession(user.id);
+    return { user, token, created: false };
   }
 
   const [settings] = await db.select().from(schema.siteSettings).limit(1);
@@ -88,8 +104,8 @@ export async function registerOrLogin(username: string) {
   const [user] = await db
     .insert(schema.users)
     .values({
-      username: normalized,
-      isAdmin: adminUsernames.includes(normalized),
+      username: display,
+      isAdmin: adminUsernames.includes(key),
     })
     .returning();
 

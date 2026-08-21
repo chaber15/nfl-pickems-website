@@ -54,7 +54,7 @@ export function StatsPage() {
   return (
     <AppShell games={games}>
       <div className="mx-auto max-w-6xl space-y-6">
-        <h2 className="font-pixel text-sm leading-relaxed">My Stats</h2>
+        <h2 className="font-display text-3xl sm:text-4xl">My Stats</h2>
 
         {loading ? (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

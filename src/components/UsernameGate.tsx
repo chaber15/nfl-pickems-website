@@ -11,7 +11,7 @@ export function UsernameGate({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-page">
-        <p className="font-pixel text-xs text-[var(--text-muted)]">Loading...</p>
+        <p className="font-display text-2xl text-[var(--text-muted)]">Loading...</p>
       </div>
     );
   }
@@ -21,8 +21,8 @@ export function UsernameGate({ children }: { children: React.ReactNode }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    const val = input.trim().toLowerCase();
-    if (!/^[a-z0-9_]{3,20}$/.test(val)) {
+    const val = input.trim();
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(val)) {
       setError("Use 3-20 characters: letters, numbers, underscore");
       return;
     }
@@ -41,7 +41,7 @@ export function UsernameGate({ children }: { children: React.ReactNode }) {
       <div className="w-full max-w-md rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-8 shadow-[var(--shadow-card)]">
         <div className="mb-4 flex flex-col items-center gap-3">
           <img src={NFL_LOGO_SRC} alt="NFL" className="h-14 w-auto object-contain" />
-          <h1 className="font-pixel text-center text-sm leading-relaxed">NFL PICK&apos;EMS</h1>
+          <h1 className="font-display text-center text-4xl">NFL Pick&apos;ems</h1>
         </div>
         <p className="mb-6 text-center text-sm text-[var(--text-muted)]">
           Enter a username to start picking. No password needed for family play.
@@ -62,7 +62,7 @@ export function UsernameGate({ children }: { children: React.ReactNode }) {
           <button
             type="submit"
             disabled={submitting}
-            className="min-h-12 w-full rounded-2xl bg-[var(--accent-green)] text-base font-bold text-white disabled:opacity-60"
+            className="min-h-12 w-full rounded-2xl bg-[var(--accent-green)] text-base font-bold text-[var(--accent-on-green)] disabled:opacity-60"
           >
             {submitting ? "Starting..." : "Start Picking"}
           </button>

@@ -59,13 +59,13 @@ export function LeaderboardPage() {
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <h2 className="font-pixel text-sm leading-relaxed">Leaderboard</h2>
+            <h2 className="font-display text-3xl sm:text-4xl">Leaderboard</h2>
             <div className="flex rounded-2xl border-2 border-[var(--border-card)] p-1">
               <button
                 type="button"
                 onClick={() => setMode("winPct")}
                 className={`min-h-11 rounded-xl px-4 py-2 text-sm font-bold ${
-                  mode === "winPct" ? "bg-[var(--accent-green)] text-white" : "text-[var(--text-primary)]"
+                  mode === "winPct" ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]" : "text-[var(--text-primary)]"
                 }`}
               >
                 Win %
@@ -74,7 +74,7 @@ export function LeaderboardPage() {
                 type="button"
                 onClick={() => setMode("pl")}
                 className={`min-h-11 rounded-xl px-4 py-2 text-sm font-bold ${
-                  mode === "pl" ? "bg-[var(--accent-green)] text-white" : "text-[var(--text-primary)]"
+                  mode === "pl" ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]" : "text-[var(--text-primary)]"
                 }`}
               >
                 Confidence P/L

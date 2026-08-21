@@ -6,6 +6,7 @@ import { PicksPage } from "./pages/PicksPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
 import { StatsPage } from "./pages/StatsPage";
+import { HowToPlayPage } from "./pages/HowToPlayPage";
 import { AdminPage } from "./pages/AdminPage";
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/leaderboard" element={<LeaderboardPage />} />
               <Route path="/stats" element={<StatsPage />} />
+              <Route path="/how-to-play" element={<HowToPlayPage />} />
               <Route path="/admin" element={<AdminPage />} />
             </Routes>
           </UsernameGate>

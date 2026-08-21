@@ -36,12 +36,12 @@ export function AppShell({ children, games = [], banner, showWeekSelector = true
               />
               <div className="min-w-0">
                 {displayBanner && (
-                  <p className="font-pixel mb-1 text-[10px] leading-relaxed text-[var(--accent-gold)]">
+                  <p className="font-display mb-1 text-xl text-[var(--accent-gold)] sm:text-2xl">
                     {displayBanner}
                   </p>
                 )}
                 {!displayBanner && (
-                  <p className="font-pixel mb-1 text-[10px] leading-relaxed text-[var(--text-muted)]">
+                  <p className="font-display mb-1 text-xl text-[var(--text-muted)] sm:text-2xl">
                     {label}
                   </p>
                 )}

@@ -129,7 +129,7 @@ export function PicksPage() {
     <AppShell games={games}>
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="space-y-3">
-          <h2 className="font-pixel text-sm leading-relaxed">Make Your Picks</h2>
+          <h2 className="font-display text-3xl sm:text-4xl">Make Your Picks</h2>
           <ConfidenceBetCounter count={confCount} phase={phase} />
           {demoUnlock && (
             <div className="rounded-2xl border-2 border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 px-4 py-3 text-sm font-semibold">

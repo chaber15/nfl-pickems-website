@@ -45,23 +45,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (name: string) => {
-    const normalized = name.trim().toLowerCase();
+    const display = name.trim();
     if (isDemoMode()) {
-      setStoredUsername(normalized);
-      setUsername(normalized);
+      setStoredUsername(display);
+      setUsername(display);
       setUser(null);
       setUseBackend(false);
       return;
     }
     try {
-      const { user: u } = await apiLogin(normalized);
+      const { user: u } = await apiLogin(display);
       setUser(u);
       setUsername(u.username);
       setStoredUsername(u.username);
       setUseBackend(true);
     } catch {
-      setStoredUsername(normalized);
-      setUsername(normalized);
+      setStoredUsername(display);
+      setUsername(display);
       setUser(null);
       setUseBackend(false);
     }
@@ -82,9 +82,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setLocalUsername = useCallback((name: string) => {
-    const normalized = name.trim().toLowerCase();
-    setStoredUsername(normalized);
-    setUsername(normalized);
+    const display = name.trim();
+    setStoredUsername(display);
+    setUsername(display);
   }, []);
 
   return (
