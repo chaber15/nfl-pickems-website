@@ -1,9 +1,11 @@
 import { Check, X, Star } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "motion/react";
-import type { GameData, PickSide, UserPick } from "@shared/types";
+import type { FavoriteSide, GameData, PickSide, UserPick } from "@shared/types";
 import { formatKickoff, formatPick, formatSpread } from "@shared/pickDisplay";
 import { isGameLocked } from "@shared/scoring";
-import { teamLogoSrc } from "../lib/teamLogos";
+import { teamLogoSrc, teamLocationName } from "../lib/teamLogos";
+
+type Venue = FavoriteSide;
 
 function TeamLogo({ abbrev, name, size = 40 }: { abbrev: string; name: string; size?: number }) {
   const src = teamLogoSrc(abbrev);
@@ -31,6 +33,11 @@ function TeamLogo({ abbrev, name, size = 40 }: { abbrev: string; name: string; s
   );
 }
 
+function pickSideForVenue(favoriteSide: FavoriteSide | null, venue: Venue): PickSide | null {
+  if (!favoriteSide) return null;
+  return favoriteSide === venue ? "favorite" : "underdog";
+}
+
 interface GameCardProps {
   game: GameData;
   userPick?: UserPick;
@@ -41,49 +48,28 @@ interface GameCardProps {
 }
 
 function PickButton({
-  side,
+  venue,
   game,
   selected,
   disabled,
   onClick,
 }: {
-  side: PickSide;
+  venue: Venue;
   game: GameData;
   selected: boolean;
   disabled: boolean;
   onClick: () => void;
 }) {
   const reduce = useReducedMotion();
-  const label = side === "favorite" ? "FAVORITE" : "UNDERDOG";
-  const team =
-    side === "favorite"
-      ? game.favoriteSide === "home"
-        ? game.homeTeam
-        : game.favoriteSide === "away"
-          ? game.awayTeam
-          : "TBD"
-      : game.favoriteSide === "home"
-        ? game.awayTeam
-        : game.favoriteSide === "away"
-          ? game.homeTeam
-          : "TBD";
+  const isFavorite = game.favoriteSide === venue;
+  const pickSide = pickSideForVenue(game.favoriteSide, venue);
+  const abbrev = venue === "away" ? game.awayAbbrev : game.homeAbbrev;
+  const location = teamLocationName(abbrev, venue === "away" ? game.awayTeam : game.homeTeam);
+  const venueLabel = venue === "away" ? "AWAY" : "HOME";
   const spread =
-    game.spread != null && game.favoriteSide
-      ? formatSpread(game.spread, side, game.favoriteSide)
+    game.spread != null && pickSide && game.favoriteSide
+      ? formatSpread(game.spread, pickSide, game.favoriteSide)
       : null;
-
-  const abbrev =
-    side === "favorite"
-      ? game.favoriteSide === "home"
-        ? game.homeAbbrev
-        : game.favoriteSide === "away"
-          ? game.awayAbbrev
-          : ""
-      : game.favoriteSide === "home"
-        ? game.awayAbbrev
-        : game.favoriteSide === "away"
-          ? game.homeAbbrev
-          : "";
 
   return (
     <motion.button
@@ -91,20 +77,22 @@ function PickButton({
       disabled={disabled}
       onClick={onClick}
       whileTap={reduce || disabled ? undefined : { scale: 0.98 }}
-      className={`flex min-h-14 w-full items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-colors ${
+      className={`flex min-h-14 w-full flex-col items-center justify-center gap-0.5 rounded-2xl border-2 px-3 py-3 text-center transition-colors ${
         selected
           ? "border-[var(--accent-green)] bg-[var(--accent-green)] text-[var(--accent-on-green)]"
-          : side === "favorite"
+          : isFavorite
             ? "border-[var(--accent-blue)] bg-[var(--bg-card)] text-[var(--text-primary)]"
             : "border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-primary)]"
       } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
     >
-      {abbrev ? <TeamLogo abbrev={abbrev} name={team} size={36} /> : null}
-      <span className="flex min-w-0 flex-col items-start justify-center">
-        <span className="text-xs font-bold tracking-wide">{label}</span>
-        <span className="truncate text-base font-semibold">{team}</span>
-        {spread && <span className="font-mono text-sm">{spread}</span>}
+      <span className={`text-[10px] font-bold tracking-wide ${selected ? "opacity-80" : "text-[var(--text-muted)]"}`}>
+        {venueLabel}
+        {isFavorite && (
+          <span className={selected ? "" : " text-[var(--accent-blue)]"}> · FAV</span>
+        )}
       </span>
+      <span className="w-full truncate text-sm font-semibold leading-tight">{location}</span>
+      {spread && <span className="font-mono text-base font-bold">{spread}</span>}
     </motion.button>
   );
 }
@@ -118,6 +106,8 @@ export function GameCard({ game, userPick, onPick, onToggleConfidence, confidenc
   const graded = game.status === "final" && game.atsResult;
   const notStarted = game.status === "scheduled";
   const showScores = !notStarted && game.awayScore != null && game.homeScore != null;
+  const awayPick = pickSideForVenue(game.favoriteSide, "away");
+  const homePick = pickSideForVenue(game.favoriteSide, "home");
   const gradeLabel =
     graded && pick && game.atsResult
       ? game.atsResult === "push"
@@ -126,6 +116,11 @@ export function GameCard({ game, userPick, onPick, onToggleConfidence, confidenc
           ? "Correct"
           : "Wrong"
       : null;
+
+  const onPickVenue = (venue: Venue) => {
+    const side = pickSideForVenue(game.favoriteSide, venue);
+    if (side) onPick(side);
+  };
 
   return (
     <motion.article
@@ -174,51 +169,36 @@ export function GameCard({ game, userPick, onPick, onToggleConfidence, confidenc
         </div>
       </div>
 
-      {notStarted ? (
-        <div className="mb-4 flex items-center justify-center gap-4 sm:gap-6">
-          <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
-            <TeamLogo abbrev={game.awayAbbrev} name={game.awayTeam} size={56} />
-            <div className="min-w-0 w-full">
-              <p className="truncate text-sm font-bold leading-tight">{game.awayAbbrev}</p>
-              <p className="truncate text-xs text-[var(--text-muted)]">{game.awayTeam}</p>
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-col items-center gap-1">
-            <span className="font-display text-lg tracking-[0.2em] text-[var(--text-muted)]">VS</span>
+      <div className="mb-4 flex items-center justify-center gap-3 sm:gap-4">
+        <div className="flex min-w-0 flex-1 flex-col items-center gap-1 text-center">
+          <TeamLogo abbrev={game.awayAbbrev} name={game.awayTeam} size={showScores ? 44 : 56} />
+          <p className="w-full truncate text-sm font-bold leading-tight">{game.awayTeam}</p>
+          <p className="font-mono text-xs text-[var(--text-muted)]">
+            {game.awayAbbrev}
+            {showScores ? "" : " · away"}
+          </p>
+          {showScores && (
+            <span className="font-mono text-2xl font-bold tabular-nums">{game.awayScore}</span>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-col items-center gap-1 px-1">
+          <span className="font-display text-2xl text-[var(--text-muted)]">@</span>
+          {notStarted && (
             <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Pre-game</span>
-          </div>
-          <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
-            <TeamLogo abbrev={game.homeAbbrev} name={game.homeTeam} size={56} />
-            <div className="min-w-0 w-full">
-              <p className="truncate text-sm font-bold leading-tight">{game.homeAbbrev}</p>
-              <p className="truncate text-xs text-[var(--text-muted)]">{game.homeTeam}</p>
-            </div>
-          </div>
+          )}
         </div>
-      ) : (
-        <div className="mb-4 space-y-2">
-          <div className="flex items-center gap-3">
-            <TeamLogo abbrev={game.awayAbbrev} name={game.awayTeam} size={48} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-base font-bold leading-tight">{game.awayTeam}</p>
-              <p className="font-mono text-xs text-[var(--text-muted)]">{game.awayAbbrev}</p>
-            </div>
-            {showScores && (
-              <span className="font-mono text-2xl font-bold tabular-nums">{game.awayScore}</span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <TeamLogo abbrev={game.homeAbbrev} name={game.homeTeam} size={48} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-base font-bold leading-tight">{game.homeTeam}</p>
-              <p className="font-mono text-xs text-[var(--text-muted)]">{game.homeAbbrev} · home</p>
-            </div>
-            {showScores && (
-              <span className="font-mono text-2xl font-bold tabular-nums">{game.homeScore}</span>
-            )}
-          </div>
+        <div className="flex min-w-0 flex-1 flex-col items-center gap-1 text-center">
+          <TeamLogo abbrev={game.homeAbbrev} name={game.homeTeam} size={showScores ? 44 : 56} />
+          <p className="w-full truncate text-sm font-bold leading-tight">{game.homeTeam}</p>
+          <p className="font-mono text-xs text-[var(--text-muted)]">
+            {game.homeAbbrev}
+            {showScores ? "" : " · home"}
+          </p>
+          {showScores && (
+            <span className="font-mono text-2xl font-bold tabular-nums">{game.homeScore}</span>
+          )}
         </div>
-      )}
+      </div>
 
       {!hasLine && !locked && (
         <p className="mb-4 rounded-2xl border-2 border-dashed border-[var(--border-card)] px-4 py-3 text-sm text-[var(--text-muted)]">
@@ -239,20 +219,20 @@ export function GameCard({ game, userPick, onPick, onToggleConfidence, confidenc
       )}
 
       {!locked && (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-2 gap-3">
           <PickButton
-            side="favorite"
+            venue="away"
             game={game}
-            selected={pick === "favorite"}
-            disabled={!hasLine}
-            onClick={() => onPick("favorite")}
+            selected={awayPick != null && pick === awayPick}
+            disabled={!hasLine || awayPick == null}
+            onClick={() => onPickVenue("away")}
           />
           <PickButton
-            side="underdog"
+            venue="home"
             game={game}
-            selected={pick === "underdog"}
-            disabled={!hasLine}
-            onClick={() => onPick("underdog")}
+            selected={homePick != null && pick === homePick}
+            disabled={!hasLine || homePick == null}
+            onClick={() => onPickVenue("home")}
           />
         </div>
       )}
@@ -286,19 +266,20 @@ export function GameCardSkeleton() {
   return (
     <div className="animate-pulse rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-4">
       <div className="mb-3 h-4 w-32 rounded bg-[var(--border-card)]" />
-      <div className="mb-4 space-y-2">
-        <div className="flex items-center gap-3">
-          <div className="size-12 rounded bg-[var(--border-card)]" />
-          <div className="h-8 flex-1 rounded bg-[var(--border-card)]" />
+      <div className="mb-4 flex items-center justify-center gap-4">
+        <div className="flex flex-1 flex-col items-center gap-2">
+          <div className="size-14 rounded bg-[var(--border-card)]" />
+          <div className="h-4 w-20 rounded bg-[var(--border-card)]" />
         </div>
-        <div className="flex items-center gap-3">
-          <div className="size-12 rounded bg-[var(--border-card)]" />
-          <div className="h-8 flex-1 rounded bg-[var(--border-card)]" />
+        <div className="h-6 w-6 rounded bg-[var(--border-card)]" />
+        <div className="flex flex-1 flex-col items-center gap-2">
+          <div className="size-14 rounded bg-[var(--border-card)]" />
+          <div className="h-4 w-20 rounded bg-[var(--border-card)]" />
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div className="h-14 rounded-2xl bg-[var(--border-card)]" />
-        <div className="h-14 rounded-2xl bg-[var(--border-card)]" />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="h-28 rounded-2xl bg-[var(--border-card)]" />
+        <div className="h-28 rounded-2xl bg-[var(--border-card)]" />
       </div>
     </div>
   );

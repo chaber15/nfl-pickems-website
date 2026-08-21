@@ -48,7 +48,7 @@ export function ConfidenceBetCounter({ count, max = CONFIDENCE_BETS_PER_WEEK, ph
         {!complete && (
           <span className="text-[var(--text-muted)]">
             {" "}
-            - need exactly {max} for this week to count on P/L
+            - need exactly {max} for this week to count toward P/L rankings
             {count > 0 ? ` (${max - count} more)` : ""}
           </span>
         )}
