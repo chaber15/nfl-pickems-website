@@ -1,8 +1,10 @@
+import { useEffect, useState } from "react";
 import { Check, X, Star } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "motion/react";
 import type { FavoriteSide, GameData, PickSide, UserPick } from "@shared/types";
 import { formatKickoff, formatPick, formatSpread, formatJuice, juiceForSide } from "@shared/pickDisplay";
 import { isGameLocked } from "@shared/scoring";
+import type { CrowdName, GameCrowdLean } from "../lib/demoCrowd";
 import { teamLogoSrc, teamLocationName } from "../lib/teamLogos";
 
 type Venue = FavoriteSide;
@@ -45,6 +47,110 @@ interface GameCardProps {
   onToggleConfidence: () => void;
   confidenceDisabled?: boolean;
   forceUnlocked?: boolean;
+  crowd?: GameCrowdLean;
+}
+
+function NameList({ names }: { names: CrowdName[] }) {
+  if (names.length === 0) {
+    return <li className="italic text-[var(--text-muted)]">Nobody yet</li>;
+  }
+  return (
+    <>
+      {names.map((r) => (
+        <li key={r.username} className="flex items-center justify-center gap-0.5 font-semibold">
+          {r.username}
+          {r.star && <Star size={11} weight="fill" className="text-[var(--accent-gold)]" />}
+        </li>
+      ))}
+    </>
+  );
+}
+
+function useFineHover(): boolean {
+  const [fine, setFine] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const sync = () => setFine(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return fine;
+}
+
+function CrowdLean({ crowd }: { crowd: GameCrowdLean }) {
+  const [pinned, setPinned] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const fineHover = useFineHover();
+
+  const hasAnyone = crowd.away.length > 0 || crowd.home.length > 0 || crowd.openCount > 0;
+  if (!hasAnyone) return null;
+
+  const picked = crowd.away.length + crowd.home.length;
+  const awayPct = picked ? (crowd.away.length / picked) * 100 : 0;
+  const homePct = picked ? (crowd.home.length / picked) * 100 : 0;
+  const open = pinned || (fineHover && hovered);
+
+  return (
+    <div
+      className="mt-3 space-y-2"
+      onMouseEnter={() => {
+        if (fineHover) setHovered(true);
+      }}
+      onMouseLeave={() => {
+        if (fineHover) setHovered(false);
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setPinned((v) => !v)}
+        aria-expanded={open}
+        aria-label={`Crowd lean: ${crowd.away.length} away, ${crowd.home.length} home — show names`}
+        className="flex w-full items-center gap-2 rounded-lg py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)]"
+      >
+        <span className="w-5 shrink-0 text-center font-mono text-xs font-bold tabular-nums text-[var(--text-muted)]">
+          {crowd.away.length}
+        </span>
+        <span
+          className="relative h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--border-card)]"
+          aria-hidden
+        >
+          {picked > 0 && (
+            <span className="absolute inset-0 flex">
+              <span
+                className="h-full bg-[var(--text-muted)]/35"
+                style={{ width: `${awayPct}%` }}
+              />
+              <span
+                className="h-full bg-[var(--accent-blue)]/55"
+                style={{ width: `${homePct}%` }}
+              />
+            </span>
+          )}
+        </span>
+        <span className="w-5 shrink-0 text-center font-mono text-xs font-bold tabular-nums text-[var(--text-muted)]">
+          {crowd.home.length}
+        </span>
+      </button>
+
+      {open && (
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-[var(--bg-card-elevated)] px-2 py-2">
+          <ul className="space-y-0.5 text-center text-xs text-[var(--text-muted)]">
+            <NameList names={crowd.away} />
+          </ul>
+          <ul className="space-y-0.5 text-center text-xs text-[var(--text-muted)]">
+            <NameList names={crowd.home} />
+          </ul>
+        </div>
+      )}
+
+      {crowd.openCount > 0 && (
+        <p className="text-center text-[10px] font-medium text-[var(--text-muted)]">
+          {crowd.openCount} still open
+        </p>
+      )}
+    </div>
+  );
 }
 
 function PickButton({
@@ -103,7 +209,15 @@ function PickButton({
   );
 }
 
-export function GameCard({ game, userPick, onPick, onToggleConfidence, confidenceDisabled, forceUnlocked }: GameCardProps) {
+export function GameCard({
+  game,
+  userPick,
+  onPick,
+  onToggleConfidence,
+  confidenceDisabled,
+  forceUnlocked,
+  crowd,
+}: GameCardProps) {
   const locked = isGameLocked(game.kickoffAt) && !forceUnlocked;
   const hasLine = game.spread != null && game.favoriteSide;
   const pick = userPick?.pick ?? null;
@@ -242,6 +356,8 @@ export function GameCard({ game, userPick, onPick, onToggleConfidence, confidenc
           />
         </div>
       )}
+
+      {crowd && <CrowdLean crowd={crowd} />}
 
       {!locked && hasLine && !isPlayoff && (
         <button

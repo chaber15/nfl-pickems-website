@@ -73,6 +73,14 @@ export function HowToPlayPage() {
           </p>
         </Section>
 
+        <Section title="5. See the room (live)">
+          <p>
+            On <strong className="text-[var(--text-primary)]">Picks</strong>, a thin bar under each game
+            shows the Away / Home lean — tap or hover it for names. Updates as people save. No hiding
+            until kickoff. ★ marks a confidence bet.
+          </p>
+        </Section>
+
         <Section title="Tips">
           <ul className="list-disc space-y-2 pl-5">
             <li>

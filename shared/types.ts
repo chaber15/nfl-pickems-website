@@ -93,6 +93,24 @@ export interface HistoryRow {
   unitsDelta: number;
 }
 
+export interface WeekComparePick {
+  pick: PickSide;
+  isConfidenceBet: boolean;
+}
+
+export interface WeekComparePlayer {
+  userId: string;
+  username: string;
+  picks: Record<string, WeekComparePick>;
+}
+
+export interface WeekCompareResponse {
+  games: GameData[];
+  players: WeekComparePlayer[];
+  seasonType: number;
+  week: number;
+}
+
 export const CONFIDENCE_BETS_PER_WEEK = 5;
 export const DEMO_WEEK_KEY = "preseason-2";
 export const DEMO_SEASON_TYPE = 1;

@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import {
   Football,
   Trophy,
@@ -24,12 +24,16 @@ export function Sidebar() {
 
   return (
     <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r-2 lg:border-[var(--border-card)] lg:bg-[var(--sidebar-bg)] lg:px-4 lg:py-6">
-      <div className="mb-8 flex items-center gap-3 px-2">
-        <img src={NFL_LOGO_SRC} alt="NFL" className="h-10 w-auto object-contain" />
+      <Link
+        to="/"
+        className="mb-8 flex items-center gap-3 rounded-2xl px-2 py-1 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)]"
+        aria-label="NFL Pick'ems home — Make Your Picks"
+      >
+        <img src={NFL_LOGO_SRC} alt="" className="h-10 w-auto object-contain" />
         <h1 className="font-display text-2xl text-[var(--text-primary)]">
           NFL Pick&apos;ems
         </h1>
-      </div>
+      </Link>
       <nav className="flex flex-1 flex-col gap-2">
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink
@@ -78,7 +82,13 @@ export function BottomNav() {
   const allLinks = user?.isAdmin ? [...links, { to: "/admin", label: "Admin", icon: ShieldCheck }] : links;
 
   const cols =
-    allLinks.length >= 6 ? "grid-cols-6" : allLinks.length >= 5 ? "grid-cols-5" : "grid-cols-4";
+    allLinks.length >= 7
+      ? "grid-cols-7"
+      : allLinks.length >= 6
+        ? "grid-cols-6"
+        : allLinks.length >= 5
+          ? "grid-cols-5"
+          : "grid-cols-4";
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t-2 border-[var(--border-card)] bg-[var(--bg-card)] pb-[env(safe-area-inset-bottom)] lg:hidden">

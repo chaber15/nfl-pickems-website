@@ -1,4 +1,10 @@
-import type { GameData, LeaderboardEntry, UserStats, HistoryRow } from "@shared/types";
+import type {
+  GameData,
+  LeaderboardEntry,
+  UserStats,
+  HistoryRow,
+  WeekCompareResponse,
+} from "@shared/types";
 
 const API_BASE = "/api";
 
@@ -60,6 +66,10 @@ export async function apiGames(seasonType: number, week: number): Promise<{ game
 
 export async function apiUserPicks(seasonType: number, week: number): Promise<{ picks: Record<string, { pick: string; isConfidenceBet: boolean }> }> {
   return request(`/picks?seasonType=${seasonType}&week=${week}`);
+}
+
+export async function apiWeekPicks(seasonType: number, week: number): Promise<WeekCompareResponse> {
+  return request(`/picks/week?seasonType=${seasonType}&week=${week}`);
 }
 
 export async function apiSavePick(body: {

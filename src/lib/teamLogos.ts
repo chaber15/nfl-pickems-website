@@ -61,4 +61,4 @@ export function teamLocationName(abbrev: string | null | undefined, fallback = "
   return LOCATIONS[key] ?? fallback;
 }
 
-export const NFL_LOGO_SRC = "/brand/nfl-logo.webp";
+export const NFL_LOGO_SRC = "/brand/nfltransparent.jpeg";

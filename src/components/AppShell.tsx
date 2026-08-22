@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { SignOut } from "@phosphor-icons/react";
 import { TickerBar } from "./TickerBar";
 import { Sidebar, BottomNav } from "./Nav";
@@ -29,11 +30,17 @@ export function AppShell({ children, games = [], banner, showWeekSelector = true
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[var(--border-card)] px-4 py-3 lg:px-8">
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <img
-                src={NFL_LOGO_SRC}
-                alt="NFL"
-                className="h-9 w-auto shrink-0 object-contain lg:hidden"
-              />
+              <Link
+                to="/"
+                className="shrink-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] lg:hidden"
+                aria-label="NFL Pick'ems home — Make Your Picks"
+              >
+                <img
+                  src={NFL_LOGO_SRC}
+                  alt=""
+                  className="h-9 w-auto object-contain"
+                />
+              </Link>
               <div className="min-w-0">
                 {displayBanner && (
                   <p className="font-display mb-0.5 text-lg text-[var(--accent-gold)] sm:text-xl">

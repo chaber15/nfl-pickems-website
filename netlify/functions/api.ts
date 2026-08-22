@@ -11,7 +11,7 @@ import {
 } from "../../server/auth";
 import { syncEspnWeek, getGamesForWeek, dbGameToGameData } from "../../server/espn/sync";
 import { getDb, schema } from "../../server/db";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, asc } from "drizzle-orm";
 import {
   pickCorrectness,
   unitsDelta,
@@ -216,6 +216,63 @@ async function handleUserPicks(event: HandlerEvent) {
     picks[r.game.id] = { pick: r.pick.pick, isConfidenceBet: r.pick.isConfidenceBet };
   }
   return json(200, { picks });
+}
+
+async function handleWeekPicks(event: HandlerEvent) {
+  await requireUser(event);
+  const params = event.queryStringParameters ?? {};
+  const seasonType = Number(params.seasonType ?? 1);
+  const week = Number(params.week ?? 2);
+  const db = getDb();
+
+  const games = await getGamesForWeek(seasonType, week);
+
+  const users = await db
+    .select({
+      id: schema.users.id,
+      username: schema.users.username,
+    })
+    .from(schema.users)
+    .where(eq(schema.users.isBanned, false))
+    .orderBy(asc(schema.users.username));
+
+  const [weekRow] = await db
+    .select()
+    .from(schema.weeks)
+    .where(and(eq(schema.weeks.seasonType, seasonType), eq(schema.weeks.weekNumber, week)))
+    .limit(1);
+
+  const pickRows =
+    weekRow != null
+      ? await db
+          .select({
+            userId: schema.picks.userId,
+            gameId: schema.picks.gameId,
+            pick: schema.picks.pick,
+            isConfidenceBet: schema.picks.isConfidenceBet,
+          })
+          .from(schema.picks)
+          .innerJoin(schema.games, eq(schema.picks.gameId, schema.games.id))
+          .where(eq(schema.games.weekId, weekRow.id))
+      : [];
+
+  const byUser = new Map<
+    string,
+    Record<string, { pick: "favorite" | "underdog"; isConfidenceBet: boolean }>
+  >();
+  for (const row of pickRows) {
+    const bucket = byUser.get(row.userId) ?? {};
+    bucket[row.gameId] = { pick: row.pick, isConfidenceBet: row.isConfidenceBet };
+    byUser.set(row.userId, bucket);
+  }
+
+  const players = users.map((u) => ({
+    userId: u.id,
+    username: u.username,
+    picks: byUser.get(u.id) ?? {},
+  }));
+
+  return json(200, { games, players, seasonType, week });
 }
 
 async function computeLeaderboard(): Promise<LeaderboardEntry[]> {
@@ -444,6 +501,7 @@ export const handler: Handler = async (event) => {
     }
 
     if (path.startsWith("auth")) return handleAuth(path, event);
+    if (path === "picks/week" && event.httpMethod === "GET") return handleWeekPicks(event);
     if (path === "picks") {
       if (event.httpMethod === "GET") return handleUserPicks(event);
       if (event.httpMethod === "POST") return handlePicks(event);

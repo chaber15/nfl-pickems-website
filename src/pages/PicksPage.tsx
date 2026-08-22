@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { GameData, PickSide, UserPick } from "@shared/types";
+import type { GameData, PickSide, UserPick, WeekComparePlayer } from "@shared/types";
 import { countConfidenceBets, isGameLocked, isPlayoffPhase } from "@shared/scoring";
 import {
   computeLineLockAt,
@@ -16,7 +16,8 @@ import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
 import { getStoredPicks, updateStoredPick } from "../lib/localStorage";
 import { loadWeekGames } from "../lib/loadWeekGames";
-import { apiGames, apiSavePick, apiUserPicks } from "../lib/api";
+import { apiGames, apiSavePick, apiUserPicks, apiWeekPicks, isDemoMode } from "../lib/api";
+import { buildDemoPlayers, crowdLeanForGame } from "../lib/demoCrowd";
 
 function lockInfoForGames(games: GameData[]) {
   const lockAt = computeLineLockAt(games.map((g) => g.kickoffAt));
@@ -32,10 +33,27 @@ export function PicksPage() {
   const { seasonType, week, weekKey, isDemo, ready } = useWeek();
   const [games, setGames] = useState<GameData[]>([]);
   const [picks, setPicks] = useState<Record<string, UserPick>>({});
+  const [players, setPlayers] = useState<WeekComparePlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [linesLocked, setLinesLocked] = useState(false);
   const [lockLabel, setLockLabel] = useState<string | null>(null);
+
+  const loadCrowd = useCallback(
+    async (loadedGames: GameData[]) => {
+      if (!useBackend || isDemoMode()) {
+        setPlayers(buildDemoPlayers(loadedGames, username));
+        return;
+      }
+      try {
+        const res = await apiWeekPicks(seasonType, week);
+        setPlayers(res.players);
+      } catch {
+        setPlayers(buildDemoPlayers(loadedGames, username));
+      }
+    },
+    [useBackend, username, seasonType, week],
+  );
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -81,16 +99,33 @@ export function PicksPage() {
       } else {
         setPicks({});
       }
+
+      await loadCrowd(loadedGames);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load games");
     } finally {
       setLoading(false);
     }
-  }, [useBackend, username, seasonType, week, weekKey, ready]);
+  }, [useBackend, username, seasonType, week, weekKey, ready, loadCrowd]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!useBackend || isDemoMode()) return;
+    const id = window.setInterval(() => {
+      void loadCrowd(games);
+    }, 25000);
+    const onFocus = () => {
+      void loadCrowd(games);
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [loadCrowd, useBackend, games]);
 
   const phase = games[0]?.phase ?? (seasonType === 1 ? "preseason" : seasonType === 3 ? "wildcard" : "regular");
   const allLocked = useMemo(
@@ -176,6 +211,11 @@ export function PicksPage() {
               Demo unlock: these games are final on ESPN. Picks stay editable so you can try the UI.
             </div>
           )}
+          {(!useBackend || isDemoMode()) && players.length > 0 && (
+            <div className="rounded-2xl border-2 border-[var(--accent-blue)]/40 bg-[var(--accent-blue)]/10 px-4 py-3 text-sm font-semibold">
+              Demo sample family under each side — live mode shows real picks as people save them.
+            </div>
+          )}
           {weekReady && (
             <div className="rounded-2xl border-2 border-[var(--accent-green)] bg-[var(--accent-green)]/15 px-4 py-3 text-sm font-bold text-[var(--accent-green)]">
               READY FOR SUNDAY
@@ -229,6 +269,7 @@ export function PicksPage() {
                 onToggleConfidence={() => handleConfidence(game.id)}
                 confidenceDisabled={!picks[game.id]?.isConfidenceBet && confCount >= 5}
                 forceUnlocked={demoUnlock}
+                crowd={crowdLeanForGame(game, players, username)}
               />
             ))}
           </div>
