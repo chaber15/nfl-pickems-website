@@ -5,7 +5,7 @@ import type { FavoriteSide, GameData, PickSide, UserPick } from "@shared/types";
 import { formatKickoff, formatPick, formatSpread, formatJuice, juiceForSide } from "@shared/pickDisplay";
 import { isGameLocked } from "@shared/scoring";
 import type { CrowdName, GameCrowdLean } from "../lib/demoCrowd";
-import { teamLogoSrc, teamLocationName } from "../lib/teamLogos";
+import { teamLogoSrc, teamLocationName, teamColor } from "../lib/teamLogos";
 
 type Venue = FavoriteSide;
 
@@ -78,7 +78,7 @@ function useFineHover(): boolean {
   return fine;
 }
 
-function CrowdLean({ crowd }: { crowd: GameCrowdLean }) {
+function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
   const [pinned, setPinned] = useState(false);
   const [hovered, setHovered] = useState(false);
   const fineHover = useFineHover();
@@ -90,6 +90,8 @@ function CrowdLean({ crowd }: { crowd: GameCrowdLean }) {
   const awayPct = picked ? (crowd.away.length / picked) * 100 : 0;
   const homePct = picked ? (crowd.home.length / picked) * 100 : 0;
   const open = pinned || (fineHover && hovered);
+  const awayColor = teamColor(game.awayAbbrev);
+  const homeColor = teamColor(game.homeAbbrev);
 
   return (
     <div
@@ -118,12 +120,15 @@ function CrowdLean({ crowd }: { crowd: GameCrowdLean }) {
           {picked > 0 && (
             <span className="absolute inset-0 flex">
               <span
-                className="h-full bg-[var(--text-muted)]/35"
-                style={{ width: `${awayPct}%` }}
+                className="h-full min-w-0"
+                style={{ width: `${awayPct}%`, backgroundColor: awayColor }}
               />
+              {crowd.away.length > 0 && crowd.home.length > 0 && (
+                <span className="h-full w-0.5 shrink-0 bg-white" aria-hidden />
+              )}
               <span
-                className="h-full bg-[var(--accent-blue)]/55"
-                style={{ width: `${homePct}%` }}
+                className="h-full min-w-0"
+                style={{ width: `${homePct}%`, backgroundColor: homeColor }}
               />
             </span>
           )}
@@ -357,7 +362,7 @@ export function GameCard({
         </div>
       )}
 
-      {crowd && <CrowdLean crowd={crowd} />}
+      {crowd && <CrowdLean crowd={crowd} game={game} />}
 
       {!locked && hasLine && !isPlayoff && (
         <button
