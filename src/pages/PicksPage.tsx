@@ -10,6 +10,7 @@ import {
 } from "@shared/lineLock";
 import { toUserPickMap } from "@shared/statsCompute";
 import { AppShell } from "../components/AppShell";
+import { FieldFrame } from "../components/FieldFrame";
 import { GameCard, GameCardSkeleton } from "../components/GameCard";
 import { ConfidenceBetCounter } from "../components/ConfidenceBetCounter";
 import { useAuth } from "../lib/authContext";
@@ -192,6 +193,7 @@ export function PicksPage() {
 
   return (
     <AppShell games={games}>
+      <FieldFrame>
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="space-y-3">
           <h2 className="font-display text-3xl sm:text-4xl">Make Your Picks</h2>
@@ -275,6 +277,7 @@ export function PicksPage() {
           </div>
         )}
       </div>
+      </FieldFrame>
     </AppShell>
   );
 }
