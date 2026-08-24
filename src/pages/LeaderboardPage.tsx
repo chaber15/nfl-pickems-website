@@ -1,21 +1,36 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Crown } from "@phosphor-icons/react";
 import type { GameData, LeaderboardEntry } from "@shared/types";
 import { AppShell } from "../components/AppShell";
-import { apiLeaderboard } from "../lib/api";
+import { apiLeaderboard, isDemoMode } from "../lib/api";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
 import { getStoredPicks } from "../lib/localStorage";
 import { loadWeekGames } from "../lib/loadWeekGames";
 import { computeLeaderboardFromLocal } from "@shared/statsCompute";
+import { DEMO_CROWD_NAMES } from "../lib/demoCrowd";
+import { isCrowdNameVisible, setCrowdNameVisible } from "../lib/crowdVisibility";
+
+function emptyEntry(username: string): LeaderboardEntry {
+  return {
+    userId: `demo-${username}`,
+    username,
+    winPct: 0,
+    correct: 0,
+    total: 0,
+    confidencePl: 0,
+    weeksComplete: 0,
+  };
+}
 
 export function LeaderboardPage() {
   const { username, useBackend } = useAuth();
-  const { seasonType, week, weekKey, ready } = useWeek();
+  const { seasonType, week, weekKey, ready, isDemo } = useWeek();
   const [mode, setMode] = useState<"winPct" | "pl">("winPct");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [games, setGames] = useState<GameData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [visibilityTick, setVisibilityTick] = useState(0);
 
   useEffect(() => {
     if (!ready) return;
@@ -48,11 +63,28 @@ export function LeaderboardPage() {
     })();
   }, [username, useBackend, seasonType, week, weekKey, ready]);
 
-  const sorted = [...entries].sort((a, b) =>
-    mode === "winPct"
-      ? b.winPct - a.winPct || b.confidencePl - a.confidencePl
-      : b.confidencePl - a.confidencePl || b.winPct - a.winPct,
-  );
+  const sorted = useMemo(() => {
+    void visibilityTick;
+    const list = [...entries].sort((a, b) =>
+      mode === "winPct"
+        ? b.winPct - a.winPct || b.confidencePl - a.confidencePl
+        : b.confidencePl - a.confidencePl || b.winPct - a.winPct,
+    );
+    // Demo family sits on the same board so lean visibility is just a row checkbox
+    if (isDemo || !useBackend || isDemoMode()) {
+      for (const name of DEMO_CROWD_NAMES) {
+        if (!list.some((e) => e.username === name)) {
+          list.push(emptyEntry(name));
+        }
+      }
+    }
+    return list;
+  }, [entries, mode, isDemo, useBackend, visibilityTick]);
+
+  const toggleLean = (name: string, checked: boolean) => {
+    setCrowdNameVisible(name, checked);
+    setVisibilityTick((t) => t + 1);
+  };
 
   return (
     <AppShell games={games}>
@@ -84,7 +116,8 @@ export function LeaderboardPage() {
           <p className="text-sm text-[var(--text-muted)]">
             {mode === "winPct"
               ? "Win % counts every final game. Missing a pick counts as wrong."
-              : "Confidence P/L only counts weeks with exactly 5 ★ bets (playoffs: all games auto-count)."}
+              : "Confidence P/L only counts weeks with exactly 5 ★ bets (playoffs: all games auto-count)."}{" "}
+            Uncheck a player to hide their name on the pick lean — they still count in the bar.
           </p>
         </div>
 
@@ -100,6 +133,9 @@ export function LeaderboardPage() {
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="text-[var(--text-muted)]">
+                    <th className="w-12 px-4 py-3 text-center font-semibold" title="Show on pick lean">
+                      <span className="sr-only">Show on lean</span>✓
+                    </th>
                     <th className="px-4 py-3 font-semibold">Rank</th>
                     <th className="px-4 py-3 font-semibold">Player</th>
                     <th className="px-4 py-3 font-semibold">
@@ -117,22 +153,37 @@ export function LeaderboardPage() {
                         i === 0 ? "bg-[var(--accent-gold)]/10" : ""
                       }`}
                     >
+                      <td className="px-4 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          className="size-5 accent-[var(--accent-green)]"
+                          checked={isCrowdNameVisible(entry.username)}
+                          onChange={(e) => toggleLean(entry.username, e.target.checked)}
+                          aria-label={`Show ${entry.username} on pick lean`}
+                        />
+                      </td>
                       <td className="px-4 py-3 font-mono">
-                        {i + 1}
-                        {i === 0 && (
+                        {entry.total > 0 ? i + 1 : "—"}
+                        {i === 0 && entry.total > 0 && (
                           <Crown size={16} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
                         )}
                       </td>
                       <td className="px-4 py-3 font-semibold">{entry.username}</td>
                       <td className="px-4 py-3 font-mono">
-                        {mode === "winPct"
-                          ? `${entry.winPct.toFixed(1)}%`
-                          : entry.confidencePl.toFixed(2)}
+                        {entry.total === 0
+                          ? "—"
+                          : mode === "winPct"
+                            ? `${entry.winPct.toFixed(1)}%`
+                            : entry.confidencePl.toFixed(2)}
                       </td>
                       <td className="px-4 py-3 font-mono">
-                        {entry.correct.toFixed(entry.correct % 1 === 0 ? 0 : 1)}/{entry.total}
+                        {entry.total === 0
+                          ? "—"
+                          : `${entry.correct.toFixed(entry.correct % 1 === 0 ? 0 : 1)}/${entry.total}`}
                       </td>
-                      <td className="px-4 py-3 font-mono">{entry.weeksComplete}</td>
+                      <td className="px-4 py-3 font-mono">
+                        {entry.total === 0 ? "—" : entry.weeksComplete}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -144,22 +195,41 @@ export function LeaderboardPage() {
                 <article
                   key={entry.userId}
                   className={`rounded-2xl border-2 p-4 ${
-                    i === 0
+                    i === 0 && entry.total > 0
                       ? "border-[var(--accent-gold)] bg-[var(--accent-gold)]/10"
                       : "border-[var(--border-card)] bg-[var(--bg-card)]"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-lg font-bold">#{i + 1}</span>
-                    {i === 0 && <Crown size={20} weight="fill" className="text-[var(--accent-gold)]" />}
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="flex cursor-pointer items-center gap-3">
+                      <input
+                        type="checkbox"
+                        className="size-5 accent-[var(--accent-green)]"
+                        checked={isCrowdNameVisible(entry.username)}
+                        onChange={(e) => toggleLean(entry.username, e.target.checked)}
+                        aria-label={`Show ${entry.username} on pick lean`}
+                      />
+                      <span className="font-mono text-lg font-bold">
+                        {entry.total > 0 ? `#${i + 1}` : "—"}
+                      </span>
+                    </label>
+                    {i === 0 && entry.total > 0 && (
+                      <Crown size={20} weight="fill" className="text-[var(--accent-gold)]" />
+                    )}
                   </div>
                   <h3 className="mt-2 text-lg font-bold">{entry.username}</h3>
                   <p className="mt-1 font-mono text-2xl font-bold text-[var(--accent-green)]">
-                    {mode === "winPct" ? `${entry.winPct.toFixed(1)}%` : entry.confidencePl.toFixed(2)}
+                    {entry.total === 0
+                      ? "—"
+                      : mode === "winPct"
+                        ? `${entry.winPct.toFixed(1)}%`
+                        : entry.confidencePl.toFixed(2)}
                   </p>
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">
-                    {entry.correct.toFixed(entry.correct % 1 === 0 ? 0 : 1)}/{entry.total} correct
-                  </p>
+                  {entry.total > 0 && (
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">
+                      {entry.correct.toFixed(entry.correct % 1 === 0 ? 0 : 1)}/{entry.total} correct
+                    </p>
+                  )}
                 </article>
               ))}
             </div>

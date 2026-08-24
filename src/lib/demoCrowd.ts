@@ -1,12 +1,19 @@
 import type { GameData, PickSide, WeekComparePlayer, WeekComparePick } from "@shared/types";
+import { isCrowdNameVisible } from "./crowdVisibility";
 
 export type CrowdName = { username: string; star: boolean };
 
 export type GameCrowdLean = {
+  /** Visible names only (Leaderboard “Show on lean”). */
   away: CrowdName[];
   home: CrowdName[];
+  /** Full room counts — every pick counts, even if names are hidden. */
+  awayCount: number;
+  homeCount: number;
   openCount: number;
 };
+
+export const DEMO_CROWD_NAMES = ["dad", "mom", "uncle_joe", "sam"] as const;
 
 export function venueForPick(game: GameData, pick: PickSide): "away" | "home" | null {
   if (!game.favoriteSide) return null;
@@ -16,7 +23,7 @@ export function venueForPick(game: GameData, pick: PickSide): "away" | "home" | 
 
 /** Fake family picks so demo can preview the under-side lean. */
 export function buildDemoPlayers(games: GameData[], you: string | null): WeekComparePlayer[] {
-  const names = [you || "you", "dad", "mom", "uncle_joe", "sam"];
+  const names = [you || "you", ...DEMO_CROWD_NAMES];
   const unique = [...new Set(names)];
   return unique.map((username, ui) => {
     const picks: Record<string, WeekComparePick> = {};
@@ -38,7 +45,10 @@ export function buildDemoPlayers(games: GameData[], you: string | null): WeekCom
   });
 }
 
-/** Build Away/Home name lists for a game, excluding the current user. */
+/**
+ * Build Away/Home lean for a game.
+ * Counts include everyone (except you); name lists only include visible players.
+ */
 export function crowdLeanForGame(
   game: GameData,
   players: WeekComparePlayer[],
@@ -46,6 +56,8 @@ export function crowdLeanForGame(
 ): GameCrowdLean {
   const away: CrowdName[] = [];
   const home: CrowdName[] = [];
+  let awayCount = 0;
+  let homeCount = 0;
   let openCount = 0;
 
   for (const p of players) {
@@ -57,9 +69,15 @@ export function crowdLeanForGame(
     }
     const venue = venueForPick(game, entry.pick);
     const row = { username: p.username, star: entry.isConfidenceBet };
-    if (venue === "away") away.push(row);
-    else if (venue === "home") home.push(row);
+    const showName = isCrowdNameVisible(p.username);
+    if (venue === "away") {
+      awayCount++;
+      if (showName) away.push(row);
+    } else if (venue === "home") {
+      homeCount++;
+      if (showName) home.push(row);
+    }
   }
 
-  return { away, home, openCount };
+  return { away, home, awayCount, homeCount, openCount };
 }

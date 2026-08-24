@@ -83,12 +83,12 @@ function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
   const [hovered, setHovered] = useState(false);
   const fineHover = useFineHover();
 
-  const hasAnyone = crowd.away.length > 0 || crowd.home.length > 0 || crowd.openCount > 0;
+  const hasAnyone = crowd.awayCount > 0 || crowd.homeCount > 0 || crowd.openCount > 0;
   if (!hasAnyone) return null;
 
-  const picked = crowd.away.length + crowd.home.length;
-  const awayPct = picked ? (crowd.away.length / picked) * 100 : 0;
-  const homePct = picked ? (crowd.home.length / picked) * 100 : 0;
+  const picked = crowd.awayCount + crowd.homeCount;
+  const awayPct = picked ? (crowd.awayCount / picked) * 100 : 0;
+  const homePct = picked ? (crowd.homeCount / picked) * 100 : 0;
   const open = pinned || (fineHover && hovered);
   const awayColor = teamColor(game.awayAbbrev);
   const homeColor = teamColor(game.homeAbbrev);
@@ -107,11 +107,11 @@ function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
         type="button"
         onClick={() => setPinned((v) => !v)}
         aria-expanded={open}
-        aria-label={`Crowd lean: ${crowd.away.length} away, ${crowd.home.length} home — show names`}
+        aria-label={`Crowd lean: ${crowd.awayCount} away, ${crowd.homeCount} home — show names`}
         className="flex w-full items-center gap-2 rounded-lg py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)]"
       >
         <span className="w-5 shrink-0 text-center font-mono text-xs font-bold tabular-nums text-[var(--text-muted)]">
-          {crowd.away.length}
+          {crowd.awayCount}
         </span>
         <span
           className="relative h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--border-card)]"
@@ -123,7 +123,7 @@ function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
                 className="h-full min-w-0"
                 style={{ width: `${awayPct}%`, backgroundColor: awayColor }}
               />
-              {crowd.away.length > 0 && crowd.home.length > 0 && (
+              {crowd.awayCount > 0 && crowd.homeCount > 0 && (
                 <span className="h-full w-0.5 shrink-0 bg-white" aria-hidden />
               )}
               <span
@@ -134,7 +134,7 @@ function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
           )}
         </span>
         <span className="w-5 shrink-0 text-center font-mono text-xs font-bold tabular-nums text-[var(--text-muted)]">
-          {crowd.home.length}
+          {crowd.homeCount}
         </span>
       </button>
 
