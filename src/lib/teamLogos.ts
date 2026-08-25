@@ -103,4 +103,5 @@ export function teamColor(abbrev: string | null | undefined): string {
   return TEAM_COLORS[resolveAbbrev(abbrev)] ?? "#5c6b7a";
 }
 
-export const NFL_LOGO_SRC = "/brand/nfltransparent.jpeg";
+/** 93×128 WebP (~4 KB) — sized for sidebar/header display. */
+export const NFL_LOGO_SRC = "/brand/nfl-shield.webp";
