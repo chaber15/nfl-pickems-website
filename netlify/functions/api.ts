@@ -467,6 +467,26 @@ async function handleAdmin(path: string, event: HandlerEvent) {
     return json(200, result);
   }
 
+  if (event.httpMethod === "GET") {
+    const users = await db
+      .select({
+        id: schema.users.id,
+        username: schema.users.username,
+        isBanned: schema.users.isBanned,
+        isAdmin: schema.users.isAdmin,
+      })
+      .from(schema.users)
+      .where(ne(schema.users.id, user.id));
+    let registrationOpen = true;
+    try {
+      const [settings] = await db.select().from(schema.siteSettings).limit(1);
+      registrationOpen = settings?.registrationOpen ?? true;
+    } catch {
+      /* site_settings may not exist yet on fresh DBs */
+    }
+    return json(200, { users, registrationOpen });
+  }
+
   const body = JSON.parse(event.body ?? "{}") as {
     action?: string;
     userId?: string;
@@ -496,20 +516,6 @@ async function handleAdmin(path: string, event: HandlerEvent) {
     return json(200, { ok: true });
   }
 
-  if (event.httpMethod === "GET") {
-    const users = await db
-      .select({
-        id: schema.users.id,
-        username: schema.users.username,
-        isBanned: schema.users.isBanned,
-        isAdmin: schema.users.isAdmin,
-      })
-      .from(schema.users)
-      .where(ne(schema.users.id, user.id));
-    const [settings] = await db.select().from(schema.siteSettings).limit(1);
-    return json(200, { users, registrationOpen: settings?.registrationOpen ?? true });
-  }
-
   return json(400, { error: "Invalid action" });
 }
 
@@ -521,8 +527,8 @@ export const handler: Handler = async (event) => {
       .replace(/\/$/, "");
     const path = rawPath || (event.queryStringParameters?.path ?? "");
 
-    if (path === "games" && event.httpMethod === "GET") return handleGames(event);
-    if (path.startsWith("calendar")) return handleCalendar(path, event);
+    if (path === "games" && event.httpMethod === "GET") return await handleGames(event);
+    if (path.startsWith("calendar")) return await handleCalendar(path, event);
 
     if (!hasDatabase()) {
       return json(503, {
@@ -531,16 +537,16 @@ export const handler: Handler = async (event) => {
       });
     }
 
-    if (path.startsWith("auth")) return handleAuth(path, event);
-    if (path === "picks/week" && event.httpMethod === "GET") return handleWeekPicks(event);
+    if (path.startsWith("auth")) return await handleAuth(path, event);
+    if (path === "picks/week" && event.httpMethod === "GET") return await handleWeekPicks(event);
     if (path === "picks") {
-      if (event.httpMethod === "GET") return handleUserPicks(event);
-      if (event.httpMethod === "POST") return handlePicks(event);
+      if (event.httpMethod === "GET") return await handleUserPicks(event);
+      if (event.httpMethod === "POST") return await handlePicks(event);
     }
-    if (path === "leaderboard" && event.httpMethod === "GET") return handleLeaderboard(event);
-    if (path === "history" && event.httpMethod === "GET") return handleHistory(event);
-    if (path === "stats" && event.httpMethod === "GET") return handleStats(event);
-    if (path.startsWith("admin")) return handleAdmin(path, event);
+    if (path === "leaderboard" && event.httpMethod === "GET") return await handleLeaderboard(event);
+    if (path === "history" && event.httpMethod === "GET") return await handleHistory(event);
+    if (path === "stats" && event.httpMethod === "GET") return await handleStats(event);
+    if (path.startsWith("admin")) return await handleAdmin(path, event);
 
     return json(404, { error: "Not found" });
   } catch (err) {
