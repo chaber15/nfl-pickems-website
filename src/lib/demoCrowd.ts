@@ -1,10 +1,10 @@
-import type { GameData, PickSide, WeekComparePlayer, WeekComparePick } from "@shared/types";
+import type { GameData, PickSide, WeekComparePlayer } from "@shared/types";
 import { isCrowdNameVisible } from "./crowdVisibility";
 
 export type CrowdName = { username: string; star: boolean };
 
 export type GameCrowdLean = {
-  /** Visible names only (Leaderboard “Show on lean”). */
+  /** Visible names only (Leaderboard lean checkboxes). */
   away: CrowdName[];
   home: CrowdName[];
   /** Full room counts — every pick counts, even if names are hidden. */
@@ -13,36 +13,10 @@ export type GameCrowdLean = {
   openCount: number;
 };
 
-export const DEMO_CROWD_NAMES = ["dad", "mom", "uncle_joe", "sam"] as const;
-
 export function venueForPick(game: GameData, pick: PickSide): "away" | "home" | null {
   if (!game.favoriteSide) return null;
   if (pick === "favorite") return game.favoriteSide;
   return game.favoriteSide === "home" ? "away" : "home";
-}
-
-/** Fake family picks so demo can preview the under-side lean. */
-export function buildDemoPlayers(games: GameData[], you: string | null): WeekComparePlayer[] {
-  const names = [you || "you", ...DEMO_CROWD_NAMES];
-  const unique = [...new Set(names)];
-  return unique.map((username, ui) => {
-    const picks: Record<string, WeekComparePick> = {};
-    games.forEach((g, gi) => {
-      if (!g.favoriteSide || g.spread == null) return;
-      // Leave one person blank on first game to show “still open”
-      if (ui === unique.length - 1 && gi === 0) return;
-      const pick: PickSide = (ui + gi) % 3 === 0 ? "underdog" : "favorite";
-      picks[g.id] = {
-        pick,
-        isConfidenceBet: gi < 5 && (ui + gi) % 2 === 0,
-      };
-    });
-    return {
-      userId: `demo-${username}`,
-      username,
-      picks,
-    };
-  });
 }
 
 /**

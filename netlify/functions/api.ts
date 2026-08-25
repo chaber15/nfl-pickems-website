@@ -78,7 +78,7 @@ async function handleAuth(path: string, event: HandlerEvent) {
 async function handleGames(event: HandlerEvent) {
   const params = event.queryStringParameters ?? {};
   const seasonType = Number(params.seasonType ?? 1);
-  const week = Number(params.week ?? 2);
+  const week = Number(params.week ?? 4);
 
   if (hasDatabase()) {
     try {
@@ -194,7 +194,7 @@ async function handleUserPicks(event: HandlerEvent) {
   const { user } = await requireUser(event);
   const params = event.queryStringParameters ?? {};
   const seasonType = Number(params.seasonType ?? 1);
-  const week = Number(params.week ?? 2);
+  const week = Number(params.week ?? 4);
   const db = getDb();
 
   const [weekRow] = await db
@@ -222,7 +222,7 @@ async function handleWeekPicks(event: HandlerEvent) {
   await requireUser(event);
   const params = event.queryStringParameters ?? {};
   const seasonType = Number(params.seasonType ?? 1);
-  const week = Number(params.week ?? 2);
+  const week = Number(params.week ?? 4);
   const db = getDb();
 
   const games = await getGamesForWeek(seasonType, week);
@@ -275,14 +275,23 @@ async function handleWeekPicks(event: HandlerEvent) {
   return json(200, { games, players, seasonType, week });
 }
 
-async function computeLeaderboard(): Promise<LeaderboardEntry[]> {
+async function computeLeaderboard(filter?: {
+  seasonType: number;
+  week: number;
+}): Promise<LeaderboardEntry[]> {
   const db = getDb();
   const activeUsers = await db.select().from(schema.users).where(eq(schema.users.isBanned, false));
 
-  const allGames = await db
+  let allGames = await db
     .select({ game: schema.games, week: schema.weeks })
     .from(schema.games)
     .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id));
+
+  if (filter) {
+    allGames = allGames.filter(
+      (r) => r.week.seasonType === filter.seasonType && r.week.weekNumber === filter.week,
+    );
+  }
 
   const allPicks = await db
     .select({ pick: schema.picks, game: schema.games, week: schema.weeks })
@@ -348,6 +357,9 @@ async function computeLeaderboard(): Promise<LeaderboardEntry[]> {
       }
     }
 
+    // Skip users with no graded games in a weekly board (keeps mini board clean)
+    if (filter && total === 0 && confidencePl === 0) continue;
+
     entries.push({
       userId: u.id,
       username: u.username,
@@ -363,9 +375,16 @@ async function computeLeaderboard(): Promise<LeaderboardEntry[]> {
   return entries;
 }
 
-async function handleLeaderboard() {
-  const entries = await computeLeaderboard();
-  return json(200, { entries });
+async function handleLeaderboard(event: HandlerEvent) {
+  const params = event.queryStringParameters ?? {};
+  const seasonType = params.seasonType != null ? Number(params.seasonType) : null;
+  const week = params.week != null ? Number(params.week) : null;
+  const filter =
+    seasonType != null && week != null && Number.isFinite(seasonType) && Number.isFinite(week)
+      ? { seasonType, week }
+      : undefined;
+  const entries = await computeLeaderboard(filter);
+  return json(200, { entries, scope: filter ? "week" : "overall", ...filter });
 }
 
 async function handleHistory(event: HandlerEvent) {
@@ -506,7 +525,7 @@ export const handler: Handler = async (event) => {
       if (event.httpMethod === "GET") return handleUserPicks(event);
       if (event.httpMethod === "POST") return handlePicks(event);
     }
-    if (path === "leaderboard" && event.httpMethod === "GET") return handleLeaderboard();
+    if (path === "leaderboard" && event.httpMethod === "GET") return handleLeaderboard(event);
     if (path === "history" && event.httpMethod === "GET") return handleHistory(event);
     if (path === "stats" && event.httpMethod === "GET") return handleStats(event);
     if (path.startsWith("admin")) return handleAdmin(path, event);

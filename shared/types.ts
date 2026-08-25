@@ -112,6 +112,7 @@ export interface WeekCompareResponse {
 }
 
 export const CONFIDENCE_BETS_PER_WEEK = 5;
-export const DEMO_WEEK_KEY = "preseason-2";
+/** ESPN week 4 = fan Preseason Week 3 (HOF is ESPN week 1). */
+export const DEMO_WEEK_KEY = "preseason-4";
 export const DEMO_SEASON_TYPE = 1;
-export const DEMO_WEEK = 2;
+export const DEMO_WEEK = 4;

@@ -80,8 +80,15 @@ export async function apiSavePick(body: {
   await request("/picks", { method: "POST", body: JSON.stringify(body) });
 }
 
-export async function apiLeaderboard(): Promise<{ entries: LeaderboardEntry[] }> {
-  return request("/leaderboard");
+export async function apiLeaderboard(
+  seasonType?: number,
+  week?: number,
+): Promise<{ entries: LeaderboardEntry[] }> {
+  const params = new URLSearchParams();
+  if (seasonType != null) params.set("seasonType", String(seasonType));
+  if (week != null) params.set("week", String(week));
+  const qs = params.toString();
+  return request(`/leaderboard${qs ? `?${qs}` : ""}`);
 }
 
 export async function apiHistory(

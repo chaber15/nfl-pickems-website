@@ -18,7 +18,7 @@ import { useWeek } from "../lib/weekContext";
 import { getStoredPicks, updateStoredPick } from "../lib/localStorage";
 import { loadWeekGames } from "../lib/loadWeekGames";
 import { apiGames, apiSavePick, apiUserPicks, apiWeekPicks, isDemoMode } from "../lib/api";
-import { buildDemoPlayers, crowdLeanForGame } from "../lib/demoCrowd";
+import { crowdLeanForGame } from "../lib/demoCrowd";
 
 function lockInfoForGames(games: GameData[]) {
   const lockAt = computeLineLockAt(games.map((g) => g.kickoffAt));
@@ -41,19 +41,19 @@ export function PicksPage() {
   const [lockLabel, setLockLabel] = useState<string | null>(null);
 
   const loadCrowd = useCallback(
-    async (loadedGames: GameData[]) => {
+    async (_loadedGames: GameData[]) => {
       if (!useBackend || isDemoMode()) {
-        setPlayers(buildDemoPlayers(loadedGames, username));
+        setPlayers([]);
         return;
       }
       try {
         const res = await apiWeekPicks(seasonType, week);
         setPlayers(res.players);
       } catch {
-        setPlayers(buildDemoPlayers(loadedGames, username));
+        setPlayers([]);
       }
     },
-    [useBackend, username, seasonType, week],
+    [useBackend, seasonType, week],
   );
 
   const load = useCallback(async () => {
@@ -211,11 +211,6 @@ export function PicksPage() {
           {demoUnlock && (
             <div className="rounded-2xl border-2 border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 px-4 py-3 text-sm font-semibold">
               Demo unlock: these games are final on ESPN. Picks stay editable so you can try the UI.
-            </div>
-          )}
-          {(!useBackend || isDemoMode()) && players.length > 0 && (
-            <div className="rounded-2xl border-2 border-[var(--accent-blue)]/40 bg-[var(--accent-blue)]/10 px-4 py-3 text-sm font-semibold">
-              Demo sample family under each side — live mode shows real picks as people save them.
             </div>
           )}
           {weekReady && (

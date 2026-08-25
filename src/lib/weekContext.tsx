@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { detectCurrentWeek } from "@shared/espnClient";
 import { DEMO_SEASON_TYPE, DEMO_WEEK } from "@shared/types";
-import { isDemoSlate, weekLabel, weekStorageKey } from "@shared/weekUtils";
+import { clampToAvailableWeek, isDemoSlate, weekLabel, weekStorageKey } from "@shared/weekUtils";
 import { isDemoMode } from "./api";
 
 interface WeekContextValue {
@@ -18,8 +18,8 @@ const WeekContext = createContext<WeekContextValue | null>(null);
 
 export function WeekProvider({ children }: { children: ReactNode }) {
   const demoDefault = isDemoMode();
-  const [seasonType, setSeasonType] = useState(demoDefault ? DEMO_SEASON_TYPE : 2);
-  const [week, setWeek] = useState(demoDefault ? DEMO_WEEK : 1);
+  const [seasonType, setSeasonType] = useState(DEMO_SEASON_TYPE);
+  const [week, setWeek] = useState(DEMO_WEEK);
   const [ready, setReady] = useState(demoDefault);
 
   useEffect(() => {
@@ -32,11 +32,12 @@ export function WeekProvider({ children }: { children: ReactNode }) {
       try {
         const current = await detectCurrentWeek();
         if (!cancelled) {
-          setSeasonType(current.seasonType);
-          setWeek(current.week);
+          const clamped = clampToAvailableWeek(current.seasonType, current.week);
+          setSeasonType(clamped.seasonType);
+          setWeek(clamped.week);
         }
       } catch {
-        /* keep defaults */
+        /* keep Pre 3 default */
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -55,8 +56,9 @@ export function WeekProvider({ children }: { children: ReactNode }) {
       isDemo: isDemoSlate(seasonType, week) && demoDefault,
       ready,
       setWeekSelection: (nextSeasonType, nextWeek) => {
-        setSeasonType(nextSeasonType);
-        setWeek(nextWeek);
+        const clamped = clampToAvailableWeek(nextSeasonType, nextWeek);
+        setSeasonType(clamped.seasonType);
+        setWeek(clamped.week);
       },
     }),
     [seasonType, week, ready, demoDefault],

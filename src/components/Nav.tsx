@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { useAuth } from "../lib/authContext";
 import { NFL_LOGO_SRC } from "../lib/teamLogos";
+import { MiniWeeklyLeaderboard } from "./MiniWeeklyLeaderboard";
 
 const links = [
   { to: "/", label: "Picks", icon: Football },
@@ -34,7 +35,7 @@ export function Sidebar() {
           NFL Pick&apos;ems
         </h1>
       </Link>
-      <nav className="flex flex-1 flex-col gap-2">
+      <nav className="flex flex-col gap-2">
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -65,14 +66,19 @@ export function Sidebar() {
           </NavLink>
         )}
       </nav>
-      <button
-        type="button"
-        onClick={() => logout()}
-        className="mt-4 flex min-h-12 items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-card-elevated)]"
-      >
-        <SignOut size={22} weight="bold" />
-        Switch user
-      </button>
+
+      <MiniWeeklyLeaderboard />
+
+      <div className="mt-auto pt-4">
+        <button
+          type="button"
+          onClick={() => logout()}
+          className="flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-card-elevated)]"
+        >
+          <SignOut size={22} weight="bold" />
+          Switch user
+        </button>
+      </div>
     </aside>
   );
 }
