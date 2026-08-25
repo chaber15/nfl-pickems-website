@@ -82,7 +82,11 @@ async function handleGames(event: HandlerEvent) {
 
   if (hasDatabase()) {
     try {
-      const games = await getGamesForWeek(seasonType, week);
+      let games = await getGamesForWeek(seasonType, week);
+      if (games.length === 0) {
+        await syncEspnWeek(seasonType, week);
+        games = await getGamesForWeek(seasonType, week);
+      }
       if (games.length > 0) {
         return json(200, { games, seasonType, week, source: "db" });
       }
@@ -122,10 +126,12 @@ async function handlePicks(event: HandlerEvent) {
     .select({ game: schema.games, week: schema.weeks })
     .from(schema.games)
     .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
-    .where(eq(schema.games.id, body.gameId))
+    .where(eq(schema.games.espnEventId, body.gameId))
     .limit(1);
 
-  if (!row) return json(404, { error: "Game not found" });
+  if (!row) return json(404, { error: "Game not found — refresh the page to sync the slate" });
+
+  const dbGameId = row.game.id;
 
   const game = dbGameToGameData(row.game, row.week);
   if (new Date() >= new Date(game.kickoffAt)) {
@@ -135,7 +141,7 @@ async function handlePicks(event: HandlerEvent) {
   const [existing] = await db
     .select()
     .from(schema.picks)
-    .where(and(eq(schema.picks.userId, user.id), eq(schema.picks.gameId, body.gameId)))
+    .where(and(eq(schema.picks.userId, user.id), eq(schema.picks.gameId, dbGameId)))
     .limit(1);
 
   if (body.action === "toggle_confidence") {
@@ -151,7 +157,7 @@ async function handlePicks(event: HandlerEvent) {
       .where(and(eq(schema.picks.userId, user.id), eq(schema.games.weekId, row.week.id)));
 
     const confCount = weekPicks.filter(
-      (p) => p.picks.isConfidenceBet && p.picks.gameId !== body.gameId,
+      (p) => p.picks.isConfidenceBet && p.picks.gameId !== dbGameId,
     ).length;
     const next = !existing.isConfidenceBet;
     if (next && confCount >= 5) return json(400, { error: "Max 5 confidence bets per week" });
@@ -182,7 +188,7 @@ async function handlePicks(event: HandlerEvent) {
     .insert(schema.picks)
     .values({
       userId: user.id,
-      gameId: body.gameId,
+      gameId: dbGameId,
       pick: body.pick,
       isConfidenceBet: isPlayoffPhase(game.phase),
     })
@@ -213,7 +219,7 @@ async function handleUserPicks(event: HandlerEvent) {
 
   const picks: Record<string, { pick: string; isConfidenceBet: boolean }> = {};
   for (const r of rows) {
-    picks[r.game.id] = { pick: r.pick.pick, isConfidenceBet: r.pick.isConfidenceBet };
+    picks[r.game.espnEventId] = { pick: r.pick.pick, isConfidenceBet: r.pick.isConfidenceBet };
   }
   return json(200, { picks });
 }
@@ -247,7 +253,7 @@ async function handleWeekPicks(event: HandlerEvent) {
       ? await db
           .select({
             userId: schema.picks.userId,
-            gameId: schema.picks.gameId,
+            espnEventId: schema.games.espnEventId,
             pick: schema.picks.pick,
             isConfidenceBet: schema.picks.isConfidenceBet,
           })
@@ -262,7 +268,7 @@ async function handleWeekPicks(event: HandlerEvent) {
   >();
   for (const row of pickRows) {
     const bucket = byUser.get(row.userId) ?? {};
-    bucket[row.gameId] = { pick: row.pick, isConfidenceBet: row.isConfidenceBet };
+    bucket[row.espnEventId] = { pick: row.pick, isConfidenceBet: row.isConfidenceBet };
     byUser.set(row.userId, bucket);
   }
 
@@ -408,10 +414,13 @@ async function handleHistory(event: HandlerEvent) {
   const userPicks = await db.select().from(schema.picks).where(eq(schema.picks.userId, user.id));
 
   const games = gameRows.map(({ game, week: w }) => dbGameToGameData(game, w));
+  const espnByDbId = new Map(gameRows.map(({ game }) => [game.id, game.espnEventId]));
   const picks: Record<string, UserPick> = {};
   for (const p of userPicks) {
-    picks[p.gameId] = {
-      gameId: p.gameId,
+    const publicId = espnByDbId.get(p.gameId);
+    if (!publicId) continue;
+    picks[publicId] = {
+      gameId: publicId,
       pick: p.pick,
       isConfidenceBet: p.isConfidenceBet,
     };
@@ -432,10 +441,13 @@ async function handleStats(event: HandlerEvent) {
   const userPicks = await db.select().from(schema.picks).where(eq(schema.picks.userId, user.id));
 
   const games = allGames.map(({ game, week }) => dbGameToGameData(game, week));
+  const espnByDbId = new Map(allGames.map(({ game }) => [game.id, game.espnEventId]));
   const picks: Record<string, UserPick> = {};
   for (const p of userPicks) {
-    picks[p.gameId] = {
-      gameId: p.gameId,
+    const publicId = espnByDbId.get(p.gameId);
+    if (!publicId) continue;
+    picks[publicId] = {
+      gameId: publicId,
       pick: p.pick,
       isConfidenceBet: p.isConfidenceBet,
     };

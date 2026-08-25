@@ -26,7 +26,7 @@ export function dbGameToGameData(
 ): GameData {
   const spread = centsToSpread(game.spread);
   const base: GameData = {
-    id: game.id,
+    id: game.espnEventId,
     espnEventId: game.espnEventId,
     awayTeam: game.awayTeam,
     awayAbbrev: game.awayAbbrev,

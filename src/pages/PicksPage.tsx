@@ -40,6 +40,7 @@ export function PicksPage() {
   const [players, setPlayers] = useState<WeekComparePlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [pickError, setPickError] = useState("");
   const [linesLocked, setLinesLocked] = useState(false);
   const [lockLabel, setLockLabel] = useState<string | null>(null);
 
@@ -166,12 +167,14 @@ export function PicksPage() {
     (isPlayoffPhase(phase) || confCount === 5 || phase === "preseason");
 
   const handlePick = async (gameId: string, side: PickSide) => {
+    setPickError("");
     if (useBackend) {
       try {
         await apiSavePick({ gameId, pick: side });
         void loadCrowd(games);
-      } catch {
-        /* local fallback */
+      } catch (err) {
+        setPickError(err instanceof Error ? err.message : "Failed to save pick");
+        return;
       }
     }
     if (username) {
@@ -254,6 +257,11 @@ export function PicksPage() {
         {error && (
           <div className="rounded-2xl border-2 border-[var(--accent-red)] bg-[var(--accent-red)]/10 px-4 py-3 text-sm font-semibold text-[var(--accent-red)]">
             {error}
+          </div>
+        )}
+        {pickError && (
+          <div className="rounded-2xl border-2 border-[var(--accent-red)] bg-[var(--accent-red)]/10 px-4 py-3 text-sm font-semibold text-[var(--accent-red)]">
+            {pickError}
           </div>
         )}
 

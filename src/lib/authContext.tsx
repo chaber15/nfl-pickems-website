@@ -27,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    (async () => {
+    const refreshSession = async () => {
       try {
         const { user: u } = await apiMe();
         if (u) {
@@ -35,13 +35,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUsername(u.username);
           setStoredUsername(u.username);
           setUseBackend(true);
+        } else {
+          setUser(null);
+          setUseBackend(false);
         }
       } catch {
         setUseBackend(false);
       } finally {
         setLoading(false);
       }
-    })();
+    };
+
+    void refreshSession();
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "pickems_username") void refreshSession();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const login = useCallback(async (name: string) => {
