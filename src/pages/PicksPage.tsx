@@ -20,6 +20,9 @@ import { loadWeekGames } from "../lib/loadWeekGames";
 import { apiGames, apiSavePick, apiUserPicks, apiWeekPicks, isDemoMode } from "../lib/api";
 import { crowdLeanForGame } from "../lib/demoCrowd";
 
+/** Crowd lean refresh while picks can still change (tab visible only). */
+const CROWD_POLL_MS = 60_000;
+
 function lockInfoForGames(games: GameData[]) {
   const lockAt = computeLineLockAt(games.map((g) => g.kickoffAt));
   const locked =
@@ -113,26 +116,34 @@ export function PicksPage() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    if (!useBackend || isDemoMode()) return;
-    const id = window.setInterval(() => {
-      void loadCrowd(games);
-    }, 25000);
-    const onFocus = () => {
-      void loadCrowd(games);
-    };
-    window.addEventListener("focus", onFocus);
-    return () => {
-      window.clearInterval(id);
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [loadCrowd, useBackend, games]);
-
-  const phase = games[0]?.phase ?? (seasonType === 1 ? "preseason" : seasonType === 3 ? "wildcard" : "regular");
   const allLocked = useMemo(
     () => games.length > 0 && games.every((g) => isGameLocked(g.kickoffAt)),
     [games],
   );
+
+  useEffect(() => {
+    if (!useBackend || isDemoMode() || allLocked || games.length === 0) return;
+
+    const refreshCrowd = () => {
+      if (document.visibilityState !== "visible") return;
+      void loadCrowd(games);
+    };
+
+    const id = window.setInterval(refreshCrowd, CROWD_POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadCrowd(games);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [loadCrowd, useBackend, games, allLocked]);
+
+  const phase = games[0]?.phase ?? (seasonType === 1 ? "preseason" : seasonType === 3 ? "wildcard" : "regular");
   const demoUnlock = isDemo && allLocked;
 
   const confCount = useMemo(() => countConfidenceBets(picks), [picks]);
@@ -158,6 +169,7 @@ export function PicksPage() {
     if (useBackend) {
       try {
         await apiSavePick({ gameId, pick: side });
+        void loadCrowd(games);
       } catch {
         /* local fallback */
       }
@@ -179,6 +191,7 @@ export function PicksPage() {
     if (useBackend) {
       try {
         await apiSavePick({ gameId, action: "toggle_confidence" });
+        void loadCrowd(games);
       } catch {
         /* local fallback */
       }
