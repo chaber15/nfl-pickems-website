@@ -7,10 +7,7 @@ export interface WeekOption {
   phase: WeekPhase;
 }
 
-/** Earliest ESPN preseason week we expose (fan “Pre 3” = ESPN week 4). */
-export const MIN_PRESEASON_ESPN_WEEK = 4;
-
-/** Fan-facing preseason week number (HOF is ESPN 1 → not shown). */
+/** Fan-facing preseason week number (HOF is ESPN 1 → not shown). Kept for labels if needed. */
 export function fanPreseasonWeek(espnWeek: number): number {
   return Math.max(1, espnWeek - 1);
 }
@@ -37,15 +34,7 @@ export function phaseFor(seasonType: number, week: number): WeekPhase {
 
 export function buildWeekOptions(): WeekOption[] {
   const options: WeekOption[] = [];
-  // ESPN weeks 1–3 (HOF / Pre 1 / Pre 2) are closed — start at ESPN 4 = fan Pre 3
-  for (let w = MIN_PRESEASON_ESPN_WEEK; w <= 4; w++) {
-    options.push({
-      seasonType: 1,
-      week: w,
-      label: `Preseason Week ${fanPreseasonWeek(w)}`,
-      phase: "preseason",
-    });
-  }
+  // Regular season + playoffs only (preseason beta slate removed)
   for (let w = 1; w <= 18; w++) {
     options.push({
       seasonType: 2,
@@ -89,10 +78,11 @@ export function weekOptionIndex(seasonType: number, week: number): number {
 
 /** Clamp ESPN calendar into the weeks we still offer. */
 export function clampToAvailableWeek(seasonType: number, week: number): { seasonType: number; week: number } {
-  if (seasonType === 1 && week < MIN_PRESEASON_ESPN_WEEK) {
-    return { seasonType: 1, week: MIN_PRESEASON_ESPN_WEEK };
+  // Preseason no longer offered — jump to regular Week 1
+  if (seasonType === 1) {
+    return { seasonType: 2, week: 1 };
   }
   const idx = weekOptionIndex(seasonType, week);
   if (idx >= 0) return { seasonType, week };
-  return { seasonType: 1, week: MIN_PRESEASON_ESPN_WEEK };
+  return { seasonType: DEMO_SEASON_TYPE, week: DEMO_WEEK };
 }

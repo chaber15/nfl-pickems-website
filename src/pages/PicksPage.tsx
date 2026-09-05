@@ -15,7 +15,7 @@ import { GameCard, GameCardSkeleton } from "../components/GameCard";
 import { ConfidenceBetCounter } from "../components/ConfidenceBetCounter";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
-import { getStoredPicks, updateStoredPick } from "../lib/localStorage";
+import { getStoredPicks, saveStoredPicks } from "../lib/localStorage";
 import { loadWeekGames } from "../lib/loadWeekGames";
 import { apiGames, apiSavePick, apiUserPicks, apiWeekPicks, isDemoMode } from "../lib/api";
 import { crowdLeanForGame } from "../lib/demoCrowd";
@@ -95,7 +95,10 @@ export function PicksPage() {
       if (useBackend) {
         try {
           const res = await apiUserPicks(seasonType, week);
-          setPicks(toUserPickMap(res.picks));
+          const mapped = toUserPickMap(res.picks);
+          setPicks(mapped);
+          // Keep local cache in sync so a later update never rebuilds from empty storage
+          if (username) saveStoredPicks(weekKey, username, mapped);
         } catch {
           setPicks(getStoredPicks(weekKey));
         }
@@ -166,6 +169,18 @@ export function PicksPage() {
     pickedCount === games.length &&
     (isPlayoffPhase(phase) || confCount === 5 || phase === "preseason");
 
+  const applyPickUpdate = (gameId: string, update: Partial<UserPick>) => {
+    setPicks((prev) => {
+      const existing = prev[gameId] ?? { gameId, pick: null, isConfidenceBet: false };
+      const next = {
+        ...prev,
+        [gameId]: { ...existing, ...update, gameId },
+      };
+      if (username) saveStoredPicks(weekKey, username, next);
+      return next;
+    });
+  };
+
   const handlePick = async (gameId: string, side: PickSide) => {
     setPickError("");
     if (useBackend) {
@@ -177,13 +192,10 @@ export function PicksPage() {
         return;
       }
     }
-    if (username) {
-      const next = updateStoredPick(weekKey, username, gameId, {
-        pick: side,
-        isConfidenceBet: isPlayoffPhase(phase) ? true : picks[gameId]?.isConfidenceBet ?? false,
-      });
-      setPicks({ ...next });
-    }
+    applyPickUpdate(gameId, {
+      pick: side,
+      isConfidenceBet: isPlayoffPhase(phase) ? true : picks[gameId]?.isConfidenceBet ?? false,
+    });
   };
 
   const handleConfidence = async (gameId: string) => {
@@ -191,20 +203,17 @@ export function PicksPage() {
     if (!current?.pick) return;
     if (!current.isConfidenceBet && confCount >= 5) return;
 
+    const nextConf = !current.isConfidenceBet;
     if (useBackend) {
       try {
         await apiSavePick({ gameId, action: "toggle_confidence" });
         void loadCrowd(games);
-      } catch {
-        /* local fallback */
+      } catch (err) {
+        setPickError(err instanceof Error ? err.message : "Failed to update confidence bet");
+        return;
       }
     }
-    if (username) {
-      const next = updateStoredPick(weekKey, username, gameId, {
-        isConfidenceBet: !current.isConfidenceBet,
-      });
-      setPicks({ ...next });
-    }
+    applyPickUpdate(gameId, { isConfidenceBet: nextConf });
   };
 
   return (

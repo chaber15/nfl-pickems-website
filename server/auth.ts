@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import { eq, and, gt, sql } from "drizzle-orm";
 import { getDb, schema } from "./db";
+import { publicDisplayName } from "../shared/userDisplay";
 
 const SESSION_COOKIE = "pickems_session";
 const SESSION_DAYS = 30;
@@ -39,6 +40,15 @@ export function clearSessionCookie(secure: boolean): string {
   return parts.join("; ");
 }
 
+export function toPublicUser(user: typeof schema.users.$inferSelect) {
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: publicDisplayName(user),
+    isAdmin: user.isAdmin,
+  };
+}
+
 export async function createSession(userId: string): Promise<string> {
   const db = getDb();
   const token = randomBytes(32).toString("hex");
@@ -64,11 +74,11 @@ export async function getUserFromSession(token: string | undefined) {
 
 export async function registerOrLogin(username: string) {
   const db = getDb();
-  const display = username.trim();
-  if (!USERNAME_RE.test(display)) {
+  const loginName = username.trim();
+  if (!USERNAME_RE.test(loginName)) {
     throw new Error("Username must be 3-20 chars: letters, numbers, underscore");
   }
-  const key = display.toLowerCase();
+  const key = loginName.toLowerCase();
 
   const [existing] = await db
     .select()
@@ -79,13 +89,21 @@ export async function registerOrLogin(username: string) {
   if (existing) {
     if (existing.isBanned) throw new Error("Account banned");
     let user = existing;
-    if (existing.username !== display) {
+    if (existing.username !== loginName) {
       const [updated] = await db
         .update(schema.users)
-        .set({ username: display })
+        .set({ username: loginName })
         .where(eq(schema.users.id, existing.id))
         .returning();
       user = updated ?? existing;
+    }
+    if (!user.displayName?.trim()) {
+      const [updated] = await db
+        .update(schema.users)
+        .set({ displayName: user.username })
+        .where(eq(schema.users.id, user.id))
+        .returning();
+      user = updated ?? user;
     }
     const token = await createSession(user.id);
     return { user, token, created: false };
@@ -104,7 +122,8 @@ export async function registerOrLogin(username: string) {
   const [user] = await db
     .insert(schema.users)
     .values({
-      username: display,
+      username: loginName,
+      displayName: loginName,
       isAdmin: adminUsernames.includes(key),
     })
     .returning();

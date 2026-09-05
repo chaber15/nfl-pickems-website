@@ -45,6 +45,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export interface AuthUser {
   id: string;
   username: string;
+  displayName: string;
   isAdmin: boolean;
 }
 
@@ -117,7 +118,16 @@ export async function apiSyncEspn(seasonType?: number, week?: number): Promise<{
   });
 }
 
-export async function apiAdminGet(): Promise<{ users: Array<{ id: string; username: string; isBanned: boolean }>; registrationOpen: boolean }> {
+export async function apiAdminGet(): Promise<{
+  users: Array<{
+    id: string;
+    username: string;
+    displayName: string;
+    isBanned: boolean;
+    isAdmin: boolean;
+  }>;
+  registrationOpen: boolean;
+}> {
   return request("/admin");
 }
 
@@ -125,6 +135,43 @@ export async function apiAdminBan(userId: string): Promise<void> {
   await request("/admin", { method: "POST", body: JSON.stringify({ action: "ban", userId }) });
 }
 
+export async function apiAdminUnban(userId: string): Promise<void> {
+  await request("/admin", { method: "POST", body: JSON.stringify({ action: "unban", userId }) });
+}
+
+export async function apiAdminDeleteUser(userId: string): Promise<void> {
+  await request("/admin", { method: "POST", body: JSON.stringify({ action: "delete", userId }) });
+}
+
+export async function apiAdminSetAdmin(userId: string, isAdmin: boolean): Promise<void> {
+  await request("/admin", {
+    method: "POST",
+    body: JSON.stringify({ action: "set_admin", userId, isAdmin }),
+  });
+}
+
+export async function apiAdminSetDisplayName(userId: string, displayName: string): Promise<void> {
+  await request("/admin", {
+    method: "POST",
+    body: JSON.stringify({ action: "set_display_name", userId, displayName }),
+  });
+}
+
 export async function apiAdminRegistration(open: boolean): Promise<void> {
   await request("/admin", { method: "POST", body: JSON.stringify({ action: "registration", registrationOpen: open }) });
+}
+
+export async function apiAdminFactoryReset(confirm: string): Promise<{
+  deletedUsers: number;
+  deletedPicks: number;
+  deletedGames: number;
+  deletedWeeks: number;
+  deletedSeasons: number;
+  keptAdminUsername: string;
+  synced: { upserted: number; week: number; seasonType: number };
+}> {
+  return request("/admin/reset", {
+    method: "POST",
+    body: JSON.stringify({ confirm }),
+  });
 }

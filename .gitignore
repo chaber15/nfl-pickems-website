@@ -8,3 +8,6 @@ dist
 pixelated nfl logos
 nfl logos
 NFL Logo.jpeg
+
+# Local Netlify folder
+.netlify

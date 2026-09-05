@@ -116,7 +116,7 @@ export function MiniWeeklyLeaderboard() {
               >
                 <span className="w-4 shrink-0 font-mono text-[var(--text-muted)]">{i + 1}</span>
                 <span className="min-w-0 flex-1 truncate">
-                  {e.username}
+                  {e.displayName || e.username}
                   {i === 0 && (
                     <Crown size={12} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
                   )}

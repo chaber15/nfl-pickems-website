@@ -37,7 +37,7 @@ export function WeekProvider({ children }: { children: ReactNode }) {
           setWeek(clamped.week);
         }
       } catch {
-        /* keep Pre 3 default */
+        /* keep Week 1 default */
       } finally {
         if (!cancelled) setReady(true);
       }

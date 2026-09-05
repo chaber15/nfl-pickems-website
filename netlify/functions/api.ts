@@ -8,6 +8,7 @@ import {
   getUserFromSession,
   registerOrLogin,
   logout,
+  toPublicUser,
 } from "../../server/auth";
 import { syncEspnWeek, getGamesForWeek, dbGameToGameData } from "../../server/espn/sync";
 import { getDb, schema } from "../../server/db";
@@ -24,6 +25,8 @@ import type { GameData, LeaderboardEntry, UserPick } from "../../shared/types";
 import { buildHistoryRows, computeUserStats } from "../../shared/statsCompute";
 import { detectCurrentWeek } from "../../shared/espnClient";
 import { buildWeekOptions } from "../../shared/weekUtils";
+import { factoryReset } from "../../server/factoryReset";
+import { normalizeDisplayName, publicDisplayName } from "../../shared/userDisplay";
 
 function json(statusCode: number, body: unknown, headers: Record<string, string> = {}) {
   return {
@@ -53,7 +56,7 @@ async function handleAuth(path: string, event: HandlerEvent) {
   if (path === "auth/me" && event.httpMethod === "GET") {
     const user = await getUserFromSession(token);
     return json(200, {
-      user: user ? { id: user.id, username: user.username, isAdmin: user.isAdmin } : null,
+      user: user ? toPublicUser(user) : null,
     });
   }
 
@@ -62,7 +65,7 @@ async function handleAuth(path: string, event: HandlerEvent) {
     const { user, token: newToken, created } = await registerOrLogin(body.username ?? "");
     return json(
       200,
-      { user: { id: user.id, username: user.username, isAdmin: user.isAdmin }, created },
+      { user: toPublicUser(user), created },
       { "Set-Cookie": buildSessionCookie(newToken, secure) },
     );
   }
@@ -77,8 +80,8 @@ async function handleAuth(path: string, event: HandlerEvent) {
 
 async function handleGames(event: HandlerEvent) {
   const params = event.queryStringParameters ?? {};
-  const seasonType = Number(params.seasonType ?? 1);
-  const week = Number(params.week ?? 4);
+  const seasonType = Number(params.seasonType ?? 2);
+  const week = Number(params.week ?? 1);
 
   if (hasDatabase()) {
     try {
@@ -199,8 +202,8 @@ async function handlePicks(event: HandlerEvent) {
 async function handleUserPicks(event: HandlerEvent) {
   const { user } = await requireUser(event);
   const params = event.queryStringParameters ?? {};
-  const seasonType = Number(params.seasonType ?? 1);
-  const week = Number(params.week ?? 4);
+  const seasonType = Number(params.seasonType ?? 2);
+  const week = Number(params.week ?? 1);
   const db = getDb();
 
   const [weekRow] = await db
@@ -227,8 +230,8 @@ async function handleUserPicks(event: HandlerEvent) {
 async function handleWeekPicks(event: HandlerEvent) {
   await requireUser(event);
   const params = event.queryStringParameters ?? {};
-  const seasonType = Number(params.seasonType ?? 1);
-  const week = Number(params.week ?? 4);
+  const seasonType = Number(params.seasonType ?? 2);
+  const week = Number(params.week ?? 1);
   const db = getDb();
 
   const games = await getGamesForWeek(seasonType, week);
@@ -237,6 +240,7 @@ async function handleWeekPicks(event: HandlerEvent) {
     .select({
       id: schema.users.id,
       username: schema.users.username,
+      displayName: schema.users.displayName,
     })
     .from(schema.users)
     .where(eq(schema.users.isBanned, false))
@@ -275,6 +279,7 @@ async function handleWeekPicks(event: HandlerEvent) {
   const players = users.map((u) => ({
     userId: u.id,
     username: u.username,
+    displayName: publicDisplayName(u),
     picks: byUser.get(u.id) ?? {},
   }));
 
@@ -369,6 +374,7 @@ async function computeLeaderboard(filter?: {
     entries.push({
       userId: u.id,
       username: u.username,
+      displayName: publicDisplayName(u),
       winPct: computeWinPct(correct, total),
       correct,
       total,
@@ -467,11 +473,21 @@ async function handleAdmin(path: string, event: HandlerEvent) {
     return json(200, result);
   }
 
+  if (path === "admin/reset" && event.httpMethod === "POST") {
+    const body = JSON.parse(event.body ?? "{}") as { confirm?: string };
+    if (body.confirm !== "RESET") {
+      return json(400, { error: 'Type RESET to confirm factory reset' });
+    }
+    const result = await factoryReset(user.id);
+    return json(200, result);
+  }
+
   if (event.httpMethod === "GET") {
     const users = await db
       .select({
         id: schema.users.id,
         username: schema.users.username,
+        displayName: schema.users.displayName,
         isBanned: schema.users.isBanned,
         isAdmin: schema.users.isAdmin,
       })
@@ -484,23 +500,65 @@ async function handleAdmin(path: string, event: HandlerEvent) {
     } catch {
       /* site_settings may not exist yet on fresh DBs */
     }
-    return json(200, { users, registrationOpen });
+    return json(200, {
+      users: users.map((u) => ({
+        ...u,
+        displayName: publicDisplayName(u),
+      })),
+      registrationOpen,
+    });
   }
 
   const body = JSON.parse(event.body ?? "{}") as {
     action?: string;
     userId?: string;
     registrationOpen?: boolean;
+    isAdmin?: boolean;
+    displayName?: string;
   };
 
   if (body.action === "ban" && body.userId) {
+    if (body.userId === user.id) {
+      return json(400, { error: "You can’t ban yourself" });
+    }
     await db.update(schema.users).set({ isBanned: true }).where(eq(schema.users.id, body.userId));
+    // Kick any open sessions so they can’t keep using the site
+    await db.delete(schema.sessions).where(eq(schema.sessions.userId, body.userId));
     return json(200, { ok: true });
   }
 
   if (body.action === "unban" && body.userId) {
     await db.update(schema.users).set({ isBanned: false }).where(eq(schema.users.id, body.userId));
     return json(200, { ok: true });
+  }
+
+  if (body.action === "delete" && body.userId) {
+    if (body.userId === user.id) {
+      return json(400, { error: "You can’t delete yourself" });
+    }
+    // Cascades to picks + sessions via FK
+    await db.delete(schema.users).where(eq(schema.users.id, body.userId));
+    return json(200, { ok: true });
+  }
+
+  if (body.action === "set_admin" && body.userId && typeof body.isAdmin === "boolean") {
+    if (body.userId === user.id) {
+      return json(400, { error: "You can’t change your own admin status" });
+    }
+    await db
+      .update(schema.users)
+      .set({ isAdmin: body.isAdmin })
+      .where(eq(schema.users.id, body.userId));
+    return json(200, { ok: true });
+  }
+
+  if (body.action === "set_display_name" && body.userId && typeof body.displayName === "string") {
+    const displayName = normalizeDisplayName(body.displayName);
+    await db
+      .update(schema.users)
+      .set({ displayName })
+      .where(eq(schema.users.id, body.userId));
+    return json(200, { ok: true, displayName });
   }
 
   if (body.action === "registration" && typeof body.registrationOpen === "boolean") {

@@ -42,7 +42,7 @@ export function crowdLeanForGame(
       continue;
     }
     const venue = venueForPick(game, entry.pick);
-    const row = { username: p.username, star: entry.isConfidenceBet };
+    const row = { username: p.displayName || p.username, star: entry.isConfidenceBet };
     const showName = isCrowdNameVisible(p.username);
     if (venue === "away") {
       awayCount++;

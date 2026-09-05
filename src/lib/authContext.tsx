@@ -36,11 +36,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setStoredUsername(u.username);
           setUseBackend(true);
         } else {
+          // Session gone (e.g. after factory reset) — don't keep a ghost local login
           setUser(null);
+          setUsername(null);
           setUseBackend(false);
+          localStorage.removeItem("pickems_username");
         }
       } catch {
+        setUser(null);
+        setUsername(null);
         setUseBackend(false);
+        localStorage.removeItem("pickems_username");
       } finally {
         setLoading(false);
       }
@@ -70,11 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUsername(u.username);
       setStoredUsername(u.username);
       setUseBackend(true);
-    } catch {
-      setStoredUsername(display);
-      setUsername(display);
+    } catch (err) {
       setUser(null);
+      setUsername(null);
       setUseBackend(false);
+      localStorage.removeItem("pickems_username");
+      throw err instanceof Error ? err : new Error("Login failed");
     }
   }, []);
 

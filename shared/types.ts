@@ -41,6 +41,7 @@ export interface StoredPicks {
 export interface LeaderboardEntry {
   userId: string;
   username: string;
+  displayName: string;
   winPct: number;
   correct: number;
   total: number;
@@ -101,6 +102,7 @@ export interface WeekComparePick {
 export interface WeekComparePlayer {
   userId: string;
   username: string;
+  displayName: string;
   picks: Record<string, WeekComparePick>;
 }
 
@@ -112,7 +114,7 @@ export interface WeekCompareResponse {
 }
 
 export const CONFIDENCE_BETS_PER_WEEK = 5;
-/** ESPN week 4 = fan Preseason Week 3 (HOF is ESPN week 1). */
-export const DEMO_WEEK_KEY = "preseason-4";
-export const DEMO_SEASON_TYPE = 1;
-export const DEMO_WEEK = 4;
+/** Default slate when ESPN detect fails / local demo: regular season Week 1. */
+export const DEMO_WEEK_KEY = "regular-1";
+export const DEMO_SEASON_TYPE = 2;
+export const DEMO_WEEK = 1;

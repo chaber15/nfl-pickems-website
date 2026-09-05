@@ -102,6 +102,7 @@ export function computeLeaderboardFromLocal(
   return {
     userId: "local",
     username,
+    displayName: username,
     winPct: computeWinPct(correct, total),
     correct,
     total,

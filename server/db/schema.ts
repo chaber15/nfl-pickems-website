@@ -17,6 +17,8 @@ export const gameStatusEnum = pgEnum("game_status", ["scheduled", "in_progress",
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   username: text("username").notNull().unique(),
+  /** Shown in UI; login still uses username. */
+  displayName: text("display_name"),
   isAdmin: boolean("is_admin").notNull().default(false),
   isBanned: boolean("is_banned").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

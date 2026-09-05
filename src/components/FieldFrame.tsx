@@ -29,7 +29,7 @@ function SideRail({ side }: { side: "left" | "right" }) {
   return (
     <div
       aria-hidden
-      className={`pointer-events-none absolute inset-y-0 z-0 w-[4.5rem] sm:w-20 md:w-24 ${
+      className={`pointer-events-none absolute inset-y-0 z-0 w-8 sm:w-16 md:w-24 ${
         side === "left" ? "left-0" : "right-0"
       }`}
     >
@@ -90,13 +90,13 @@ function SideRail({ side }: { side: "left" | "right" }) {
             style={{ top: `${pct}%` }}
           >
             <span
-              className={`font-display-heavy flex h-7 w-8 items-center justify-center text-3xl leading-none tracking-tight text-[var(--accent-green)] sm:h-8 sm:w-10 sm:text-4xl ${rot}`}
+              className={`font-display-heavy flex h-4 w-4 items-center justify-center text-sm leading-none tracking-tight text-[var(--accent-green)] sm:h-8 sm:w-10 sm:text-4xl ${rot}`}
             >
               {top}
             </span>
-            <span className="h-1.5 w-full shrink-0 sm:h-2" aria-hidden />
+            <span className="h-0.5 w-full shrink-0 sm:h-2" aria-hidden />
             <span
-              className={`font-display-heavy flex h-7 w-8 items-center justify-center text-3xl leading-none tracking-tight text-[var(--accent-green)] sm:h-8 sm:w-10 sm:text-4xl ${rot}`}
+              className={`font-display-heavy flex h-4 w-4 items-center justify-center text-sm leading-none tracking-tight text-[var(--accent-green)] sm:h-8 sm:w-10 sm:text-4xl ${rot}`}
             >
               {bottom}
             </span>
@@ -116,7 +116,7 @@ export function FieldFrame({ children }: { children: ReactNode }) {
     <div className="relative isolate -mx-4 min-h-full sm:-mx-8">
       <SideRail side="left" />
       <SideRail side="right" />
-      <div className="relative z-10 px-[4.75rem] sm:px-20 md:px-24">{children}</div>
+      <div className="relative z-10 px-9 sm:px-16 md:px-24">{children}</div>
     </div>
   );
 }

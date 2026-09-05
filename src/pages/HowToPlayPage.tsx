@@ -36,9 +36,9 @@ export function HowToPlayPage() {
 
         <Section title="2. Confidence bets (★)">
           <p>
-            In the regular season and preseason, mark exactly{" "}
+            In the regular season, mark exactly{" "}
             <strong className="text-[var(--accent-gold)]">5 games</strong> as confidence bets each week.
-            Those are the only games that count toward the units / P&amp;L board.
+            Those are the only games that count toward the units / profit and loss (P&amp;L) board.
           </p>
           <p>
             In the <strong className="text-[var(--text-primary)]">playoffs</strong>, every game you pick
@@ -49,8 +49,8 @@ export function HowToPlayPage() {
         <Section title="3. Scoring">
           <ul className="list-disc space-y-2 pl-5">
             <li>
-              <strong className="text-[var(--text-primary)]">Win %</strong> — correct ATS picks ÷ final
-              games. Missed picks count against you.
+              <strong className="text-[var(--text-primary)]">Win %</strong> — correct against-the-spread
+              (ATS) picks ÷ final games. Missed picks count against you.
             </li>
             <li>
               <strong className="text-[var(--text-primary)]">Confidence P&amp;L</strong> — units won/lost

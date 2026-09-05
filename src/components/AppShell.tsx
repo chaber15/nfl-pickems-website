@@ -18,7 +18,7 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, games = [], banner, showWeekSelector = true }: AppShellProps) {
-  const { username, logout } = useAuth();
+  const { username, user, logout } = useAuth();
   const { isDemo } = useWeek();
   const displayBanner = banner ?? (isDemo ? "DEMO MODE" : undefined);
 
@@ -48,23 +48,29 @@ export function AppShell({ children, games = [], banner, showWeekSelector = true
                   </p>
                 )}
                 {username && (
-                  <p className="text-sm font-semibold">
-                    Playing as <span className="font-mono text-[var(--accent-green)]">{username}</span>
+                  <p className="truncate text-sm font-semibold">
+                    Playing as{" "}
+                    <span className="font-mono text-[var(--accent-green)]">
+                      {user?.displayName || username}
+                    </span>
                   </p>
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {showWeekSelector && <WeekSelector />}
               <button
                 type="button"
                 onClick={() => logout()}
                 aria-label="Switch user"
-                className="flex h-11 w-11 items-center justify-center rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-primary)] lg:hidden"
+                className="flex h-11 items-center justify-center gap-2 rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] px-3 text-sm font-semibold text-[var(--text-primary)] lg:hidden"
               >
                 <SignOut size={22} weight="bold" />
+                <span className="sm:inline">Switch</span>
               </button>
-              <ThemeToggle />
+              <div className="hidden sm:block">
+                <ThemeToggle />
+              </div>
             </div>
           </header>
           <main className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:pb-8">{children}</main>

@@ -196,7 +196,7 @@ export function LeaderboardPage() {
                           <Crown size={16} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
                         )}
                       </td>
-                      <td className="px-4 py-3 font-semibold">{entry.username}</td>
+                      <td className="px-4 py-3 font-semibold">{entry.displayName || entry.username}</td>
                       <td className="px-4 py-3 font-mono">
                         {mode === "winPct"
                           ? `${entry.winPct.toFixed(1)}%`
@@ -237,7 +237,7 @@ export function LeaderboardPage() {
                     </label>
                     {i === 0 && <Crown size={20} weight="fill" className="text-[var(--accent-gold)]" />}
                   </div>
-                  <h3 className="mt-2 text-lg font-bold">{entry.username}</h3>
+                  <h3 className="mt-2 text-lg font-bold">{entry.displayName || entry.username}</h3>
                   <p className="mt-1 font-mono text-2xl font-bold text-[var(--accent-green)]">
                     {mode === "winPct" ? `${entry.winPct.toFixed(1)}%` : entry.confidencePl.toFixed(2)}
                   </p>
