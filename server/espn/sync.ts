@@ -1,6 +1,11 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { getDb, schema } from "../db";
-import { fetchScoreboard, fetchCurrentScoreboard, applyAtsToGame } from "../../shared/espnClient";
+import {
+  fetchScoreboard,
+  fetchCurrentScoreboard,
+  applyAtsToGame,
+  detectCurrentWeek,
+} from "../../shared/espnClient";
 import {
   computeLineLockAt,
   isPastLineLock,
@@ -9,6 +14,9 @@ import {
   type LineSnapshot,
 } from "../../shared/lineLock";
 import type { GameData } from "../../shared/types";
+
+/** Don't hit ESPN on every page load while games are live. */
+const READ_REFRESH_MIN_MS = 5 * 60 * 1000;
 
 function spreadToCents(spread: number | null): number | null {
   if (spread == null) return null;
@@ -64,7 +72,13 @@ async function ensureWeek(seasonId: string, weekNumber: number, seasonType: numb
   const [existing] = await db
     .select()
     .from(schema.weeks)
-    .where(and(eq(schema.weeks.seasonId, seasonId), eq(schema.weeks.weekNumber, weekNumber), eq(schema.weeks.seasonType, seasonType)))
+    .where(
+      and(
+        eq(schema.weeks.seasonId, seasonId),
+        eq(schema.weeks.weekNumber, weekNumber),
+        eq(schema.weeks.seasonType, seasonType),
+      ),
+    )
     .limit(1);
   if (existing) return existing;
   const [created] = await db
@@ -83,6 +97,43 @@ function existingLineSnapshot(game: typeof schema.games.$inferSelect): LineSnaps
   };
 }
 
+/** Active season for queries — prefers site_settings.currentSeasonId, else newest year. */
+export async function resolveActiveSeasonId(): Promise<string | null> {
+  const db = getDb();
+  const [settings] = await db.select().from(schema.siteSettings).limit(1);
+  if (settings?.currentSeasonId) return settings.currentSeasonId;
+  const [latest] = await db.select().from(schema.seasons).orderBy(desc(schema.seasons.year)).limit(1);
+  return latest?.id ?? null;
+}
+
+export async function findWeekRow(seasonType: number, weekNumber: number) {
+  const db = getDb();
+  const seasonId = await resolveActiveSeasonId();
+  if (!seasonId) return null;
+  const [weekRow] = await db
+    .select()
+    .from(schema.weeks)
+    .where(
+      and(
+        eq(schema.weeks.seasonId, seasonId),
+        eq(schema.weeks.seasonType, seasonType),
+        eq(schema.weeks.weekNumber, weekNumber),
+      ),
+    )
+    .limit(1);
+  return weekRow ?? null;
+}
+
+/** Prior slate to keep grading when ESPN has already rolled the "current" week. */
+export function previousSlate(
+  seasonType: number,
+  week: number,
+): { seasonType: number; week: number } | null {
+  if (week > 1) return { seasonType, week: week - 1 };
+  if (seasonType === 3) return { seasonType: 2, week: 18 };
+  return null;
+}
+
 export async function syncEspnWeek(seasonType?: number, week?: number) {
   const board =
     seasonType != null && week != null
@@ -90,14 +141,16 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
       : await fetchCurrentScoreboard();
 
   const db = getDb();
-  const year = new Date().getFullYear();
-  const season = await ensureSeasonYear(year);
+  const season = await ensureSeasonYear(board.seasonYear);
 
   const [settings] = await db.select().from(schema.siteSettings).limit(1);
   if (!settings) {
     await db.insert(schema.siteSettings).values({ currentSeasonId: season.id });
-  } else if (!settings.currentSeasonId) {
-    await db.update(schema.siteSettings).set({ currentSeasonId: season.id }).where(eq(schema.siteSettings.id, 1));
+  } else {
+    await db
+      .update(schema.siteSettings)
+      .set({ currentSeasonId: season.id })
+      .where(eq(schema.siteSettings.id, 1));
   }
 
   const weekRow = await ensureWeek(season.id, board.week, board.seasonType, board.games[0]?.phase ?? "regular");
@@ -149,18 +202,86 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
     upserted,
     week: board.week,
     seasonType: board.seasonType,
+    seasonYear: board.seasonYear,
     linesLocked: pastLock,
     lockAt: lockAt?.toISOString() ?? null,
   };
 }
 
+/**
+ * Cron entry: refresh ESPN's current week, and the previous week if it still
+ * has non-final games (covers Monday Night after the calendar rolls).
+ */
+export async function syncScheduledSlates() {
+  const current = await detectCurrentWeek();
+  const primary = await syncEspnWeek(current.seasonType, current.week);
+
+  const prev = previousSlate(current.seasonType, current.week);
+  let secondary: Awaited<ReturnType<typeof syncEspnWeek>> | null = null;
+  if (prev) {
+    const prevGames = await getGamesForWeek(prev.seasonType, prev.week);
+    if (prevGames.length === 0 || prevGames.some((g) => g.status !== "final")) {
+      secondary = await syncEspnWeek(prev.seasonType, prev.week);
+    }
+  }
+
+  return { current: primary, previous: secondary };
+}
+
 export async function getGamesForWeek(seasonType: number, weekNumber: number): Promise<GameData[]> {
   const db = getDb();
+  const seasonId = await resolveActiveSeasonId();
+  if (!seasonId) return [];
+
   const rows = await db
     .select({ game: schema.games, week: schema.weeks })
     .from(schema.games)
     .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
-    .where(and(eq(schema.weeks.seasonType, seasonType), eq(schema.weeks.weekNumber, weekNumber)));
+    .where(
+      and(
+        eq(schema.weeks.seasonId, seasonId),
+        eq(schema.weeks.seasonType, seasonType),
+        eq(schema.weeks.weekNumber, weekNumber),
+      ),
+    );
 
   return rows.map(({ game, week }) => dbGameToGameData(game, week));
+}
+
+/** True when the slate is missing or has non-final games older than the refresh window. */
+export async function weekNeedsEspnRefresh(seasonType: number, weekNumber: number): Promise<boolean> {
+  const db = getDb();
+  const seasonId = await resolveActiveSeasonId();
+  if (!seasonId) return true;
+
+  const rows = await db
+    .select({ status: schema.games.status, updatedAt: schema.games.updatedAt })
+    .from(schema.games)
+    .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
+    .where(
+      and(
+        eq(schema.weeks.seasonId, seasonId),
+        eq(schema.weeks.seasonType, seasonType),
+        eq(schema.weeks.weekNumber, weekNumber),
+      ),
+    );
+
+  if (rows.length === 0) return true;
+  if (rows.every((r) => r.status === "final")) return false;
+
+  const newest = Math.max(...rows.map((r) => r.updatedAt.getTime()));
+  return Date.now() - newest >= READ_REFRESH_MIN_MS;
+}
+
+/** Games (+ week) for the active season only — used by leaderboard/history/stats. */
+export async function getActiveSeasonGameRows() {
+  const db = getDb();
+  const seasonId = await resolveActiveSeasonId();
+  if (!seasonId) return [];
+
+  return db
+    .select({ game: schema.games, week: schema.weeks })
+    .from(schema.games)
+    .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
+    .where(eq(schema.weeks.seasonId, seasonId));
 }

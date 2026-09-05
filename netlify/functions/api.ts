@@ -10,7 +10,7 @@ import {
   logout,
   toPublicUser,
 } from "../../server/auth";
-import { syncEspnWeek, getGamesForWeek, dbGameToGameData } from "../../server/espn/sync";
+import { syncEspnWeek, getGamesForWeek, dbGameToGameData, findWeekRow, weekNeedsEspnRefresh, getActiveSeasonGameRows, syncScheduledSlates } from "../../server/espn/sync";
 import { getDb, schema } from "../../server/db";
 import { eq, and, ne, asc } from "drizzle-orm";
 import {
@@ -86,7 +86,7 @@ async function handleGames(event: HandlerEvent) {
   if (hasDatabase()) {
     try {
       let games = await getGamesForWeek(seasonType, week);
-      if (games.length === 0) {
+      if (await weekNeedsEspnRefresh(seasonType, week)) {
         await syncEspnWeek(seasonType, week);
         games = await getGamesForWeek(seasonType, week);
       }
@@ -206,11 +206,7 @@ async function handleUserPicks(event: HandlerEvent) {
   const week = Number(params.week ?? 1);
   const db = getDb();
 
-  const [weekRow] = await db
-    .select()
-    .from(schema.weeks)
-    .where(and(eq(schema.weeks.seasonType, seasonType), eq(schema.weeks.weekNumber, week)))
-    .limit(1);
+  const weekRow = await findWeekRow(seasonType, week);
 
   if (!weekRow) return json(200, { picks: {} });
 
@@ -246,11 +242,7 @@ async function handleWeekPicks(event: HandlerEvent) {
     .where(eq(schema.users.isBanned, false))
     .orderBy(asc(schema.users.username));
 
-  const [weekRow] = await db
-    .select()
-    .from(schema.weeks)
-    .where(and(eq(schema.weeks.seasonType, seasonType), eq(schema.weeks.weekNumber, week)))
-    .limit(1);
+  const weekRow = await findWeekRow(seasonType, week);
 
   const pickRows =
     weekRow != null
@@ -293,10 +285,7 @@ async function computeLeaderboard(filter?: {
   const db = getDb();
   const activeUsers = await db.select().from(schema.users).where(eq(schema.users.isBanned, false));
 
-  let allGames = await db
-    .select({ game: schema.games, week: schema.weeks })
-    .from(schema.games)
-    .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id));
+  let allGames = await getActiveSeasonGameRows();
 
   if (filter) {
     allGames = allGames.filter(
@@ -304,11 +293,13 @@ async function computeLeaderboard(filter?: {
     );
   }
 
-  const allPicks = await db
+  const seasonGameIds = new Set(allGames.map((r) => r.game.id));
+  const pickRows = await db
     .select({ pick: schema.picks, game: schema.games, week: schema.weeks })
     .from(schema.picks)
     .innerJoin(schema.games, eq(schema.picks.gameId, schema.games.id))
     .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id));
+  const allPicks = pickRows.filter((r) => seasonGameIds.has(r.game.id));
 
   const entries: LeaderboardEntry[] = [];
 
@@ -406,10 +397,7 @@ async function handleHistory(event: HandlerEvent) {
   const seasonType = params.seasonType != null ? Number(params.seasonType) : null;
   const week = params.week != null ? Number(params.week) : null;
 
-  let gameRows = await db
-    .select({ game: schema.games, week: schema.weeks })
-    .from(schema.games)
-    .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id));
+  let gameRows = await getActiveSeasonGameRows();
 
   if (seasonType != null && week != null) {
     gameRows = gameRows.filter(
@@ -439,10 +427,7 @@ async function handleStats(event: HandlerEvent) {
   const { user } = await requireUser(event);
   const db = getDb();
 
-  const allGames = await db
-    .select({ game: schema.games, week: schema.weeks })
-    .from(schema.games)
-    .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id));
+  const allGames = await getActiveSeasonGameRows();
 
   const userPicks = await db.select().from(schema.picks).where(eq(schema.picks.userId, user.id));
 
@@ -614,14 +599,29 @@ export const handler: Handler = async (event) => {
   }
 };
 
-export const syncHandler: Handler = async () => {
+async function runScheduledSync() {
   if (!hasDatabase()) {
     return { statusCode: 503, body: "DATABASE_URL not configured" };
   }
   try {
-    const result = await syncEspnWeek();
+    const result = await syncScheduledSlates();
     return { statusCode: 200, body: JSON.stringify(result) };
   } catch (err) {
     return { statusCode: 500, body: err instanceof Error ? err.message : "Sync failed" };
   }
+}
+
+/** Midweek / off-peak cron — always syncs (lines, light refresh). */
+export const syncHandler: Handler = async () => runScheduledSync();
+
+/** Gameday cron — only runs ESPN work inside Sun/Mon/Thu night windows (ET). */
+export const syncGamedayHandler: Handler = async () => {
+  const { isNflGameWindow } = await import("../../shared/nflSyncWindow");
+  if (!isNflGameWindow()) {
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ skipped: true, reason: "outside_nfl_game_window" }),
+    };
+  }
+  return runScheduledSync();
 };

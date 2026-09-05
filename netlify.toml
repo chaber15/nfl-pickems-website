@@ -24,5 +24,18 @@
   to = "/index.html"
   status = 200
 
+# Midweek: twice daily Tue/Wed/Fri/Sat (UTC) for lines / catch-up. Quiet on pure game days.
 [functions."sync-espn"]
-  schedule = "*/30 * * * *"
+  schedule = "0 6,18 * * 2,3,5,6"
+
+# Sunday slate (every 15m). Handler skips before ~9am ET.
+[functions."sync-espn-sun"]
+  schedule = "*/15 * * * 0"
+
+# Mon/Thu evening kickoff window in UTC (covers EDT/EST primetime start).
+[functions."sync-espn-primetime"]
+  schedule = "*/15 22-23 * * 1,4"
+
+# After midnight UTC: SNF (Mon), MNF (Tue), TNF (Fri).
+[functions."sync-espn-late"]
+  schedule = "*/15 0-4 * * 1,2,5"

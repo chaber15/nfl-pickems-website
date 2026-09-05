@@ -56,8 +56,24 @@ interface EspnEvent {
 
 interface EspnScoreboard {
   events?: EspnEvent[];
-  season?: { type?: number };
+  season?: { type?: number; year?: number };
   week?: { number?: number };
+}
+
+/** NFL season year (year of that season’s Week 1), not necessarily the calendar year. */
+export function seasonYearFromScoreboard(
+  data: Pick<EspnScoreboard, "season">,
+  seasonType: number,
+  fallbackDate = new Date(),
+): number {
+  const fromEspn = data.season?.year;
+  if (fromEspn != null && fromEspn >= 2000 && fromEspn <= 2100) return fromEspn;
+
+  // Jan–February: regular season / playoffs still belong to the prior NFL year
+  const y = fallbackDate.getFullYear();
+  const m = fallbackDate.getMonth();
+  if (m <= 1 && (seasonType === 2 || seasonType === 3)) return y - 1;
+  return y;
 }
 
 function mapPhase(seasonType: number, weekNumber: number): WeekPhase {
@@ -188,7 +204,7 @@ export function applyAtsToGame(game: GameData): GameData {
 export async function fetchScoreboard(
   seasonType = 1,
   week = 2,
-): Promise<{ games: GameData[]; seasonType: number; week: number }> {
+): Promise<{ games: GameData[]; seasonType: number; week: number; seasonYear: number }> {
   const url = `${SCOREBOARD_URL}?seasontype=${seasonType}&week=${week}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`ESPN scoreboard failed: ${res.status}`);
@@ -196,6 +212,7 @@ export async function fetchScoreboard(
 
   const events = data.events ?? [];
   const games: GameData[] = [];
+  const resolvedType = data.season?.type ?? seasonType;
 
   for (const event of events) {
     const comp = event.competitions[0];
@@ -219,12 +236,18 @@ export async function fetchScoreboard(
 
   return {
     games,
-    seasonType: data.season?.type ?? seasonType,
+    seasonType: resolvedType,
     week: data.week?.number ?? week,
+    seasonYear: seasonYearFromScoreboard(data, resolvedType),
   };
 }
 
-export async function fetchCurrentScoreboard(): Promise<{ games: GameData[]; seasonType: number; week: number }> {
+export async function fetchCurrentScoreboard(): Promise<{
+  games: GameData[];
+  seasonType: number;
+  week: number;
+  seasonYear: number;
+}> {
   const res = await fetch(SCOREBOARD_URL);
   if (!res.ok) throw new Error(`ESPN scoreboard failed: ${res.status}`);
   const data = (await res.json()) as EspnScoreboard;
@@ -234,12 +257,18 @@ export async function fetchCurrentScoreboard(): Promise<{ games: GameData[]; sea
 }
 
 /** Detect current NFL week from ESPN calendar (no week params). */
-export async function detectCurrentWeek(): Promise<{ seasonType: number; week: number }> {
+export async function detectCurrentWeek(): Promise<{
+  seasonType: number;
+  week: number;
+  seasonYear: number;
+}> {
   const res = await fetch(SCOREBOARD_URL);
   if (!res.ok) throw new Error(`ESPN scoreboard failed: ${res.status}`);
   const data = (await res.json()) as EspnScoreboard;
+  const seasonType = data.season?.type ?? 2;
   return {
-    seasonType: data.season?.type ?? 2,
+    seasonType,
     week: data.week?.number ?? 1,
+    seasonYear: seasonYearFromScoreboard(data, seasonType),
   };
 }
