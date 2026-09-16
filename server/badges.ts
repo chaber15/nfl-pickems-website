@@ -4,7 +4,9 @@ import { getDb, schema } from "./db";
 import {
   evaluateWeekBadges,
   countLifetimeBadgeEvents,
-  LIFETIME_BADGE_THRESHOLDS,
+  emptyLifetimeBadgeCounts,
+  lifetimeBadgeAwards,
+  LIFETIME_THRESHOLD_BADGE_IDS,
   SEASON_BADGE_WEEK,
   weekAtsRecord,
   weekConfWinPct,
@@ -89,24 +91,16 @@ async function wipeLifetimeThresholdBadgeRows(): Promise<{ before: number; after
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not configured");
   const sql = neon(url);
+  const ids: string[] = [...LIFETIME_THRESHOLD_BADGE_IDS];
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
+  const countQuery = `SELECT count(*)::int AS n FROM user_badges WHERE badge_id IN (${placeholders})`;
 
-  const beforeRows = await sql`
-    SELECT count(*)::int AS n
-    FROM user_badges
-    WHERE badge_id IN ('by_a_nose', 'juice_box', 'road_dog')
-  `;
+  const beforeRows = (await sql(countQuery, ids)) as Array<{ n: number }>;
   const before = Number(beforeRows[0]?.n ?? 0);
 
-  await sql`
-    DELETE FROM user_badges
-    WHERE badge_id IN ('by_a_nose', 'juice_box', 'road_dog')
-  `;
+  await sql(`DELETE FROM user_badges WHERE badge_id IN (${placeholders})`, ids);
 
-  const afterRows = await sql`
-    SELECT count(*)::int AS n
-    FROM user_badges
-    WHERE badge_id IN ('by_a_nose', 'juice_box', 'road_dog')
-  `;
+  const afterRows = (await sql(countQuery, ids)) as Array<{ n: number }>;
   const after = Number(afterRows[0]?.n ?? 0);
   if (after !== 0) {
     throw new Error(`Failed to wipe cumulative badges (still ${after} row(s) left)`);
@@ -168,29 +162,18 @@ export async function reconcileLifetimeThresholdBadges(): Promise<{
 
   let granted = 0;
   for (const u of users) {
-    const lifetime: LifetimeBadgeCounts = { by_a_nose: 0, juice_box: 0, road_dog: 0 };
+    const lifetime: LifetimeBadgeCounts = emptyLifetimeBadgeCounts();
     for (const slate of completed) {
       const rows = allGameRows.filter(
         (r) => r.week.seasonType === slate.seasonType && r.week.weekNumber === slate.week,
       );
       const picks = await loadUserPicksMap(u.id, rows);
       const ev = countLifetimeBadgeEvents(slate.games, picks);
-      lifetime.by_a_nose += ev.by_a_nose;
-      lifetime.juice_box += ev.juice_box;
-      lifetime.road_dog += ev.road_dog;
+      for (const id of LIFETIME_THRESHOLD_BADGE_IDS) lifetime[id] += ev[id];
     }
 
-    const awards: BadgeAward[] = [];
     const seasonType = completed[completed.length - 1]?.seasonType ?? 2;
-    if (lifetime.by_a_nose >= LIFETIME_BADGE_THRESHOLDS.by_a_nose) {
-      awards.push({ badgeId: "by_a_nose", seasonType, weekNumber: SEASON_BADGE_WEEK });
-    }
-    if (lifetime.juice_box >= LIFETIME_BADGE_THRESHOLDS.juice_box) {
-      awards.push({ badgeId: "juice_box", seasonType, weekNumber: SEASON_BADGE_WEEK });
-    }
-    if (lifetime.road_dog >= LIFETIME_BADGE_THRESHOLDS.road_dog) {
-      awards.push({ badgeId: "road_dog", seasonType, weekNumber: SEASON_BADGE_WEEK });
-    }
+    const awards: BadgeAward[] = lifetimeBadgeAwards(lifetime, seasonType);
     if (awards.length > 0) {
       await insertAwards(u.id, awards);
       granted += awards.length;

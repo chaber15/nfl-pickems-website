@@ -23,7 +23,7 @@ type Scope = "overall" | "week";
 
 /** Sample earned badges for Vite demo (no DB). */
 function demoEarnedBadges(seasonType: number, week: number): EarnedBadge[] {
-  const ids = ["clean_sweep", "lone_wolf", "hot_hand", "bite_back", "monday_miracle"] as const;
+  const ids = ["clean_sweep", "lone_wolf", "hot_hand", "kennel_club", "monday_miracle"] as const;
   const now = new Date().toISOString();
   return ids.map((id) => ({
     badgeId: id,

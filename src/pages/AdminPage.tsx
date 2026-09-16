@@ -18,8 +18,17 @@ import {
 } from "../lib/api";
 import { Navigate } from "react-router-dom";
 import { publicDisplayName } from "@shared/userDisplay";
-import { BADGE_CATALOG, BADGE_RARITY_LABEL, badgeRarity, badgeSoftClass } from "@shared/badges";
+import {
+  BADGE_CATALOG,
+  BADGE_RARITY_LABEL,
+  badgeName,
+  badgeRarity,
+  badgeSoftClass,
+  LIFETIME_THRESHOLD_BADGE_IDS,
+} from "@shared/badges";
 import type { BadgeRarity } from "@shared/badges";
+
+const cumulativeBadgeLabel = LIFETIME_THRESHOLD_BADGE_IDS.map(badgeName).join(" / ");
 
 type AdminUser = {
   id: string;
@@ -346,7 +355,7 @@ export function AdminPage() {
   const handleBackfillAllBadges = async () => {
     if (
       !window.confirm(
-        "Delete ALL badges, then recalculate every fully final week from scratch (including By a Nose / Juice Box / Road Dog career thresholds)?",
+        `Delete ALL badges, then recalculate every fully final week from scratch (including ${cumulativeBadgeLabel} career thresholds)?`,
       )
     ) {
       return;
@@ -428,7 +437,8 @@ export function AdminPage() {
               <p className="mt-1 text-sm text-[var(--text-muted)]">
                 Recompute awards from stored picks and finals. Refresh one week keeps existing
                 awards. Backfill deletes every badge first, then recalculates all fully final weeks
-                in order.
+                in order. Cumulative badges ({cumulativeBadgeLabel}) are always wiped and re-granted
+                from career totals.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -454,7 +464,7 @@ export function AdminPage() {
                 disabled={badgeRefreshing}
                 className="min-h-11 rounded-2xl border-2 border-[var(--accent-gold)] px-4 font-bold text-[var(--accent-gold)] disabled:opacity-60"
               >
-                Fix By a Nose / Juice Box / Road Dog
+                Fix cumulative badges
               </button>
             </div>
             {badgeRefreshMsg && <p className="text-sm font-semibold">{badgeRefreshMsg}</p>}

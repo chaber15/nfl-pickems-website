@@ -183,8 +183,8 @@ export const BADGE_CATALOG: BadgeDef[] = [
   {
     id: "bite_back",
     name: "Bite Back",
-    description: "★ underdog wins outright",
-    scope: "week",
+    description: "Need 3 career ★ underdogs that win outright (not once)",
+    scope: "season_once",
     rarity: 3,
   },
   {
@@ -241,8 +241,8 @@ export const BADGE_CATALOG: BadgeDef[] = [
   {
     id: "steamroller",
     name: "Steamroller",
-    description: "★ favorite covers by 14+",
-    scope: "week",
+    description: "Need 3 career ★ favorites that cover by 14+ (not once)",
+    scope: "season_once",
     rarity: 2,
   },
   {
@@ -395,19 +395,27 @@ function coverMargin(
   return -favMargin;
 }
 
-/** Lifetime thresholds for cumulative ★-bet badges (not per-week). */
+/**
+ * Career thresholds for cumulative ★-bet badges (not per-week).
+ * Adding an id here is the only edit needed: the catalog description, the week
+ * evaluator, the reconcile wipe, and the admin copy all read from this map.
+ */
 export const LIFETIME_BADGE_THRESHOLDS = {
   by_a_nose: 3,
   juice_box: 5,
   road_dog: 5,
+  steamroller: 3,
+  bite_back: 3,
 } as const;
 
-export const LIFETIME_THRESHOLD_BADGE_IDS = ["by_a_nose", "juice_box", "road_dog"] as const;
+export type LifetimeThresholdBadgeId = keyof typeof LIFETIME_BADGE_THRESHOLDS;
 
-export type LifetimeThresholdBadgeId = (typeof LIFETIME_THRESHOLD_BADGE_IDS)[number];
+export const LIFETIME_THRESHOLD_BADGE_IDS = Object.keys(
+  LIFETIME_BADGE_THRESHOLDS,
+) as LifetimeThresholdBadgeId[];
 
 export function isLifetimeThresholdBadge(id: string): id is LifetimeThresholdBadgeId {
-  return (LIFETIME_THRESHOLD_BADGE_IDS as readonly string[]).includes(id);
+  return Object.prototype.hasOwnProperty.call(LIFETIME_BADGE_THRESHOLDS, id);
 }
 
 /**
@@ -422,20 +430,30 @@ export function isDisplayableBadgeAward(
   return weekNumber === SEASON_BADGE_WEEK;
 }
 
-export type LifetimeBadgeCounts = {
-  by_a_nose: number;
-  juice_box: number;
-  road_dog: number;
-};
+export type LifetimeBadgeCounts = Record<LifetimeThresholdBadgeId, number>;
+
+export function emptyLifetimeBadgeCounts(): LifetimeBadgeCounts {
+  const counts = {} as LifetimeBadgeCounts;
+  for (const id of LIFETIME_THRESHOLD_BADGE_IDS) counts[id] = 0;
+  return counts;
+}
+
+/** Awards for every cumulative badge whose career threshold is met. */
+export function lifetimeBadgeAwards(
+  counts: LifetimeBadgeCounts,
+  seasonType: number,
+): BadgeAward[] {
+  return LIFETIME_THRESHOLD_BADGE_IDS.filter(
+    (id) => counts[id] >= LIFETIME_BADGE_THRESHOLDS[id],
+  ).map((id) => ({ badgeId: id, seasonType, weekNumber: SEASON_BADGE_WEEK }));
+}
 
 /** Count ★ events that feed lifetime badges for one week of games. */
 export function countLifetimeBadgeEvents(
   games: GameData[],
   picks: Record<string, UserPick>,
 ): LifetimeBadgeCounts {
-  let by_a_nose = 0;
-  let juice_box = 0;
-  let road_dog = 0;
+  const counts = emptyLifetimeBadgeCounts();
 
   for (const g of games) {
     if (!isGradedForStandings(g)) continue;
@@ -445,23 +463,27 @@ export function countLifetimeBadgeEvents(
       continue;
     }
 
+    const margin = coverMargin(g.homeScore, g.awayScore, g.spread, g.favoriteSide, up.pick);
+    if (margin != null && margin > 0 && margin <= 1.5) counts.by_a_nose++;
+
     if (up.pick === "underdog") {
       const dogIsHome = g.favoriteSide === "away";
-      const margin = coverMargin(g.homeScore, g.awayScore, g.spread, g.favoriteSide, up.pick);
-      if (margin != null && margin > 0 && margin <= 1.5) by_a_nose++;
       if (pickCorrectness(up.pick, g.atsResult) === 1) {
-        if (dogIsHome) juice_box++;
-        else road_dog++;
+        if (dogIsHome) counts.juice_box++;
+        else counts.road_dog++;
+
+        const dogScore = dogIsHome ? g.homeScore : g.awayScore;
+        const favScore = dogIsHome ? g.awayScore : g.homeScore;
+        if (dogScore > favScore) counts.bite_back++;
       }
     }
 
-    if (up.pick === "favorite") {
-      const margin = coverMargin(g.homeScore, g.awayScore, g.spread, g.favoriteSide, up.pick);
-      if (margin != null && margin > 0 && margin <= 1.5) by_a_nose++;
+    if (up.pick === "favorite" && margin != null && margin >= 14) {
+      counts.steamroller++;
     }
   }
 
-  return { by_a_nose, juice_box, road_dog };
+  return counts;
 }
 
 function crowdSplit(
@@ -640,11 +662,6 @@ export function evaluateWeekBadges(args: {
     if (!g.favoriteSide || g.spread == null || g.awayScore == null || g.homeScore == null || !g.atsResult) continue;
 
     if (up.pick === "underdog") {
-      const dogIsHome = g.favoriteSide === "away";
-      const dogScore = dogIsHome ? g.homeScore : g.awayScore;
-      const favScore = dogIsHome ? g.awayScore : g.homeScore;
-      if (dogScore > favScore && pickCorrectness(up.pick, g.atsResult) === 1) week("bite_back");
-
       const split = crowdSplit(g, allPlayers);
       const totalCrowd = split.fav + split.dog;
       if (
@@ -654,11 +671,6 @@ export function evaluateWeekBadges(args: {
       ) {
         week("giant_killer");
       }
-    }
-
-    if (up.pick === "favorite") {
-      const margin = coverMargin(g.homeScore, g.awayScore, g.spread, g.favoriteSide, up.pick);
-      if (margin != null && margin >= 14) week("steamroller");
     }
 
     // OT Hero
