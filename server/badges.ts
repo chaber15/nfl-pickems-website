@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "./db";
 import {
   evaluateWeekBadges,
@@ -13,6 +13,8 @@ import { confidencePlForWeek } from "../shared/statsCompute";
 import type { GameData, UserPick, WeekComparePlayer } from "../shared/types";
 import { getActiveSeasonGameRows, getGamesForWeek } from "./espn/sync";
 import { isGradedForStandings } from "../shared/scoring";
+
+const LIFETIME_THRESHOLD_BADGE_IDS = ["by_a_nose", "juice_box", "road_dog"] as const;
 
 /** True when every game on the slate is final (week-scoped badges need the full week). */
 function isWeekFullyComplete(games: GameData[]): boolean {
@@ -76,6 +78,26 @@ async function insertAwards(userId: string, awards: BadgeAward[]) {
     } catch {
       /* already awarded, or table missing until db:push */
     }
+  }
+}
+
+/**
+ * Drop old once-per-week grants for cumulative badges so backfill can re-award
+ * only when the career threshold is actually met.
+ */
+async function clearLifetimeThresholdBadges(userId: string) {
+  try {
+    const db = getDb();
+    await db
+      .delete(schema.userBadges)
+      .where(
+        and(
+          eq(schema.userBadges.userId, userId),
+          inArray(schema.userBadges.badgeId, [...LIFETIME_THRESHOLD_BADGE_IDS]),
+        ),
+      );
+  } catch {
+    /* table missing until db:push */
   }
 }
 
@@ -204,6 +226,9 @@ export async function awardBadgesForWeek(seasonType: number, weekNumber: number)
       lifetimeCounts.road_dog += ev.road_dog;
     }
 
+    // Wipe prior grants for cumulative badges, then re-award only if thresholds are met.
+    await clearLifetimeThresholdBadges(u.id);
+
     const awards = evaluateWeekBadges({
       games,
       seasonType,
@@ -223,9 +248,9 @@ export async function awardBadgesForWeek(seasonType: number, weekNumber: number)
       alreadyHasWeekChampion: await userHasBadge(u.id, "week_champion"),
       alreadyHasBankrollKing: await userHasBadge(u.id, "bankroll_king"),
       lifetimeCounts,
-      alreadyHasByANose: await userHasBadge(u.id, "by_a_nose"),
-      alreadyHasJuiceBox: await userHasBadge(u.id, "juice_box"),
-      alreadyHasRoadDog: await userHasBadge(u.id, "road_dog"),
+      alreadyHasByANose: false,
+      alreadyHasJuiceBox: false,
+      alreadyHasRoadDog: false,
     });
 
     await insertAwards(u.id, awards);
