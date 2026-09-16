@@ -11,3 +11,9 @@ NFL Logo.jpeg
 
 # Local Netlify folder
 .netlify
+
+# Generated output of scripts/generate-2025-player-reports.py
+reports/
+
+# Stray Deno lockfile — this project builds with npm
+deno.lock
