@@ -110,6 +110,8 @@ export interface HistoryRow {
   matchup: string;
   kickoffAt: string;
   pickDisplay: string | null;
+  /** NFL abbrev for the picked team (for team-color borders), when a pick exists. */
+  pickTeamAbbrev: string | null;
   isConfidenceBet: boolean;
   resultDisplay: string | null;
   outcome: "win" | "loss" | "push" | "pending" | "no_pick";

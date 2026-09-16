@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Star } from "@phosphor-icons/react";
 import { buildHistoryRows } from "@shared/statsCompute";
@@ -9,13 +9,16 @@ import { useWeek } from "../lib/weekContext";
 import { getStoredPicks } from "../lib/localStorage";
 import { loadWeekGames } from "../lib/loadWeekGames";
 import { apiHistory } from "../lib/api";
+import { teamColor } from "../lib/teamLogos";
 
 function outcomeLabel(row: HistoryRow): string {
   if (row.outcome === "no_pick") return "No pick";
   if (row.outcome === "win") return "Win";
   if (row.outcome === "loss") return "Loss";
   if (row.outcome === "push") return "Push";
-  return "Pending";
+  // Only call it Pending once the user has a pick waiting on the result
+  if (row.pickDisplay) return "Pending";
+  return "—";
 }
 
 function outcomeClass(outcome: HistoryRow["outcome"]): string {
@@ -31,12 +34,33 @@ function unitsClass(units: number): string {
   return "";
 }
 
-function cardBorderClass(row: HistoryRow): string {
+/** Prefer pick-team color (same as home GameCard); fall back to outcome colors. */
+function rowBorderStyle(row: HistoryRow): CSSProperties | undefined {
+  if (row.pickTeamAbbrev) {
+    const color = teamColor(row.pickTeamAbbrev);
+    if (color) return { borderColor: color };
+  }
+  return undefined;
+}
+
+function rowBorderClass(row: HistoryRow): string {
+  if (row.pickTeamAbbrev && teamColor(row.pickTeamAbbrev)) return "";
   if (row.outcome === "win") return "border-[var(--accent-green)]";
   if (row.outcome === "loss" || row.outcome === "no_pick") return "border-[var(--accent-red)]";
   if (row.outcome === "push") return "border-[var(--accent-gold)]";
   if (row.isConfidenceBet) return "border-[var(--accent-gold)]";
   return "border-[var(--border-card)]";
+}
+
+function pickAccentStyle(row: HistoryRow): CSSProperties | undefined {
+  if (!row.pickTeamAbbrev) return undefined;
+  const color = teamColor(row.pickTeamAbbrev);
+  return color ? { color } : undefined;
+}
+
+function resultText(row: HistoryRow): string {
+  if (row.outcome === "pending" || row.outcome === "no_pick") return outcomeLabel(row);
+  return row.resultDisplay ?? outcomeLabel(row);
 }
 
 export function HistoryPage() {
@@ -47,19 +71,35 @@ export function HistoryPage() {
   const [games, setGames] = useState<GameData[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewLabel, setViewLabel] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const targetUsername = routeUser ?? username;
   const viewingOther =
     routeUser != null && username != null && routeUser.toLowerCase() !== username.toLowerCase();
 
+  // Re-load when returning to this tab so picks made on Home show up before lock.
+  useEffect(() => {
+    const bump = () => {
+      if (document.visibilityState === "visible") setRefreshTick((n) => n + 1);
+    };
+    document.addEventListener("visibilitychange", bump);
+    window.addEventListener("focus", bump);
+    return () => {
+      document.removeEventListener("visibilitychange", bump);
+      window.removeEventListener("focus", bump);
+    };
+  }, []);
+
   useEffect(() => {
     if (!ready) return;
+    let cancelled = false;
     (async () => {
       setLoading(true);
       try {
         if (useBackend) {
           try {
             const res = await apiHistory(seasonType, week, routeUser);
+            if (cancelled) return;
             setRows(res.history);
             setViewLabel(res.displayName ?? res.username ?? routeUser ?? null);
             setGames([]);
@@ -69,22 +109,27 @@ export function HistoryPage() {
           }
         }
         if (viewingOther) {
+          if (cancelled) return;
           setRows([]);
           setViewLabel(routeUser);
           return;
         }
         const board = await loadWeekGames(seasonType, week, weekKey);
+        if (cancelled) return;
         setGames(board.games);
         const picks = getStoredPicks(weekKey);
         setRows(buildHistoryRows(board.games, picks));
         setViewLabel(null);
       } catch {
-        setRows([]);
+        if (!cancelled) setRows([]);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, [useBackend, username, seasonType, week, weekKey, ready, routeUser, viewingOther]);
+    return () => {
+      cancelled = true;
+    };
+  }, [useBackend, username, seasonType, week, weekKey, ready, routeUser, viewingOther, refreshTick]);
 
   return (
     <AppShell games={games}>
@@ -137,7 +182,9 @@ export function HistoryPage() {
                         {row.outcome === "no_pick" ? (
                           <span className="font-bold text-[var(--accent-red)]">No pick</span>
                         ) : (
-                          <span className="font-semibold">{row.pickDisplay ?? "Pending"}</span>
+                          <span className="font-semibold" style={pickAccentStyle(row)}>
+                            {row.pickDisplay ?? "—"}
+                          </span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -148,10 +195,12 @@ export function HistoryPage() {
                         )}
                       </td>
                       <td className={`px-4 py-3 font-semibold ${outcomeClass(row.outcome)}`}>
-                        {row.resultDisplay ?? outcomeLabel(row)}
+                        {resultText(row)}
                       </td>
                       <td className={`px-4 py-3 font-mono ${unitsClass(row.unitsDelta)}`}>
-                        {row.unitsDelta.toFixed(2)}
+                        {row.outcome === "pending" || row.outcome === "no_pick"
+                          ? "—"
+                          : row.unitsDelta.toFixed(2)}
                       </td>
                     </tr>
                   ))}
@@ -163,7 +212,8 @@ export function HistoryPage() {
               {rows.map((row) => (
                 <article
                   key={row.gameId}
-                  className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 ${cardBorderClass(row)}`}
+                  className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 ${rowBorderClass(row)}`}
+                  style={rowBorderStyle(row)}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-xs font-semibold text-[var(--text-muted)]">Week {row.weekNumber}</p>
@@ -172,8 +222,11 @@ export function HistoryPage() {
                     </span>
                   </div>
                   <h3 className="mt-1 font-bold">{row.matchup}</h3>
-                  <p className={`mt-2 text-base font-bold ${outcomeClass(row.outcome)}`}>
-                    {row.outcome === "no_pick" ? "No pick" : (row.pickDisplay ?? "Pending")}
+                  <p
+                    className={`mt-2 text-base font-bold ${row.pickTeamAbbrev ? "" : outcomeClass(row.outcome)}`}
+                    style={pickAccentStyle(row)}
+                  >
+                    {row.outcome === "no_pick" ? "No pick" : (row.pickDisplay ?? "No pick yet")}
                   </p>
                   {row.isConfidenceBet && (
                     <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[var(--accent-gold)]/20 px-3 py-1 text-xs font-bold text-[var(--accent-gold)]">
@@ -182,10 +235,12 @@ export function HistoryPage() {
                   )}
                   <div className="mt-3 flex items-center justify-between gap-2 text-sm">
                     <span className={`font-semibold ${outcomeClass(row.outcome)}`}>
-                      {row.resultDisplay ?? outcomeLabel(row)}
+                      {resultText(row)}
                     </span>
                     <span className={`font-mono font-bold ${unitsClass(row.unitsDelta)}`}>
-                      {row.unitsDelta.toFixed(2)}
+                      {row.outcome === "pending" || row.outcome === "no_pick"
+                        ? "—"
+                        : row.unitsDelta.toFixed(2)}
                     </span>
                   </div>
                 </article>

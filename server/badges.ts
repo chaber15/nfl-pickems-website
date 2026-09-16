@@ -1,4 +1,5 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { neon } from "@neondatabase/serverless";
 import { getDb, schema } from "./db";
 import {
   evaluateWeekBadges,
@@ -14,8 +15,6 @@ import { confidencePlForWeek } from "../shared/statsCompute";
 import type { GameData, UserPick, WeekComparePlayer } from "../shared/types";
 import { getActiveSeasonGameRows, getGamesForWeek } from "./espn/sync";
 import { isGradedForStandings } from "../shared/scoring";
-
-const LIFETIME_THRESHOLD_BADGE_IDS = ["by_a_nose", "juice_box", "road_dog"] as const;
 
 /** True when every game on the slate is final (week-scoped badges need the full week). */
 function isWeekFullyComplete(games: GameData[]): boolean {
@@ -83,27 +82,69 @@ async function insertAwards(userId: string, awards: BadgeAward[]) {
 }
 
 /**
+ * Hard-delete cumulative badge rows via raw SQL (neon-http), then verify wipe.
+ * Drizzle delete alone has been unreliable for this path in production.
+ */
+async function wipeLifetimeThresholdBadgeRows(): Promise<{ before: number; after: number }> {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not configured");
+  const sql = neon(url);
+
+  const beforeRows = await sql`
+    SELECT count(*)::int AS n
+    FROM user_badges
+    WHERE badge_id IN ('by_a_nose', 'juice_box', 'road_dog')
+  `;
+  const before = Number(beforeRows[0]?.n ?? 0);
+
+  await sql`
+    DELETE FROM user_badges
+    WHERE badge_id IN ('by_a_nose', 'juice_box', 'road_dog')
+  `;
+
+  const afterRows = await sql`
+    SELECT count(*)::int AS n
+    FROM user_badges
+    WHERE badge_id IN ('by_a_nose', 'juice_box', 'road_dog')
+  `;
+  const after = Number(afterRows[0]?.n ?? 0);
+  if (after !== 0) {
+    throw new Error(`Failed to wipe cumulative badges (still ${after} row(s) left)`);
+  }
+  return { before, after };
+}
+
+/** Delete every user_badges row, then verify the table is empty. */
+async function wipeAllBadgeRows(): Promise<{ before: number; after: number }> {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not configured");
+  const sql = neon(url);
+
+  const beforeRows = await sql`SELECT count(*)::int AS n FROM user_badges`;
+  const before = Number(beforeRows[0]?.n ?? 0);
+
+  await sql`DELETE FROM user_badges`;
+
+  const afterRows = await sql`SELECT count(*)::int AS n FROM user_badges`;
+  const after = Number(afterRows[0]?.n ?? 0);
+  if (after !== 0) {
+    throw new Error(`Failed to wipe all badges (still ${after} row(s) left)`);
+  }
+  return { before, after };
+}
+
+/**
  * Drop every grant of cumulative badges, then re-award from career totals
  * across all fully final weeks in the active season.
  */
-async function reconcileLifetimeThresholdBadges(): Promise<{
+export async function reconcileLifetimeThresholdBadges(): Promise<{
   removed: number;
   granted: number;
   countsByUser: number;
+  remainingAfterWipe: number;
 }> {
+  const wipe = await wipeLifetimeThresholdBadgeRows();
   const db = getDb();
-
-  const existing = await db
-    .select({ id: schema.userBadges.id })
-    .from(schema.userBadges)
-    .where(inArray(schema.userBadges.badgeId, [...LIFETIME_THRESHOLD_BADGE_IDS]));
-  const removed = existing.length;
-
-  if (removed > 0) {
-    await db
-      .delete(schema.userBadges)
-      .where(inArray(schema.userBadges.badgeId, [...LIFETIME_THRESHOLD_BADGE_IDS]));
-  }
 
   const users = await db.select().from(schema.users).where(eq(schema.users.isBanned, false));
   const allGameRows = await getActiveSeasonGameRows();
@@ -140,7 +181,6 @@ async function reconcileLifetimeThresholdBadges(): Promise<{
     }
 
     const awards: BadgeAward[] = [];
-    // seasonType on career badges: use latest completed regular-ish slate, else 2
     const seasonType = completed[completed.length - 1]?.seasonType ?? 2;
     if (lifetime.by_a_nose >= LIFETIME_BADGE_THRESHOLDS.by_a_nose) {
       awards.push({ badgeId: "by_a_nose", seasonType, weekNumber: SEASON_BADGE_WEEK });
@@ -157,7 +197,12 @@ async function reconcileLifetimeThresholdBadges(): Promise<{
     }
   }
 
-  return { removed, granted, countsByUser: users.length };
+  return {
+    removed: wipe.before,
+    granted,
+    countsByUser: users.length,
+    remainingAfterWipe: wipe.after,
+  };
 }
 
 /**
@@ -369,6 +414,7 @@ export type BadgeRefreshWeekResult = {
 /**
  * Admin / backfill: award badges for one week, or every completed week in the
  * active season (oldest → newest so season_once "first" badges land correctly).
+ * Full backfill (`allCompleted`) wipes every badge row first, then recalculates.
  */
 export async function refreshBadges(opts: {
   seasonType?: number;
@@ -377,11 +423,21 @@ export async function refreshBadges(opts: {
 }): Promise<{
   weeks: BadgeRefreshWeekResult[];
   totalAwarded: number;
-  lifetime: { removed: number; granted: number; countsByUser: number };
+  wiped?: number;
+  lifetime: {
+    removed: number;
+    granted: number;
+    countsByUser: number;
+    remainingAfterWipe?: number;
+  };
 }> {
   const weeks: BadgeRefreshWeekResult[] = [];
+  let wiped: number | undefined;
 
   if (opts.allCompleted) {
+    const fullWipe = await wipeAllBadgeRows();
+    wiped = fullWipe.before;
+
     const allGameRows = await getActiveSeasonGameRows();
     const seen = new Set<string>();
     const slate: Array<{ seasonType: number; week: number }> = [];
@@ -433,6 +489,7 @@ export async function refreshBadges(opts: {
   return {
     weeks,
     totalAwarded: weeks.reduce((sum, w) => sum + w.awarded, 0) + lifetime.granted,
+    wiped,
     lifetime,
   };
 }

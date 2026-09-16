@@ -304,10 +304,28 @@ export function AdminPage() {
       }
       return `S${w.seasonType} W${w.week}: +${w.awarded} award(s)`;
     });
+    const fullWipe =
+      res.wiped != null ? ` Cleared ${res.wiped} existing badge(s), then recalculated.` : "";
     const life = res.lifetime
-      ? ` Lifetime badges: removed ${res.lifetime.removed}, granted ${res.lifetime.granted}.`
+      ? ` Cumulative wipe: removed ${res.lifetime.removed}, left ${res.lifetime.remainingAfterWipe ?? "?"}, granted ${res.lifetime.granted}.`
       : "";
-    return `Done — ${res.totalAwarded} award(s).${life} ${parts.join(" · ")}`;
+    const weekPart = parts.length ? ` ${parts.join(" · ")}` : "";
+    return `Done — ${res.totalAwarded} award(s).${fullWipe}${life}${weekPart}`;
+  };
+
+  const handleReconcileLifetimeBadges = async () => {
+    setBadgeRefreshing(true);
+    setBadgeRefreshMsg("");
+    setError("");
+    try {
+      const res = await apiAdminRefreshBadges({ reconcileOnly: true });
+      setBadgeRefreshMsg(formatBadgeRefreshMsg(res));
+      await reloadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Cumulative badge fix failed");
+    } finally {
+      setBadgeRefreshing(false);
+    }
   };
 
   const handleRefreshBadgesWeek = async () => {
@@ -328,7 +346,7 @@ export function AdminPage() {
   const handleBackfillAllBadges = async () => {
     if (
       !window.confirm(
-        "Backfill badges for every fully final week? Also wipes By a Nose / Juice Box / Road Dog and re-grants only if career totals hit 3 / 5 / 5.",
+        "Delete ALL badges, then recalculate every fully final week from scratch (including By a Nose / Juice Box / Road Dog career thresholds)?",
       )
     ) {
       return;
@@ -408,9 +426,9 @@ export function AdminPage() {
             <div>
               <p className="font-bold">Refresh badges</p>
               <p className="mt-1 text-sm text-[var(--text-muted)]">
-                Recompute awards from stored picks and finals. Use the week selector, then refresh that
-                week (e.g. week 1 backfill), or backfill every fully final week in order. Safe to
-                re-run — already-earned badges are skipped.
+                Recompute awards from stored picks and finals. Refresh one week keeps existing
+                awards. Backfill deletes every badge first, then recalculates all fully final weeks
+                in order.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -428,7 +446,15 @@ export function AdminPage() {
                 disabled={badgeRefreshing}
                 className="min-h-11 rounded-2xl border-2 border-[var(--border-card)] px-4 font-bold disabled:opacity-60"
               >
-                Backfill all completed weeks
+                Reset & backfill all badges
+              </button>
+              <button
+                type="button"
+                onClick={handleReconcileLifetimeBadges}
+                disabled={badgeRefreshing}
+                className="min-h-11 rounded-2xl border-2 border-[var(--accent-gold)] px-4 font-bold text-[var(--accent-gold)] disabled:opacity-60"
+              >
+                Fix By a Nose / Juice Box / Road Dog
               </button>
             </div>
             {badgeRefreshMsg && <p className="text-sm font-semibold">{badgeRefreshMsg}</p>}

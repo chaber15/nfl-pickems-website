@@ -402,6 +402,26 @@ export const LIFETIME_BADGE_THRESHOLDS = {
   road_dog: 5,
 } as const;
 
+export const LIFETIME_THRESHOLD_BADGE_IDS = ["by_a_nose", "juice_box", "road_dog"] as const;
+
+export type LifetimeThresholdBadgeId = (typeof LIFETIME_THRESHOLD_BADGE_IDS)[number];
+
+export function isLifetimeThresholdBadge(id: string): id is LifetimeThresholdBadgeId {
+  return (LIFETIME_THRESHOLD_BADGE_IDS as readonly string[]).includes(id);
+}
+
+/**
+ * Cumulative badges must be season-scoped (week 0). Legacy once-per-week rows
+ * should never be shown even if they still exist in the DB.
+ */
+export function isDisplayableBadgeAward(
+  badgeId: string,
+  weekNumber: number | null | undefined,
+): boolean {
+  if (!isLifetimeThresholdBadge(badgeId)) return true;
+  return isSeasonScopedBadge(weekNumber);
+}
+
 export type LifetimeBadgeCounts = {
   by_a_nose: number;
   juice_box: number;

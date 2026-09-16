@@ -7,7 +7,8 @@ import type {
   UserStats,
   WeeklyStatRow,
 } from "./types";
-import { formatMatchup, formatPick, formatResult } from "./pickDisplay";
+import { abbrevForSide, formatMatchup, formatPick, formatResult } from "./pickDisplay";
+import { sortGamesLiveFirstThenChronological } from "./gameOrder";
 import {
   computeWinPct,
   countConfidenceBets,
@@ -24,9 +25,7 @@ export function buildHistoryRows(
   picks: Record<string, UserPick>,
   now = new Date(),
 ): HistoryRow[] {
-  return [...games]
-    .sort((a, b) => new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime())
-    .map((g) => {
+  return sortGamesLiveFirstThenChronological(games).map((g) => {
       const up = picks[g.id];
       const locked = isGameLocked(g.kickoffAt, now);
       let outcome: HistoryRow["outcome"] = "pending";
@@ -48,6 +47,7 @@ export function buildHistoryRows(
         matchup: formatMatchup(g),
         kickoffAt: g.kickoffAt,
         pickDisplay: up?.pick ? formatPick(g, up.pick) : null,
+        pickTeamAbbrev: up?.pick ? abbrevForSide(g, up.pick) : null,
         isConfidenceBet: up?.isConfidenceBet ?? false,
         resultDisplay: formatResult(g),
         outcome,

@@ -132,6 +132,7 @@ export async function apiAdminRefreshBadges(opts: {
   seasonType?: number;
   week?: number;
   allCompleted?: boolean;
+  reconcileOnly?: boolean;
 }): Promise<{
   weeks: Array<{
     seasonType: number;
@@ -140,7 +141,13 @@ export async function apiAdminRefreshBadges(opts: {
     status: "ok" | "skipped_empty" | "skipped_incomplete";
   }>;
   totalAwarded: number;
-  lifetime: { removed: number; granted: number; countsByUser: number };
+  wiped?: number;
+  lifetime: {
+    removed: number;
+    granted: number;
+    countsByUser: number;
+    remainingAfterWipe?: number;
+  };
 }> {
   return request("/admin/badges", {
     method: "POST",

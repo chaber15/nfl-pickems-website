@@ -29,7 +29,7 @@ import { resolveCurrentPickemsWeek } from "../../shared/espnClient";
 import { buildWeekOptions } from "../../shared/weekUtils";
 import { factoryReset } from "../../server/factoryReset";
 import { normalizeDisplayName, publicDisplayName } from "../../shared/userDisplay";
-import { badgeDescription, badgeName, BADGE_CATALOG, isSeasonScopedBadge } from "../../shared/badges";
+import { badgeDescription, badgeName, BADGE_CATALOG, isDisplayableBadgeAward, isSeasonScopedBadge } from "../../shared/badges";
 import { allBadgeRows, badgesForUser } from "../../server/badges";
 
 function json(statusCode: number, body: unknown, headers: Record<string, string> = {}) {
@@ -407,7 +407,9 @@ async function computeLeaderboard(filter?: {
 
   const badgeRows = await allBadgeRows();
   for (const entry of entries) {
-    const forUser = badgeRows.filter((b) => b.userId === entry.userId);
+    const forUser = badgeRows.filter(
+      (b) => b.userId === entry.userId && isDisplayableBadgeAward(b.badgeId, b.weekNumber),
+    );
     const scoped = filter
       ? forUser.filter(
           (b) =>
@@ -529,14 +531,16 @@ async function handleStats(event: HandlerEvent) {
     stats: computeUserStats(games, picks),
     username: targetUser.username,
     displayName: publicDisplayName(targetUser),
-    badges: badgeRows.map((b) => ({
-      badgeId: b.badgeId,
-      name: badgeName(b.badgeId),
-      description: badgeDescription(b.badgeId),
-      seasonType: b.seasonType,
-      weekNumber: isSeasonScopedBadge(b.weekNumber) ? null : b.weekNumber,
-      earnedAt: b.earnedAt.toISOString(),
-    })),
+    badges: badgeRows
+      .filter((b) => isDisplayableBadgeAward(b.badgeId, b.weekNumber))
+      .map((b) => ({
+        badgeId: b.badgeId,
+        name: badgeName(b.badgeId),
+        description: badgeDescription(b.badgeId),
+        seasonType: b.seasonType,
+        weekNumber: isSeasonScopedBadge(b.weekNumber) ? null : b.weekNumber,
+        earnedAt: b.earnedAt.toISOString(),
+      })),
   });
 }
 
@@ -556,8 +560,13 @@ async function handleAdmin(path: string, event: HandlerEvent) {
       seasonType?: number;
       week?: number;
       allCompleted?: boolean;
+      reconcileOnly?: boolean;
     };
-    const { refreshBadges } = await import("../../server/badges");
+    const { refreshBadges, reconcileLifetimeThresholdBadges } = await import("../../server/badges");
+    if (body.reconcileOnly === true) {
+      const lifetime = await reconcileLifetimeThresholdBadges();
+      return json(200, { weeks: [], totalAwarded: lifetime.granted, lifetime });
+    }
     const result = await refreshBadges({
       seasonType: body.seasonType,
       week: body.week,
@@ -590,6 +599,7 @@ async function handleAdmin(path: string, event: HandlerEvent) {
     const earned = await allBadgeRows();
     const earnedByBadge = new Map<string, number>();
     for (const e of earned) {
+      if (!isDisplayableBadgeAward(e.badgeId, e.weekNumber)) continue;
       earnedByBadge.set(e.badgeId, (earnedByBadge.get(e.badgeId) ?? 0) + 1);
     }
     return json(200, {
