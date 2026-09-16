@@ -326,46 +326,23 @@ export function GameCard({
         ? teamColor(game.homeAbbrev)
         : null;
 
-  const resultRing =
-    resultTone === "win"
-      ? "ring-[var(--accent-green)]"
-      : resultTone === "loss"
-        ? "ring-[var(--accent-red)]"
-        : resultTone === "push"
-          ? "ring-[var(--accent-gold)]"
-          : "";
-
-  const ringStrength =
-    game.status === "in_progress" && resultTone
-      ? "ring-4"
-      : resultTone
-        ? "ring-2"
-        : "";
-
   const onPickVenue = (venue: Venue) => {
     const side = pickSideForVenue(game.favoriteSide, venue);
     if (side) onPick(side);
   };
 
-  const borderStyle =
-    locked && pickTeamColor
-      ? { borderColor: pickTeamColor }
-      : isConfidence
-        ? undefined
-        : undefined;
+  const borderStyle = pickTeamColor ? { borderColor: pickTeamColor } : undefined;
 
   return (
     <motion.article
       layout
       style={borderStyle}
       className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 shadow-[var(--shadow-card)] ${
-        locked && pickTeamColor
+        pickTeamColor
           ? ""
           : isConfidence
-            ? "border-[var(--accent-gold)]"
+            ? "border-[var(--accent-gold)] ring-2 ring-[var(--accent-gold)]/30"
             : "border-[var(--border-card)]"
-      } ${ringStrength} ${resultRing} ${
-        isConfidence && !(locked && pickTeamColor) ? "ring-[var(--accent-gold)]/30" : ""
       }`}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

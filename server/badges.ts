@@ -2,10 +2,12 @@ import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "./db";
 import {
   evaluateWeekBadges,
+  countLifetimeBadgeEvents,
   SEASON_BADGE_WEEK,
   weekAtsRecord,
   weekConfWinPct,
   type BadgeAward,
+  type LifetimeBadgeCounts,
 } from "../shared/badges";
 import { confidencePlForWeek } from "../shared/statsCompute";
 import type { GameData, UserPick, WeekComparePlayer } from "../shared/types";
@@ -177,6 +179,11 @@ export async function awardBadgesForWeek(seasonType: number, weekNumber: number)
     const picks = pickMaps.get(u.id) ?? {};
     const atsPcts: number[] = [];
     const confPcts: number[] = [];
+    const lifetimeCounts: LifetimeBadgeCounts = {
+      by_a_nose: 0,
+      juice_box: 0,
+      road_dog: 0,
+    };
     for (const w of seasonWeeks) {
       if (w > weekNumber) break;
       let wg = gameCache.get(w);
@@ -191,6 +198,10 @@ export async function awardBadgesForWeek(seasonType: number, weekNumber: number)
       if (confidencePlForWeek(wg, wp).eligible && wg.some((g) => isGradedForStandings(g))) {
         confPcts.push(weekConfWinPct(wg, wp));
       }
+      const ev = countLifetimeBadgeEvents(wg, wp);
+      lifetimeCounts.by_a_nose += ev.by_a_nose;
+      lifetimeCounts.juice_box += ev.juice_box;
+      lifetimeCounts.road_dog += ev.road_dog;
     }
 
     const awards = evaluateWeekBadges({
@@ -211,6 +222,10 @@ export async function awardBadgesForWeek(seasonType: number, weekNumber: number)
       alreadyHasNoShow: await userHasBadge(u.id, "no_show"),
       alreadyHasWeekChampion: await userHasBadge(u.id, "week_champion"),
       alreadyHasBankrollKing: await userHasBadge(u.id, "bankroll_king"),
+      lifetimeCounts,
+      alreadyHasByANose: await userHasBadge(u.id, "by_a_nose"),
+      alreadyHasJuiceBox: await userHasBadge(u.id, "juice_box"),
+      alreadyHasRoadDog: await userHasBadge(u.id, "road_dog"),
     });
 
     await insertAwards(u.id, awards);

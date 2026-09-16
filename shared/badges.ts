@@ -154,7 +154,7 @@ export const BADGE_CATALOG: BadgeDef[] = [
   },
   {
     id: "dog_day_afternoon",
-    name: "Dog Day Afternoon",
+    name: "Dog Days",
     description: "Every pick that week was an underdog",
     scope: "week",
     rarity: 3,
@@ -220,22 +220,22 @@ export const BADGE_CATALOG: BadgeDef[] = [
   {
     id: "by_a_nose",
     name: "By a Nose",
-    description: "★ cover by ≤1.5 points",
-    scope: "week",
+    description: "★ cover by ≤1.5 points · 3 times (career)",
+    scope: "season_once",
     rarity: 2,
   },
   {
     id: "juice_box",
     name: "Juice Box",
-    description: "Win a ★ bet as a home dog",
-    scope: "week",
+    description: "Win a ★ bet as a home dog · 5 times (career)",
+    scope: "season_once",
     rarity: 2,
   },
   {
     id: "road_dog",
     name: "Road Dog",
-    description: "Win a ★ bet as an away dog",
-    scope: "week",
+    description: "Win a ★ bet as an away dog · 5 times (career)",
+    scope: "season_once",
     rarity: 2,
   },
   {
@@ -395,6 +395,55 @@ function coverMargin(
   return -favMargin;
 }
 
+/** Lifetime thresholds for cumulative ★-bet badges (not per-week). */
+export const LIFETIME_BADGE_THRESHOLDS = {
+  by_a_nose: 3,
+  juice_box: 5,
+  road_dog: 5,
+} as const;
+
+export type LifetimeBadgeCounts = {
+  by_a_nose: number;
+  juice_box: number;
+  road_dog: number;
+};
+
+/** Count ★ events that feed lifetime badges for one week of games. */
+export function countLifetimeBadgeEvents(
+  games: GameData[],
+  picks: Record<string, UserPick>,
+): LifetimeBadgeCounts {
+  let by_a_nose = 0;
+  let juice_box = 0;
+  let road_dog = 0;
+
+  for (const g of games) {
+    if (!isGradedForStandings(g)) continue;
+    const up = picks[g.id];
+    if (!up?.pick || !up.isConfidenceBet) continue;
+    if (!g.favoriteSide || g.spread == null || g.awayScore == null || g.homeScore == null || !g.atsResult) {
+      continue;
+    }
+
+    if (up.pick === "underdog") {
+      const dogIsHome = g.favoriteSide === "away";
+      const margin = coverMargin(g.homeScore, g.awayScore, g.spread, g.favoriteSide, up.pick);
+      if (margin != null && margin > 0 && margin <= 1.5) by_a_nose++;
+      if (pickCorrectness(up.pick, g.atsResult) === 1) {
+        if (dogIsHome) juice_box++;
+        else road_dog++;
+      }
+    }
+
+    if (up.pick === "favorite") {
+      const margin = coverMargin(g.homeScore, g.awayScore, g.spread, g.favoriteSide, up.pick);
+      if (margin != null && margin > 0 && margin <= 1.5) by_a_nose++;
+    }
+  }
+
+  return { by_a_nose, juice_box, road_dog };
+}
+
 function crowdSplit(
   game: GameData,
   players: WeekComparePlayer[],
@@ -442,6 +491,11 @@ export function evaluateWeekBadges(args: {
   alreadyHasNoShow: boolean;
   alreadyHasWeekChampion: boolean;
   alreadyHasBankrollKing: boolean;
+  /** Career totals through this week (inclusive) for cumulative badges. */
+  lifetimeCounts: LifetimeBadgeCounts;
+  alreadyHasByANose: boolean;
+  alreadyHasJuiceBox: boolean;
+  alreadyHasRoadDog: boolean;
 }): BadgeAward[] {
   const {
     games,
@@ -461,6 +515,10 @@ export function evaluateWeekBadges(args: {
     alreadyHasNoShow,
     alreadyHasWeekChampion,
     alreadyHasBankrollKing,
+    lifetimeCounts,
+    alreadyHasByANose,
+    alreadyHasJuiceBox,
+    alreadyHasRoadDog,
   } = args;
 
   const awards: BadgeAward[] = [];
@@ -576,9 +634,6 @@ export function evaluateWeekBadges(args: {
       const favScore = dogIsHome ? g.awayScore : g.homeScore;
       if (dogScore > favScore && pickCorrectness(up.pick, g.atsResult) === 1) week("bite_back");
 
-      const margin = coverMargin(g.homeScore, g.awayScore, g.spread, g.favoriteSide, up.pick);
-      if (margin != null && margin > 0 && margin <= 1.5) week("by_a_nose");
-
       const split = crowdSplit(g, allPlayers);
       const totalCrowd = split.fav + split.dog;
       if (
@@ -588,17 +643,11 @@ export function evaluateWeekBadges(args: {
       ) {
         week("giant_killer");
       }
-
-      if (pickCorrectness(up.pick, g.atsResult) === 1) {
-        if (dogIsHome) week("juice_box");
-        else week("road_dog");
-      }
     }
 
     if (up.pick === "favorite") {
       const margin = coverMargin(g.homeScore, g.awayScore, g.spread, g.favoriteSide, up.pick);
       if (margin != null && margin >= 14) week("steamroller");
-      if (margin != null && margin > 0 && margin <= 1.5) week("by_a_nose");
     }
 
     // OT Hero
@@ -612,6 +661,26 @@ export function evaluateWeekBadges(args: {
         week("ot_hero");
       }
     }
+  }
+
+  // Cumulative ★ badges (career totals — not once-per-week)
+  if (
+    !alreadyHasByANose &&
+    lifetimeCounts.by_a_nose >= LIFETIME_BADGE_THRESHOLDS.by_a_nose
+  ) {
+    season("by_a_nose");
+  }
+  if (
+    !alreadyHasJuiceBox &&
+    lifetimeCounts.juice_box >= LIFETIME_BADGE_THRESHOLDS.juice_box
+  ) {
+    season("juice_box");
+  }
+  if (
+    !alreadyHasRoadDog &&
+    lifetimeCounts.road_dog >= LIFETIME_BADGE_THRESHOLDS.road_dog
+  ) {
+    season("road_dog");
   }
 
   // Kennel Club
