@@ -322,37 +322,7 @@ export function AdminPage() {
     return `Done — ${res.totalAwarded} award(s).${fullWipe}${life}${weekPart}`;
   };
 
-  const handleReconcileLifetimeBadges = async () => {
-    setBadgeRefreshing(true);
-    setBadgeRefreshMsg("");
-    setError("");
-    try {
-      const res = await apiAdminRefreshBadges({ reconcileOnly: true });
-      setBadgeRefreshMsg(formatBadgeRefreshMsg(res));
-      await reloadUsers();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Cumulative badge fix failed");
-    } finally {
-      setBadgeRefreshing(false);
-    }
-  };
-
-  const handleRefreshBadgesWeek = async () => {
-    setBadgeRefreshing(true);
-    setBadgeRefreshMsg("");
-    setError("");
-    try {
-      const res = await apiAdminRefreshBadges({ seasonType, week });
-      setBadgeRefreshMsg(formatBadgeRefreshMsg(res));
-      await reloadUsers();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Badge refresh failed");
-    } finally {
-      setBadgeRefreshing(false);
-    }
-  };
-
-  const handleBackfillAllBadges = async () => {
+  const handleResetAndRecalculateBadges = async () => {
     if (
       !window.confirm(
         `Delete ALL badges, then recalculate every fully final week from scratch (including ${cumulativeBadgeLabel} career thresholds)?`,
@@ -368,7 +338,7 @@ export function AdminPage() {
       setBadgeRefreshMsg(formatBadgeRefreshMsg(res));
       await reloadUsers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Badge backfill failed");
+      setError(err instanceof Error ? err.message : "Badge recalculate failed");
     } finally {
       setBadgeRefreshing(false);
     }
@@ -428,47 +398,6 @@ export function AdminPage() {
             </button>
           </div>
           {syncMsg && <p className="mt-3 text-sm font-semibold">{syncMsg}</p>}
-        </div>
-
-        <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-6">
-          <div className="space-y-4">
-            <div>
-              <p className="font-bold">Refresh badges</p>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">
-                Recompute awards from stored picks and finals. Refresh one week keeps existing
-                awards. Backfill deletes every badge first, then recalculates all fully final weeks
-                in order. Cumulative badges ({cumulativeBadgeLabel}) are always wiped and re-granted
-                from career totals.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={handleRefreshBadgesWeek}
-                disabled={badgeRefreshing}
-                className="min-h-11 rounded-2xl bg-[var(--accent-blue)] px-4 font-bold text-white disabled:opacity-60"
-              >
-                {badgeRefreshing ? "Refreshing..." : `Refresh week ${week}`}
-              </button>
-              <button
-                type="button"
-                onClick={handleBackfillAllBadges}
-                disabled={badgeRefreshing}
-                className="min-h-11 rounded-2xl border-2 border-[var(--border-card)] px-4 font-bold disabled:opacity-60"
-              >
-                Reset & backfill all badges
-              </button>
-              <button
-                type="button"
-                onClick={handleReconcileLifetimeBadges}
-                disabled={badgeRefreshing}
-                className="min-h-11 rounded-2xl border-2 border-[var(--accent-gold)] px-4 font-bold text-[var(--accent-gold)] disabled:opacity-60"
-              >
-                Fix cumulative badges
-              </button>
-            </div>
-            {badgeRefreshMsg && <p className="text-sm font-semibold">{badgeRefreshMsg}</p>}
-          </div>
         </div>
 
         <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-6">
@@ -627,6 +556,29 @@ export function AdminPage() {
             badges they have earned.
           </p>
           <CatalogList rows={badgeCatalog} />
+        </div>
+
+        <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-6">
+          <div className="space-y-4">
+            <div>
+              <p className="font-bold">Recalculate badges</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                Only needed if something looks wrong — badges award themselves as weeks go final.
+                Deletes every badge, then recomputes all fully final weeks in order from stored picks
+                and finals. Cumulative badges ({cumulativeBadgeLabel}) are re-granted from career
+                totals.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleResetAndRecalculateBadges}
+              disabled={badgeRefreshing}
+              className="min-h-11 rounded-2xl bg-[var(--accent-blue)] px-4 font-bold text-white disabled:opacity-60"
+            >
+              {badgeRefreshing ? "Recalculating..." : "Reset & recalculate badges"}
+            </button>
+            {badgeRefreshMsg && <p className="text-sm font-semibold">{badgeRefreshMsg}</p>}
+          </div>
         </div>
 
         <div className="rounded-2xl border-2 border-[var(--accent-red)] bg-[var(--bg-card)] p-6">
