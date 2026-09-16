@@ -140,6 +140,7 @@ export async function apiAdminRefreshBadges(opts: {
     status: "ok" | "skipped_empty" | "skipped_incomplete";
   }>;
   totalAwarded: number;
+  lifetime: { removed: number; granted: number; countsByUser: number };
 }> {
   return request("/admin/badges", {
     method: "POST",

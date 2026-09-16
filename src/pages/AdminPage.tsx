@@ -304,7 +304,10 @@ export function AdminPage() {
       }
       return `S${w.seasonType} W${w.week}: +${w.awarded} award(s)`;
     });
-    return `Done — ${res.totalAwarded} new award(s). ${parts.join(" · ")}`;
+    const life = res.lifetime
+      ? ` Lifetime badges: removed ${res.lifetime.removed}, granted ${res.lifetime.granted}.`
+      : "";
+    return `Done — ${res.totalAwarded} award(s).${life} ${parts.join(" · ")}`;
   };
 
   const handleRefreshBadgesWeek = async () => {
@@ -325,7 +328,7 @@ export function AdminPage() {
   const handleBackfillAllBadges = async () => {
     if (
       !window.confirm(
-        "Backfill badges for every fully final week in the season (oldest → newest)? Safe to re-run — duplicates are ignored.",
+        "Backfill badges for every fully final week? Also wipes By a Nose / Juice Box / Road Dog and re-grants only if career totals hit 3 / 5 / 5.",
       )
     ) {
       return;

@@ -3,6 +3,7 @@ import { getDb, schema } from "./db";
 import {
   evaluateWeekBadges,
   countLifetimeBadgeEvents,
+  LIFETIME_BADGE_THRESHOLDS,
   SEASON_BADGE_WEEK,
   weekAtsRecord,
   weekConfWinPct,
@@ -82,32 +83,95 @@ async function insertAwards(userId: string, awards: BadgeAward[]) {
 }
 
 /**
- * Drop old once-per-week grants for cumulative badges so backfill can re-award
- * only when the career threshold is actually met.
+ * Drop every grant of cumulative badges, then re-award from career totals
+ * across all fully final weeks in the active season.
  */
-async function clearLifetimeThresholdBadges(userId: string) {
-  try {
-    const db = getDb();
+async function reconcileLifetimeThresholdBadges(): Promise<{
+  removed: number;
+  granted: number;
+  countsByUser: number;
+}> {
+  const db = getDb();
+
+  const existing = await db
+    .select({ id: schema.userBadges.id })
+    .from(schema.userBadges)
+    .where(inArray(schema.userBadges.badgeId, [...LIFETIME_THRESHOLD_BADGE_IDS]));
+  const removed = existing.length;
+
+  if (removed > 0) {
     await db
       .delete(schema.userBadges)
-      .where(
-        and(
-          eq(schema.userBadges.userId, userId),
-          inArray(schema.userBadges.badgeId, [...LIFETIME_THRESHOLD_BADGE_IDS]),
-        ),
-      );
-  } catch {
-    /* table missing until db:push */
+      .where(inArray(schema.userBadges.badgeId, [...LIFETIME_THRESHOLD_BADGE_IDS]));
   }
+
+  const users = await db.select().from(schema.users).where(eq(schema.users.isBanned, false));
+  const allGameRows = await getActiveSeasonGameRows();
+  const seen = new Set<string>();
+  const completed: Array<{ seasonType: number; week: number; games: GameData[] }> = [];
+  const gameCache = new Map<string, GameData[]>();
+
+  for (const r of allGameRows) {
+    const key = `${r.week.seasonType}-${r.week.weekNumber}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let games = gameCache.get(key);
+    if (!games) {
+      games = await getGamesForWeek(r.week.seasonType, r.week.weekNumber);
+      gameCache.set(key, games);
+    }
+    if (!isWeekFullyComplete(games) || !games.some((g) => isGradedForStandings(g))) continue;
+    completed.push({ seasonType: r.week.seasonType, week: r.week.weekNumber, games });
+  }
+  completed.sort((a, b) => a.seasonType - b.seasonType || a.week - b.week);
+
+  let granted = 0;
+  for (const u of users) {
+    const lifetime: LifetimeBadgeCounts = { by_a_nose: 0, juice_box: 0, road_dog: 0 };
+    for (const slate of completed) {
+      const rows = allGameRows.filter(
+        (r) => r.week.seasonType === slate.seasonType && r.week.weekNumber === slate.week,
+      );
+      const picks = await loadUserPicksMap(u.id, rows);
+      const ev = countLifetimeBadgeEvents(slate.games, picks);
+      lifetime.by_a_nose += ev.by_a_nose;
+      lifetime.juice_box += ev.juice_box;
+      lifetime.road_dog += ev.road_dog;
+    }
+
+    const awards: BadgeAward[] = [];
+    // seasonType on career badges: use latest completed regular-ish slate, else 2
+    const seasonType = completed[completed.length - 1]?.seasonType ?? 2;
+    if (lifetime.by_a_nose >= LIFETIME_BADGE_THRESHOLDS.by_a_nose) {
+      awards.push({ badgeId: "by_a_nose", seasonType, weekNumber: SEASON_BADGE_WEEK });
+    }
+    if (lifetime.juice_box >= LIFETIME_BADGE_THRESHOLDS.juice_box) {
+      awards.push({ badgeId: "juice_box", seasonType, weekNumber: SEASON_BADGE_WEEK });
+    }
+    if (lifetime.road_dog >= LIFETIME_BADGE_THRESHOLDS.road_dog) {
+      awards.push({ badgeId: "road_dog", seasonType, weekNumber: SEASON_BADGE_WEEK });
+    }
+    if (awards.length > 0) {
+      await insertAwards(u.id, awards);
+      granted += awards.length;
+    }
+  }
+
+  return { removed, granted, countsByUser: users.length };
 }
 
 /**
  * Award badges for a week only after the full slate is final.
  * Week-dependent badges (clean sweep, streaks, ranks, etc.) must not fire mid-week.
  */
-export async function awardBadgesForWeek(seasonType: number, weekNumber: number): Promise<{
+export async function awardBadgesForWeek(
+  seasonType: number,
+  weekNumber: number,
+  opts?: { skipLifetimeReconcile?: boolean },
+): Promise<{
   awarded: number;
   skipped?: "empty" | "incomplete";
+  lifetime?: { removed: number; granted: number; countsByUser: number };
 }> {
   const games = await getGamesForWeek(seasonType, weekNumber);
   if (games.length === 0) {
@@ -201,11 +265,6 @@ export async function awardBadgesForWeek(seasonType: number, weekNumber: number)
     const picks = pickMaps.get(u.id) ?? {};
     const atsPcts: number[] = [];
     const confPcts: number[] = [];
-    const lifetimeCounts: LifetimeBadgeCounts = {
-      by_a_nose: 0,
-      juice_box: 0,
-      road_dog: 0,
-    };
     for (const w of seasonWeeks) {
       if (w > weekNumber) break;
       let wg = gameCache.get(w);
@@ -220,14 +279,7 @@ export async function awardBadgesForWeek(seasonType: number, weekNumber: number)
       if (confidencePlForWeek(wg, wp).eligible && wg.some((g) => isGradedForStandings(g))) {
         confPcts.push(weekConfWinPct(wg, wp));
       }
-      const ev = countLifetimeBadgeEvents(wg, wp);
-      lifetimeCounts.by_a_nose += ev.by_a_nose;
-      lifetimeCounts.juice_box += ev.juice_box;
-      lifetimeCounts.road_dog += ev.road_dog;
     }
-
-    // Wipe prior grants for cumulative badges, then re-award only if thresholds are met.
-    await clearLifetimeThresholdBadges(u.id);
 
     const awards = evaluateWeekBadges({
       games,
@@ -247,10 +299,6 @@ export async function awardBadgesForWeek(seasonType: number, weekNumber: number)
       alreadyHasNoShow: await userHasBadge(u.id, "no_show"),
       alreadyHasWeekChampion: await userHasBadge(u.id, "week_champion"),
       alreadyHasBankrollKing: await userHasBadge(u.id, "bankroll_king"),
-      lifetimeCounts,
-      alreadyHasByANose: false,
-      alreadyHasJuiceBox: false,
-      alreadyHasRoadDog: false,
     });
 
     await insertAwards(u.id, awards);
@@ -301,7 +349,14 @@ export async function awardBadgesForWeek(seasonType: number, weekNumber: number)
     awarded++;
   }
 
-  return { awarded };
+  // Cumulative badges are reconciled separately (wipe + re-award from career totals).
+  if (opts?.skipLifetimeReconcile) {
+    return { awarded };
+  }
+  const lifetime = await reconcileLifetimeThresholdBadges();
+  awarded += lifetime.granted;
+
+  return { awarded, lifetime };
 }
 
 export type BadgeRefreshWeekResult = {
@@ -319,7 +374,11 @@ export async function refreshBadges(opts: {
   seasonType?: number;
   week?: number;
   allCompleted?: boolean;
-}): Promise<{ weeks: BadgeRefreshWeekResult[]; totalAwarded: number }> {
+}): Promise<{
+  weeks: BadgeRefreshWeekResult[];
+  totalAwarded: number;
+  lifetime: { removed: number; granted: number; countsByUser: number };
+}> {
   const weeks: BadgeRefreshWeekResult[] = [];
 
   if (opts.allCompleted) {
@@ -335,7 +394,8 @@ export async function refreshBadges(opts: {
     slate.sort((a, b) => a.seasonType - b.seasonType || a.week - b.week);
 
     for (const s of slate) {
-      const result = await awardBadgesForWeek(s.seasonType, s.week);
+      // Skip lifetime reconcile inside each week — run once at the end.
+      const result = await awardBadgesForWeek(s.seasonType, s.week, { skipLifetimeReconcile: true });
       weeks.push({
         seasonType: s.seasonType,
         week: s.week,
@@ -354,7 +414,7 @@ export async function refreshBadges(opts: {
     if (seasonType == null || week == null || !Number.isFinite(seasonType) || !Number.isFinite(week)) {
       throw new Error("seasonType and week are required (or pass allCompleted: true)");
     }
-    const result = await awardBadgesForWeek(seasonType, week);
+    const result = await awardBadgesForWeek(seasonType, week, { skipLifetimeReconcile: true });
     weeks.push({
       seasonType,
       week,
@@ -368,9 +428,12 @@ export async function refreshBadges(opts: {
     });
   }
 
+  const lifetime = await reconcileLifetimeThresholdBadges();
+
   return {
     weeks,
-    totalAwarded: weeks.reduce((sum, w) => sum + w.awarded, 0),
+    totalAwarded: weeks.reduce((sum, w) => sum + w.awarded, 0) + lifetime.granted,
+    lifetime,
   };
 }
 

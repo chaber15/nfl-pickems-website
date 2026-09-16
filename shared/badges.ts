@@ -491,11 +491,6 @@ export function evaluateWeekBadges(args: {
   alreadyHasNoShow: boolean;
   alreadyHasWeekChampion: boolean;
   alreadyHasBankrollKing: boolean;
-  /** Career totals through this week (inclusive) for cumulative badges. */
-  lifetimeCounts: LifetimeBadgeCounts;
-  alreadyHasByANose: boolean;
-  alreadyHasJuiceBox: boolean;
-  alreadyHasRoadDog: boolean;
 }): BadgeAward[] {
   const {
     games,
@@ -515,10 +510,6 @@ export function evaluateWeekBadges(args: {
     alreadyHasNoShow,
     alreadyHasWeekChampion,
     alreadyHasBankrollKing,
-    lifetimeCounts,
-    alreadyHasByANose,
-    alreadyHasJuiceBox,
-    alreadyHasRoadDog,
   } = args;
 
   const awards: BadgeAward[] = [];
@@ -661,26 +652,6 @@ export function evaluateWeekBadges(args: {
         week("ot_hero");
       }
     }
-  }
-
-  // Cumulative ★ badges (career totals — not once-per-week)
-  if (
-    !alreadyHasByANose &&
-    lifetimeCounts.by_a_nose >= LIFETIME_BADGE_THRESHOLDS.by_a_nose
-  ) {
-    season("by_a_nose");
-  }
-  if (
-    !alreadyHasJuiceBox &&
-    lifetimeCounts.juice_box >= LIFETIME_BADGE_THRESHOLDS.juice_box
-  ) {
-    season("juice_box");
-  }
-  if (
-    !alreadyHasRoadDog &&
-    lifetimeCounts.road_dog >= LIFETIME_BADGE_THRESHOLDS.road_dog
-  ) {
-    season("road_dog");
   }
 
   // Kennel Club
