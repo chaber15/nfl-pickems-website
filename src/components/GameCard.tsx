@@ -319,31 +319,25 @@ export function GameCard({
             : null;
 
   const pickVenue = pick ? venueForPickSide(game.favoriteSide, pick) : null;
-  const pickTeamColor =
-    pickVenue === "away"
-      ? teamColor(game.awayAbbrev)
-      : pickVenue === "home"
-        ? teamColor(game.homeAbbrev)
-        : null;
 
   const onPickVenue = (venue: Venue) => {
     const side = pickSideForVenue(game.favoriteSide, venue);
     if (side) onPick(side);
   };
 
-  const borderStyle = pickTeamColor ? { borderColor: pickTeamColor } : undefined;
+  const cardBorderClass =
+    resultTone === "win"
+      ? "border-[var(--accent-green)]"
+      : resultTone === "loss"
+        ? "border-[var(--accent-red)]"
+        : resultTone === "push"
+          ? "border-[var(--accent-gold)]"
+          : "border-[var(--border-card)]";
 
   return (
     <motion.article
       layout
-      style={borderStyle}
-      className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 shadow-[var(--shadow-card)] ${
-        pickTeamColor
-          ? ""
-          : isConfidence
-            ? "border-[var(--accent-gold)] ring-2 ring-[var(--accent-gold)]/30"
-            : "border-[var(--border-card)]"
-      }`}
+      className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 shadow-[var(--shadow-card)] ${cardBorderClass}`}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold text-[var(--text-muted)]">{formatKickoff(game.kickoffAt)}</p>
@@ -401,9 +395,8 @@ export function GameCard({
       <div className="mb-4 flex items-center justify-center gap-3 sm:gap-4">
         <div
           className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl p-1 text-center ${
-            pickVenue === "away" ? "bg-[var(--bg-card-elevated)] ring-2" : ""
+            pickVenue === "away" ? "bg-[var(--bg-card-elevated)] ring-2 ring-[var(--border-card)]" : ""
           }`}
-          style={pickVenue === "away" && pickTeamColor ? { boxShadow: `inset 0 0 0 2px ${pickTeamColor}` } : undefined}
         >
           <TeamLogo abbrev={game.awayAbbrev} name={game.awayTeam} size={showScores ? 44 : 56} />
           <p className="w-full truncate text-sm font-bold leading-tight">{game.awayTeam}</p>
@@ -423,9 +416,8 @@ export function GameCard({
         </div>
         <div
           className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl p-1 text-center ${
-            pickVenue === "home" ? "bg-[var(--bg-card-elevated)]" : ""
+            pickVenue === "home" ? "bg-[var(--bg-card-elevated)] ring-2 ring-[var(--border-card)]" : ""
           }`}
-          style={pickVenue === "home" && pickTeamColor ? { boxShadow: `inset 0 0 0 2px ${pickTeamColor}` } : undefined}
         >
           <TeamLogo abbrev={game.homeAbbrev} name={game.homeTeam} size={showScores ? 44 : 56} />
           <p className="w-full truncate text-sm font-bold leading-tight">{game.homeTeam}</p>
@@ -446,14 +438,7 @@ export function GameCard({
       )}
 
       {locked && pick && (
-        <p
-          className="mb-4 rounded-2xl px-4 py-3 text-sm font-bold sm:font-semibold"
-          style={
-            pickTeamColor
-              ? { backgroundColor: `${pickTeamColor}22`, borderLeft: `4px solid ${pickTeamColor}` }
-              : undefined
-          }
-        >
+        <p className="mb-4 rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card-elevated)] px-4 py-3 text-sm font-bold sm:font-semibold">
           Your pick: {formatPick(game, pick)}
           {isConfidence && (
             <Star size={14} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />

@@ -34,21 +34,11 @@ function unitsClass(units: number): string {
   return "";
 }
 
-/** Prefer pick-team color (same as home GameCard); fall back to outcome colors. */
-function rowBorderStyle(row: HistoryRow): CSSProperties | undefined {
-  if (row.pickTeamAbbrev) {
-    const color = teamColor(row.pickTeamAbbrev);
-    if (color) return { borderColor: color };
-  }
-  return undefined;
-}
-
+/** Outcome colors only — plain until win / loss / push / no-pick. */
 function rowBorderClass(row: HistoryRow): string {
-  if (row.pickTeamAbbrev && teamColor(row.pickTeamAbbrev)) return "";
   if (row.outcome === "win") return "border-[var(--accent-green)]";
   if (row.outcome === "loss" || row.outcome === "no_pick") return "border-[var(--accent-red)]";
   if (row.outcome === "push") return "border-[var(--accent-gold)]";
-  if (row.isConfidenceBet) return "border-[var(--accent-gold)]";
   return "border-[var(--border-card)]";
 }
 
@@ -213,7 +203,6 @@ export function HistoryPage() {
                 <article
                   key={row.gameId}
                   className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 ${rowBorderClass(row)}`}
-                  style={rowBorderStyle(row)}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-xs font-semibold text-[var(--text-muted)]">Week {row.weekNumber}</p>
