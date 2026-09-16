@@ -1,10 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { EarnedBadge } from "@shared/types";
 import {
-  BADGE_TONE_CHIP,
   BADGE_RARITY_LABEL,
+  badgeChipClass,
   badgeRarity,
-  badgeTone,
   compareBadgeRarity,
   isSeasonScopedBadge,
 } from "@shared/badges";
@@ -16,40 +16,61 @@ type Props = {
   className?: string;
   /** Compact density for leaderboard single-line trails. */
   dense?: boolean;
+  /** Hide interactive tooltip (e.g. offscreen measure row). */
+  inert?: boolean;
 };
 
-type TipPlace = {
-  align: "left" | "right";
-  side: "above" | "below";
+type TipCoords = {
+  left: number;
+  top: number;
+  width: number;
 };
 
-export function BadgeChip({ badge, showWeek = false, className = "", dense = false }: Props) {
+export function BadgeChip({
+  badge,
+  showWeek = false,
+  className = "",
+  dense = false,
+  inert = false,
+}: Props) {
   const [open, setOpen] = useState(false);
-  const [place, setPlace] = useState<TipPlace>({ align: "left", side: "above" });
+  const [tip, setTip] = useState<TipCoords | null>(null);
   const rootRef = useRef<HTMLSpanElement>(null);
   const tipId = useId();
-  const tone = badgeTone(badge.badgeId);
-  const chipClass = BADGE_TONE_CHIP[tone];
+  const chipClass = badgeChipClass(badge.badgeId);
   const description = badge.description?.trim() || "Earned badge";
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || inert) {
+      setTip(null);
+      return;
+    }
     const el = rootRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const tipH = 88;
-    const spaceAbove = rect.top;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const side: "above" | "below" =
-      spaceAbove >= tipH || spaceAbove >= spaceBelow ? "above" : "below";
-    setPlace({
-      align: rect.left < window.innerWidth / 2 ? "left" : "right",
-      side,
-    });
-  }, [open]);
+
+    const place = () => {
+      const rect = el.getBoundingClientRect();
+      const width = Math.min(224, window.innerWidth - 16);
+      const approxH = 96;
+      const gap = 6;
+      const preferAbove = rect.top >= approxH + gap + 8;
+      let left = rect.left < window.innerWidth / 2 ? rect.left : rect.right - width;
+      left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+      const top = preferAbove ? Math.max(8, rect.top - approxH - gap) : rect.bottom + gap;
+      setTip({ left, top, width });
+    };
+
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [open, inert]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || inert) return;
     const onPointer = (e: MouseEvent | TouchEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
@@ -64,48 +85,66 @@ export function BadgeChip({ badge, showWeek = false, className = "", dense = fal
       document.removeEventListener("touchstart", onPointer);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, inert]);
+
+  const tooltip =
+    open && tip && !inert
+      ? createPortal(
+          <span
+            id={tipId}
+            role="tooltip"
+            style={{
+              position: "fixed",
+              left: tip.left,
+              top: tip.top,
+              width: tip.width,
+              zIndex: 200,
+            }}
+            className="rounded-xl border-2 border-[var(--border-card)] bg-[var(--bg-card-elevated)] px-3 py-2 text-left shadow-[var(--shadow-card)]"
+          >
+            <span className="block text-xs font-bold text-[var(--text-primary)]">{badge.name}</span>
+            <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              {BADGE_RARITY_LABEL[badgeRarity(badge.badgeId)]}
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-[var(--text-muted)]">
+              {description}
+            </span>
+          </span>,
+          document.body,
+        )
+      : null;
 
   return (
     <span
       ref={rootRef}
       className={`relative inline-flex shrink-0 ${className}`}
-      onMouseEnter={() => setOpen(true)}
+      onMouseEnter={() => {
+        if (!inert) setOpen(true);
+      }}
       onMouseLeave={() => setOpen(false)}
     >
       <button
         type="button"
-        aria-describedby={open ? tipId : undefined}
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        onFocus={() => setOpen(true)}
+        tabIndex={inert ? -1 : undefined}
+        aria-describedby={open && !inert ? tipId : undefined}
+        aria-expanded={inert ? undefined : open}
+        onClick={() => {
+          if (!inert) setOpen((v) => !v);
+        }}
+        onFocus={() => {
+          if (!inert) setOpen(true);
+        }}
         onBlur={() => setOpen(false)}
-        className={`rounded-full border font-bold shadow-sm outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] ${
+        className={`rounded-full border font-bold outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] ${
           dense
             ? "border px-1.5 py-0 text-[9px] leading-4 sm:text-[10px]"
-            : "border-2 px-2.5 py-0.5 text-[10px] sm:text-[11px]"
+            : "border-2 px-2.5 py-0.5 text-[10px] shadow-sm transition-transform hover:scale-[1.03] sm:text-[11px]"
         } ${chipClass}`}
       >
         {badge.name}
         {showWeek && !isSeasonScopedBadge(badge.weekNumber) ? ` · W${badge.weekNumber}` : ""}
       </button>
-      {open && (
-        <span
-          id={tipId}
-          role="tooltip"
-          className={`absolute z-50 w-[min(14rem,calc(100vw-2rem))] rounded-xl border-2 border-[var(--border-card)] bg-[var(--bg-card-elevated)] px-3 py-2 text-left shadow-[var(--shadow-card)] ${
-            place.side === "above" ? "bottom-full mb-1.5" : "top-full mt-1.5"
-          } ${place.align === "left" ? "left-0" : "right-0"}`}
-        >
-          <span className="block text-xs font-bold text-[var(--text-primary)]">{badge.name}</span>
-          <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-            {BADGE_RARITY_LABEL[badgeRarity(badge.badgeId)]}
-          </span>
-          <span className="mt-0.5 block text-[11px] leading-snug text-[var(--text-muted)]">
-            {description}
-          </span>
-        </span>
-      )}
+      {tooltip}
     </span>
   );
 }
@@ -155,7 +194,10 @@ export function LeaderboardBadgeTrail({
     if (!host || !measure || pool.length === 0) return;
 
     const sync = () => {
-      const avail = host.clientWidth;
+      const style = getComputedStyle(host);
+      const padX =
+        (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+      const avail = host.clientWidth - padX;
       if (avail <= 0) return;
 
       const kids = Array.from(measure.children) as HTMLElement[];
@@ -195,18 +237,19 @@ export function LeaderboardBadgeTrail({
   const shown = mode === "overall" ? pool.slice(0, visibleCount) : pool;
 
   return (
-    <div ref={hostRef} className="relative min-w-0 max-w-full overflow-hidden">
+    <div ref={hostRef} className="relative min-w-0 max-w-full overflow-hidden py-0.5 pl-0.5 pr-1">
       {/* Off-layout measure row (full pool at natural size) */}
       <div
         ref={measureRef}
         aria-hidden
-        className="pointer-events-none invisible absolute left-0 top-0 flex flex-nowrap gap-1"
+        className="pointer-events-none invisible absolute left-0.5 top-0.5 flex flex-nowrap gap-1"
       >
         {pool.map((b) => (
           <BadgeChip
             key={`m-${b.badgeId}-${b.seasonType}-${b.weekNumber}-${b.earnedAt}`}
             badge={b}
             dense
+            inert
           />
         ))}
       </div>

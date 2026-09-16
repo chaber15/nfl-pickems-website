@@ -18,7 +18,7 @@ import {
 } from "../lib/api";
 import { Navigate } from "react-router-dom";
 import { publicDisplayName } from "@shared/userDisplay";
-import { BADGE_CATALOG, BADGE_RARITY_LABEL, BADGE_TONE_SOFT, badgeRarity, badgeTone } from "@shared/badges";
+import { BADGE_CATALOG, BADGE_RARITY_LABEL, badgeRarity, badgeSoftClass } from "@shared/badges";
 import type { BadgeRarity } from "@shared/badges";
 
 type AdminUser = {
@@ -70,7 +70,7 @@ function CatalogList({ rows }: { rows: BadgeCatalogRow[] }) {
             key={b.id}
             className={`rounded-xl border-2 px-3 py-2 text-sm ${
               b.timesEarned > 0
-                ? BADGE_TONE_SOFT[badgeTone(b.id)]
+                ? badgeSoftClass(b.id)
                 : "border-dashed border-[var(--border-card)] opacity-60"
             }`}
           >

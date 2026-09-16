@@ -319,83 +319,30 @@ export function compareBadgeRarity(aId: string, bId: string): number {
   return badgeName(aId).localeCompare(badgeName(bId));
 }
 
-/** Visual tone for badge chips (leaderboard / stats / admin). */
-export type BadgeTone =
-  | "gold"
-  | "green"
-  | "red"
-  | "blue"
-  | "teal"
-  | "amber"
-  | "rose"
-  | "slate";
-
-const TONE_BY_ID: Record<string, BadgeTone> = {
-  clean_sweep: "gold",
-  five_star_general: "gold",
-  total_wipeout: "red",
-  busted_five: "red",
-  dog_day_afternoon: "amber",
-  chalk_city: "blue",
-  underdog_cartel: "amber",
-  chalk_cartel: "blue",
-  lone_wolf: "slate",
-  howl: "slate",
-  hot_hand: "green",
-  tide_rider: "green",
-  golden_run: "gold",
-  money_printer: "gold",
-  primetime: "teal",
-  week_champion: "gold",
-  bankroll_king: "gold",
-  high_roller: "gold",
-  throne_room: "gold",
-  monday_miracle: "teal",
-  bite_back: "amber",
-  kennel_club: "amber",
-  by_a_nose: "rose",
-  giant_killer: "rose",
-  contrarian: "slate",
-  from_the_dead_ats: "green",
-  from_the_dead_pl: "green",
-  fall_from_grace_ats: "red",
-  fall_from_grace_pl: "red",
-  steamroller: "blue",
-  juice_box: "amber",
-  road_dog: "amber",
-  split_decision: "slate",
-  ot_hero: "teal",
-  no_show: "rose",
-  unstarred: "slate",
+/** Chip fill by rarity (5 = legendary → 1 = common). */
+const BADGE_CHIP_BY_RARITY: Record<BadgeRarity, string> = {
+  5: "border-[#a16207] bg-[#eab308] text-[#1a1408]",
+  4: "border-[#6d28d9] bg-[#8b5cf6] text-[#1e0a3c]",
+  3: "border-[#1d4ed8] bg-[#3b82f6] text-[#eff6ff]",
+  2: "border-[#c2410c] bg-[#fb923c] text-[#1c0a02]",
+  1: "border-[#475569] bg-[#94a3b8] text-[#0f172a]",
 };
 
-export function badgeTone(id: string): BadgeTone {
-  return TONE_BY_ID[id] ?? "slate";
+const BADGE_SOFT_BY_RARITY: Record<BadgeRarity, string> = {
+  5: "border-[#eab308]/50 bg-[#eab308]/15",
+  4: "border-[#8b5cf6]/50 bg-[#8b5cf6]/15",
+  3: "border-[#3b82f6]/50 bg-[#3b82f6]/15",
+  2: "border-[#fb923c]/50 bg-[#fb923c]/15",
+  1: "border-[#94a3b8]/50 bg-[#94a3b8]/15",
+};
+
+export function badgeChipClass(id: string): string {
+  return BADGE_CHIP_BY_RARITY[badgeRarity(id)];
 }
 
-/** Tailwind classes for filled badge chips (dark text on light fills works in both themes). */
-export const BADGE_TONE_CHIP: Record<BadgeTone, string> = {
-  gold: "border-[#c9971a] bg-[#e8b84a] text-[#1a1408]",
-  green: "border-[#0f7a4a] bg-[#3ecf8e] text-[#0a1f14]",
-  red: "border-[#b83a3a] bg-[#f07178] text-[#2a0c0e]",
-  blue: "border-[#1f6fad] bg-[#5eb3f0] text-[#0a1a28]",
-  teal: "border-[#0f766e] bg-[#2dd4bf] text-[#042f2e]",
-  amber: "border-[#c2410c] bg-[#fb923c] text-[#1c0a02]",
-  rose: "border-[#9f1239] bg-[#fb7185] text-[#2a0610]",
-  slate: "border-[#475569] bg-[#94a3b8] text-[#0f172a]",
-};
-
-/** Softer row tint for admin catalog lists. */
-export const BADGE_TONE_SOFT: Record<BadgeTone, string> = {
-  gold: "border-[#c9971a]/50 bg-[#e8b84a]/15",
-  green: "border-[#0f7a4a]/50 bg-[#3ecf8e]/15",
-  red: "border-[#b83a3a]/50 bg-[#f07178]/15",
-  blue: "border-[#1f6fad]/50 bg-[#5eb3f0]/15",
-  teal: "border-[#0f766e]/50 bg-[#2dd4bf]/15",
-  amber: "border-[#c2410c]/50 bg-[#fb923c]/15",
-  rose: "border-[#9f1239]/50 bg-[#fb7185]/15",
-  slate: "border-[#475569]/50 bg-[#94a3b8]/15",
-};
+export function badgeSoftClass(id: string): string {
+  return BADGE_SOFT_BY_RARITY[badgeRarity(id)];
+}
 
 /**
  * Sentinel `weekNumber` for season_once awards.
