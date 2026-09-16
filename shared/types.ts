@@ -20,9 +20,27 @@ export interface GameData {
   status: "scheduled" | "in_progress" | "final";
   awayScore?: number;
   homeScore?: number;
+  /** ESPN period (1–4 regulation, 5+ OT). */
+  period?: number | null;
+  /** Clock string from ESPN, e.g. "4:12". */
+  displayClock?: string | null;
+  /** Short status label, e.g. "Halftime", "End of 2nd", "OT". */
+  statusDetail?: string | null;
+  /** Score snapshot when OT first detected — used for OT Hero badge. */
+  preOtAwayScore?: number | null;
+  preOtHomeScore?: number | null;
   weekNumber: number;
   seasonType: number;
   phase: WeekPhase;
+}
+
+export interface EarnedBadge {
+  badgeId: string;
+  name: string;
+  description: string;
+  seasonType: number | null;
+  weekNumber: number | null;
+  earnedAt: string;
 }
 
 export interface UserPick {
@@ -45,8 +63,12 @@ export interface LeaderboardEntry {
   winPct: number;
   correct: number;
   total: number;
+  /** ★-only graded record (for Confidence P/L mode). */
+  confCorrect: number;
+  confTotal: number;
   confidencePl: number;
   weeksComplete: number;
+  badges?: EarnedBadge[];
 }
 
 export interface UserStats {

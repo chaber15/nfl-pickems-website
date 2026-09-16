@@ -1,13 +1,16 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Question } from "@phosphor-icons/react";
-import type { GameData, UserStats } from "@shared/types";
+import type { EarnedBadge, GameData, UserStats } from "@shared/types";
 import { AppShell } from "../components/AppShell";
-import { apiStats } from "../lib/api";
+import { BadgeChipRow } from "../components/BadgeChip";
+import { apiLeaderboard, apiStats } from "../lib/api";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
 import { getStoredPicks } from "../lib/localStorage";
 import { loadWeekGames } from "../lib/loadWeekGames";
 import { computeUserStats } from "@shared/statsCompute";
+import { getVisibleCrowdUsernames } from "../lib/crowdVisibility";
 
 function StatCard({ label, value, help }: { label: string; value: string; help: string }) {
   const [open, setOpen] = useState(false);
@@ -92,18 +95,45 @@ const STAT_HELP = {
   underdogHitRate: "How often your underdog picks cover the spread (among graded underdog picks).",
   favoriteUnits: "Units won or lost on favorite picks only (hypothetical track).",
   underdogUnits: "Units won or lost on underdog picks only (hypothetical track).",
-  streakAll: "Current streak of non-losing results on all graded picks (wins and pushes).",
-  streakConfidence: "Current streak on ★ confidence bets only.",
+  streakAll: "Consecutive weeks with ATS win % over 50% (newest weeks first).",
+  streakConfidence: "Consecutive eligible ★ weeks with win % over 50%.",
   bestWeek: "Your best eligible week by confidence P/L.",
   worstWeek: "Your worst eligible week by confidence P/L.",
 } as const;
 
 export function StatsPage() {
+  const { username: routeUser } = useParams<{ username?: string }>();
   const { username, useBackend } = useAuth();
+  const navigate = useNavigate();
   const { seasonType, week, weekKey, ready } = useWeek();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [games, setGames] = useState<GameData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [badges, setBadges] = useState<EarnedBadge[]>([]);
+  const [viewLabel, setViewLabel] = useState<string | null>(null);
+  const [starredUsers, setStarredUsers] = useState<string[]>([]);
+
+  const targetUsername = routeUser ?? username ?? undefined;
+  const viewingOther =
+    routeUser != null && username != null && routeUser.toLowerCase() !== username.toLowerCase();
+  const isOwnStats = !viewingOther;
+
+  useEffect(() => {
+    if (!useBackend || !ready) return;
+    (async () => {
+      try {
+        const res = await apiLeaderboard();
+        const names = res.entries.map((e) => e.username);
+        setStarredUsers(
+          getVisibleCrowdUsernames(names).filter(
+            (n) => !username || n.toLowerCase() !== username.toLowerCase(),
+          ),
+        );
+      } catch {
+        setStarredUsers([]);
+      }
+    })();
+  }, [useBackend, ready, username]);
 
   useEffect(() => {
     if (!ready) return;
@@ -112,30 +142,73 @@ export function StatsPage() {
       try {
         if (useBackend) {
           try {
-            const res = await apiStats();
+            const res = await apiStats(viewingOther ? routeUser : undefined);
             setStats(res.stats);
+            setBadges(res.badges ?? []);
+            setViewLabel(res.displayName ?? res.username ?? routeUser ?? null);
             setGames([]);
             return;
           } catch {
             /* fall through */
           }
         }
+        if (viewingOther) {
+          setStats(null);
+          setBadges([]);
+          setViewLabel(routeUser ?? null);
+          return;
+        }
         const board = await loadWeekGames(seasonType, week, weekKey);
         setGames(board.games);
         const picks = getStoredPicks(weekKey);
         setStats(computeUserStats(board.games, picks));
+        setBadges([]);
+        setViewLabel(null);
       } catch {
         setStats(null);
       } finally {
         setLoading(false);
       }
     })();
-  }, [username, useBackend, seasonType, week, weekKey, ready]);
+  }, [username, useBackend, seasonType, week, weekKey, ready, routeUser, viewingOther]);
 
   return (
     <AppShell games={games}>
       <div className="mx-auto max-w-6xl space-y-6">
-        <h2 className="font-display text-3xl sm:text-4xl">My Stats</h2>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-display text-3xl sm:text-4xl">
+              {viewingOther ? `${viewLabel ?? targetUsername}'s Stats` : "My Stats"}
+            </h2>
+            {viewingOther && (
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                <Link to="/stats" className="font-semibold text-[var(--accent-blue)] underline">
+                  Back to your stats
+                </Link>
+              </p>
+            )}
+          </div>
+          {isOwnStats && starredUsers.length > 0 && (
+            <label className="flex flex-col gap-1 text-sm font-semibold">
+              <span className="text-[var(--text-muted)]">View starred player</span>
+              <select
+                className="min-h-11 rounded-xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] px-3"
+                value=""
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) navigate(`/stats/${encodeURIComponent(v)}`);
+                }}
+              >
+                <option value="">Choose…</option>
+                {starredUsers.map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
 
         {loading ? (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -149,6 +222,13 @@ export function StatsPage() {
           </div>
         ) : (
           <>
+            {badges.length > 0 && (
+              <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-4">
+                <h3 className="mb-3 font-bold">Badges</h3>
+                <BadgeChipRow badges={badges} showWeek />
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
               <StatCard
                 label="Win % (all picks)"

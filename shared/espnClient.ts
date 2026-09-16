@@ -1,5 +1,7 @@
 import type { GameData, WeekPhase } from "./types";
 import { computeAtsResult, parseAmericanOdds } from "./scoring";
+import { sortGamesLiveFirstThenChronological } from "./gameOrder";
+import { clampToAvailableWeek, isAfterTuesdayNoonEt, nextAvailableWeek } from "./weekUtils";
 
 const SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
 const ODDS_URL = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events";
@@ -43,10 +45,15 @@ interface EspnEvent {
     competitors: EspnTeam[];
     odds?: EspnOddsBlock[];
     status?: {
+      period?: number;
+      displayClock?: string;
       type?: {
         name?: string;
         completed?: boolean;
         state?: string;
+        shortDetail?: string;
+        detail?: string;
+        description?: string;
       };
     };
   }>;
@@ -87,10 +94,45 @@ function mapPhase(seasonType: number, weekNumber: number): WeekPhase {
   return "regular";
 }
 
-function mapStatus(name?: string, completed?: boolean): GameData["status"] {
-  if (completed || name === "STATUS_FINAL") return "final";
-  if (name === "STATUS_IN_PROGRESS" || name === "STATUS_HALFTIME") return "in_progress";
+const LIVE_STATUS_NAMES = new Set([
+  "STATUS_IN_PROGRESS",
+  "STATUS_HALFTIME",
+  "STATUS_END_PERIOD",
+  "STATUS_END_OF_PERIOD",
+  "STATUS_OVERTIME",
+  "STATUS_FIRST_HALF",
+  "STATUS_SECOND_HALF",
+  "STATUS_DELAYED",
+  "STATUS_RAIN_DELAY",
+]);
+
+function mapStatus(
+  name?: string,
+  completed?: boolean,
+  state?: string,
+): GameData["status"] {
+  if (completed || name === "STATUS_FINAL" || state === "post") return "final";
+  if (state === "in" || (name != null && LIVE_STATUS_NAMES.has(name))) return "in_progress";
   return "scheduled";
+}
+
+function liveStatusDetail(
+  name?: string,
+  period?: number | null,
+  shortDetail?: string,
+  description?: string,
+): string | null {
+  if (name === "STATUS_HALFTIME") return "Halftime";
+  if (name === "STATUS_END_PERIOD" || name === "STATUS_END_OF_PERIOD") {
+    if (period === 2) return "Halftime";
+    if (period != null && period >= 5) return "End of OT";
+    if (period != null) return `End of Q${period}`;
+    return shortDetail ?? description ?? "End of period";
+  }
+  if (period != null && period >= 5) return "OT";
+  if (shortDetail?.toLowerCase().includes("halftime")) return "Halftime";
+  if (shortDetail?.toLowerCase().includes("ot")) return "OT";
+  return shortDetail ?? description ?? null;
 }
 
 /** Spread juice / vig only — never moneyline. Used for confidence P/L units. */
@@ -160,6 +202,15 @@ function parseEvent(event: EspnEvent, oddsBlock?: EspnOddsBlock | null): GameDat
   const odds = extractOdds(oddsBlock ?? embeddedOdds ?? undefined);
   const seasonType = event.season?.type ?? 1;
   const weekNumber = event.week?.number ?? 1;
+  const statusName = comp.status?.type?.name;
+  const period = comp.status?.period ?? null;
+  const displayClock = comp.status?.displayClock ?? null;
+  const statusDetail = liveStatusDetail(
+    statusName,
+    period,
+    comp.status?.type?.shortDetail,
+    comp.status?.type?.description,
+  );
 
   const game: GameData = {
     id: event.id,
@@ -174,9 +225,12 @@ function parseEvent(event: EspnEvent, oddsBlock?: EspnOddsBlock | null): GameDat
     oddsAway: odds.oddsAway,
     oddsHome: odds.oddsHome,
     atsResult: null,
-    status: mapStatus(comp.status?.type?.name, comp.status?.type?.completed),
+    status: mapStatus(statusName, comp.status?.type?.completed, comp.status?.type?.state),
     awayScore: away.score != null ? Number(away.score) : undefined,
     homeScore: home.score != null ? Number(home.score) : undefined,
+    period,
+    displayClock,
+    statusDetail,
     weekNumber,
     seasonType,
     phase: mapPhase(seasonType, weekNumber),
@@ -232,10 +286,10 @@ export async function fetchScoreboard(
     if (game) games.push(game);
   }
 
-  games.sort((a, b) => new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime());
+  const sorted = sortGamesLiveFirstThenChronological(games);
 
   return {
-    games,
+    games: sorted,
     seasonType: resolvedType,
     week: data.week?.number ?? week,
     seasonYear: seasonYearFromScoreboard(data, resolvedType),
@@ -271,4 +325,53 @@ export async function detectCurrentWeek(): Promise<{
     week: data.week?.number ?? 1,
     seasonYear: seasonYearFromScoreboard(data, seasonType),
   };
+}
+
+/**
+ * Default home-page week: ESPN current, but after Tuesday noon ET advance to the
+ * next slate once the ESPN week is fully final (ESPN often lags after MNF).
+ */
+export async function resolveCurrentPickemsWeek(now = new Date()): Promise<{
+  seasonType: number;
+  week: number;
+  seasonYear: number;
+}> {
+  const current = await detectCurrentWeek();
+  let seasonType = current.seasonType;
+  let week = current.week;
+  const clamped = clampToAvailableWeek(seasonType, week);
+  seasonType = clamped.seasonType;
+  week = clamped.week;
+
+  if (!isAfterTuesdayNoonEt(now)) {
+    return { seasonType, week, seasonYear: current.seasonYear };
+  }
+
+  try {
+    const board = await fetchScoreboard(seasonType, week);
+    const games = board.games;
+    const finished =
+      games.length === 0 || games.every((g) => g.status === "final");
+    if (!finished) {
+      return { seasonType, week, seasonYear: current.seasonYear };
+    }
+
+    const next = nextAvailableWeek(seasonType, week);
+    if (next.seasonType === seasonType && next.week === week) {
+      return { seasonType, week, seasonYear: current.seasonYear };
+    }
+
+    const nextBoard = await fetchScoreboard(next.seasonType, next.week);
+    if (nextBoard.games.length > 0) {
+      return {
+        seasonType: next.seasonType,
+        week: next.week,
+        seasonYear: current.seasonYear,
+      };
+    }
+  } catch {
+    /* fall through to ESPN week */
+  }
+
+  return { seasonType, week, seasonYear: current.seasonYear };
 }

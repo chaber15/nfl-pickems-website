@@ -1,4 +1,7 @@
 [build]
+  # Schema changes (user_badges, game live-clock columns) must be applied manually:
+  #   DATABASE_URL=... npm run db:push
+  # Do NOT auto-push here — `drizzle-kit push --force` can accept destructive changes.
   command = "npm run build"
   publish = "dist"
   functions = "netlify/functions"

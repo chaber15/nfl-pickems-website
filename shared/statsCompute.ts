@@ -25,7 +25,7 @@ export function buildHistoryRows(
   now = new Date(),
 ): HistoryRow[] {
   return [...games]
-    .sort((a, b) => new Date(b.kickoffAt).getTime() - new Date(a.kickoffAt).getTime())
+    .sort((a, b) => new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime())
     .map((g) => {
       const up = picks[g.id];
       const locked = isGameLocked(g.kickoffAt, now);
@@ -87,12 +87,18 @@ export function computeLeaderboardFromLocal(
 ): LeaderboardEntry {
   let correct = 0;
   let total = 0;
+  let confCorrect = 0;
+  let confTotal = 0;
 
   for (const g of games) {
     if (!isGradedForStandings(g)) continue;
     total++;
     const up = picks[g.id];
     correct += pickCorrectness(up?.pick ?? null, g.atsResult);
+    if (up?.pick && up.isConfidenceBet) {
+      confTotal++;
+      confCorrect += pickCorrectness(up.pick, g.atsResult);
+    }
   }
 
   const { pl: confidencePl, eligible } = confidencePlForWeek(games, picks);
@@ -106,15 +112,17 @@ export function computeLeaderboardFromLocal(
     winPct: computeWinPct(correct, total),
     correct,
     total,
+    confCorrect,
+    confTotal,
     confidencePl,
     weeksComplete,
   };
 }
 
-function streakFromOutcomes(outcomes: Array<"win" | "loss" | "push" | "miss">): number {
+function streakFromWeekWinPcts(weekWinPctsNewestFirst: number[]): number {
   let streak = 0;
-  for (const o of outcomes) {
-    if (o === "win" || o === "push") streak++;
+  for (const pct of weekWinPctsNewestFirst) {
+    if (pct > 50) streak++;
     else break;
   }
   return streak;
@@ -151,9 +159,6 @@ export function computeUserStats(
       hypotheticalPl: number;
     }
   >();
-
-  const allOutcomes: Array<"win" | "loss" | "push" | "miss"> = [];
-  const confOutcomes: Array<"win" | "loss" | "push" | "miss"> = [];
 
   const sorted = [...games].sort(
     (a, b) => new Date(b.kickoffAt).getTime() - new Date(a.kickoffAt).getTime(),
@@ -195,7 +200,6 @@ export function computeUserStats(
     if (!up?.pick) {
       hypotheticalPl -= 1;
       bucket.hypotheticalPl -= 1;
-      allOutcomes.push("miss");
       continue;
     }
 
@@ -204,20 +208,12 @@ export function computeUserStats(
     correctAll += c;
     bucket.correct += c;
 
-    const outcome: "win" | "loss" | "push" | "miss" =
-      g.atsResult == null ? "miss" : c === 1 ? "win" : c === 0.5 ? "push" : "loss";
-    if (g.atsResult != null) allOutcomes.push(outcome);
-
     if (up.pick === "favorite") {
       favPicks++;
       if (c === 1) favHits++;
     } else {
       dogPicks++;
       if (c === 1) dogHits++;
-    }
-
-    if (up.isConfidenceBet) {
-      if (g.atsResult != null) confOutcomes.push(outcome);
     }
 
     if (g.spread != null && g.favoriteSide && g.atsResult) {
@@ -254,10 +250,13 @@ export function computeUserStats(
   // Recalculate confidencePl from weekly rows (already accumulated above correctly)
   confidencePl = weeklyRows.reduce((sum, r) => sum + r.confidencePl, 0);
 
-  // Confidence win % / streak: only count ★ bets from eligible weeks
+  // Confidence win %: only count ★ bets from eligible weeks
   let correctConfEligible = 0;
   let totalConfEligible = 0;
-  const confOutcomesEligible: Array<"win" | "loss" | "push" | "miss"> = [];
+  const confWeekPctByKey = new Map<
+    string,
+    { correct: number; total: number; weekNumber: number; seasonType: number }
+  >();
 
   for (const g of sorted) {
     if (!isGradedForStandings(g)) continue;
@@ -270,14 +269,18 @@ export function computeUserStats(
     const c = pickCorrectness(up.pick, g.atsResult);
     totalConfEligible++;
     correctConfEligible += c;
-    const outcome: "win" | "loss" | "push" | "miss" =
-      g.atsResult == null ? "miss" : c === 1 ? "win" : c === 0.5 ? "push" : "loss";
-    if (g.atsResult != null) confOutcomesEligible.push(outcome);
+    const confWeek = confWeekPctByKey.get(key) ?? {
+      correct: 0,
+      total: 0,
+      weekNumber: g.weekNumber,
+      seasonType: g.seasonType,
+    };
+    confWeek.correct += c;
+    confWeek.total++;
+    confWeekPctByKey.set(key, confWeek);
   }
 
-  // Prefer eligible-only metrics when we have week structure; fall back if empty
-  const useEligibleConf = weekBuckets.size > 0;
-  if (useEligibleConf) {
+  if (weekBuckets.size > 0) {
     correctConf = correctConfEligible;
     totalConf = totalConfEligible;
   }
@@ -296,6 +299,16 @@ export function computeUserStats(
 
   const pickedCount = favPicks + dogPicks;
 
+  const weekPctNewestFirst = [...weeklyRows]
+    .filter((r) => r.totalGames > 0)
+    .sort((a, b) => b.weekNumber - a.weekNumber)
+    .map((r) => r.winPct);
+
+  const confWeekPctNewestFirst = [...confWeekPctByKey.values()]
+    .filter((w) => w.total > 0)
+    .sort((a, b) => b.weekNumber - a.weekNumber || b.seasonType - a.seasonType)
+    .map((w) => computeWinPct(w.correct, w.total));
+
   return {
     winPctAll: computeWinPct(correctAll, totalAll),
     winPctConfidence: computeWinPct(correctConf, totalConf),
@@ -311,10 +324,8 @@ export function computeUserStats(
     underdogHitRate: dogPicks > 0 ? (dogHits / dogPicks) * 100 : 0,
     favoriteUnits,
     underdogUnits,
-    currentStreakAll: streakFromOutcomes(allOutcomes),
-    currentStreakConfidence: streakFromOutcomes(
-      useEligibleConf ? confOutcomesEligible : confOutcomes,
-    ),
+    currentStreakAll: streakFromWeekWinPcts(weekPctNewestFirst),
+    currentStreakConfidence: streakFromWeekWinPcts(confWeekPctNewestFirst),
     weeklyRows,
   };
 }

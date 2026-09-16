@@ -29,7 +29,31 @@ export function setCrowdNameVisible(username: string, visible: boolean) {
   writeHidden(hidden);
 }
 
+const TUTORIAL_KEY = "pickems_leaderboard_lean_tutorial_v1";
+
+export function readTutorialDone(): boolean {
+  try {
+    return localStorage.getItem(TUTORIAL_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markTutorialDone() {
+  try {
+    localStorage.setItem(TUTORIAL_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Snapshot of currently hidden usernames (lowercase). */
 export function getHiddenCrowdNames(): Set<string> {
   return readHidden();
+}
+
+/** Usernames currently visible on the lean (not hidden). */
+export function getVisibleCrowdUsernames(allUsernames: string[]): string[] {
+  const hidden = getHiddenCrowdNames();
+  return allUsernames.filter((u) => !hidden.has(u.toLowerCase()));
 }

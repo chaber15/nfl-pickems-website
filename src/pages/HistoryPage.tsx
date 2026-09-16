@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import { Star } from "@phosphor-icons/react";
 import { buildHistoryRows } from "@shared/statsCompute";
 import type { GameData, HistoryRow } from "@shared/types";
@@ -17,12 +18,39 @@ function outcomeLabel(row: HistoryRow): string {
   return "Pending";
 }
 
+function outcomeClass(outcome: HistoryRow["outcome"]): string {
+  if (outcome === "win") return "text-[var(--accent-green)]";
+  if (outcome === "loss" || outcome === "no_pick") return "text-[var(--accent-red)]";
+  if (outcome === "push") return "text-[var(--accent-gold)]";
+  return "text-[var(--text-muted)]";
+}
+
+function unitsClass(units: number): string {
+  if (units > 0) return "text-[var(--accent-green)]";
+  if (units < 0) return "text-[var(--accent-red)]";
+  return "";
+}
+
+function cardBorderClass(row: HistoryRow): string {
+  if (row.outcome === "win") return "border-[var(--accent-green)]";
+  if (row.outcome === "loss" || row.outcome === "no_pick") return "border-[var(--accent-red)]";
+  if (row.outcome === "push") return "border-[var(--accent-gold)]";
+  if (row.isConfidenceBet) return "border-[var(--accent-gold)]";
+  return "border-[var(--border-card)]";
+}
+
 export function HistoryPage() {
+  const { username: routeUser } = useParams<{ username?: string }>();
   const { username, useBackend } = useAuth();
   const { seasonType, week, weekKey, ready } = useWeek();
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [games, setGames] = useState<GameData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewLabel, setViewLabel] = useState<string | null>(null);
+
+  const targetUsername = routeUser ?? username;
+  const viewingOther =
+    routeUser != null && username != null && routeUser.toLowerCase() !== username.toLowerCase();
 
   useEffect(() => {
     if (!ready) return;
@@ -31,30 +59,50 @@ export function HistoryPage() {
       try {
         if (useBackend) {
           try {
-            const res = await apiHistory(seasonType, week);
+            const res = await apiHistory(seasonType, week, routeUser);
             setRows(res.history);
+            setViewLabel(res.displayName ?? res.username ?? routeUser ?? null);
             setGames([]);
             return;
           } catch {
             /* fall through to local */
           }
         }
+        if (viewingOther) {
+          setRows([]);
+          setViewLabel(routeUser);
+          return;
+        }
         const board = await loadWeekGames(seasonType, week, weekKey);
         setGames(board.games);
         const picks = getStoredPicks(weekKey);
         setRows(buildHistoryRows(board.games, picks));
+        setViewLabel(null);
       } catch {
         setRows([]);
       } finally {
         setLoading(false);
       }
     })();
-  }, [useBackend, username, seasonType, week, weekKey, ready]);
+  }, [useBackend, username, seasonType, week, weekKey, ready, routeUser, viewingOther]);
 
   return (
     <AppShell games={games}>
       <div className="mx-auto max-w-5xl space-y-6">
-        <h2 className="font-display text-3xl sm:text-4xl">Previous Picks</h2>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-display text-3xl sm:text-4xl">
+              {viewingOther ? `${viewLabel ?? targetUsername}'s Picks` : "Previous Picks"}
+            </h2>
+            {viewingOther && (
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                <Link to="/history" className="font-semibold text-[var(--accent-blue)] underline">
+                  Back to your history
+                </Link>
+              </p>
+            )}
+          </div>
+        </div>
 
         {loading ? (
           <div className="space-y-3">
@@ -89,7 +137,7 @@ export function HistoryPage() {
                         {row.outcome === "no_pick" ? (
                           <span className="font-bold text-[var(--accent-red)]">No pick</span>
                         ) : (
-                          row.pickDisplay ?? "Pending"
+                          <span className="font-semibold">{row.pickDisplay ?? "Pending"}</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -99,18 +147,10 @@ export function HistoryPage() {
                           "-"
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className={`px-4 py-3 font-semibold ${outcomeClass(row.outcome)}`}>
                         {row.resultDisplay ?? outcomeLabel(row)}
                       </td>
-                      <td
-                        className={`px-4 py-3 font-mono ${
-                          row.unitsDelta > 0
-                            ? "text-[var(--accent-green)]"
-                            : row.unitsDelta < 0
-                              ? "text-[var(--accent-red)]"
-                              : ""
-                        }`}
-                      >
+                      <td className={`px-4 py-3 font-mono ${unitsClass(row.unitsDelta)}`}>
                         {row.unitsDelta.toFixed(2)}
                       </td>
                     </tr>
@@ -123,27 +163,30 @@ export function HistoryPage() {
               {rows.map((row) => (
                 <article
                   key={row.gameId}
-                  className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 ${
-                    row.isConfidenceBet ? "border-[var(--accent-gold)]" : "border-[var(--border-card)]"
-                  }`}
+                  className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 ${cardBorderClass(row)}`}
                 >
-                  <p className="text-xs font-semibold text-[var(--text-muted)]">Week {row.weekNumber}</p>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs font-semibold text-[var(--text-muted)]">Week {row.weekNumber}</p>
+                    <span className={`text-xs font-bold uppercase tracking-wide ${outcomeClass(row.outcome)}`}>
+                      {outcomeLabel(row)}
+                    </span>
+                  </div>
                   <h3 className="mt-1 font-bold">{row.matchup}</h3>
-                  <p className="mt-2 text-sm">
-                    {row.outcome === "no_pick" ? (
-                      <span className="font-bold text-[var(--accent-red)]">No pick</span>
-                    ) : (
-                      row.pickDisplay ?? "Pending"
-                    )}
+                  <p className={`mt-2 text-base font-bold ${outcomeClass(row.outcome)}`}>
+                    {row.outcome === "no_pick" ? "No pick" : (row.pickDisplay ?? "Pending")}
                   </p>
                   {row.isConfidenceBet && (
                     <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[var(--accent-gold)]/20 px-3 py-1 text-xs font-bold text-[var(--accent-gold)]">
                       <Star size={12} weight="fill" /> Confidence bet
                     </span>
                   )}
-                  <div className="mt-2 flex items-center justify-between gap-2 text-sm">
-                    <span>{row.resultDisplay ?? outcomeLabel(row)}</span>
-                    <span className="font-mono">{row.unitsDelta.toFixed(2)}</span>
+                  <div className="mt-3 flex items-center justify-between gap-2 text-sm">
+                    <span className={`font-semibold ${outcomeClass(row.outcome)}`}>
+                      {row.resultDisplay ?? outcomeLabel(row)}
+                    </span>
+                    <span className={`font-mono font-bold ${unitsClass(row.unitsDelta)}`}>
+                      {row.unitsDelta.toFixed(2)}
+                    </span>
                   </div>
                 </article>
               ))}

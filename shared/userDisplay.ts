@@ -1,41 +1,31 @@
-/** Shown name: `username` or `username (Nickname)`. */
+/** What everyone sees in the UI. Freeform — not forced into `username (nick)`. */
 export function publicDisplayName(user: {
   username: string;
   displayName?: string | null;
 }): string {
   const raw = user.displayName?.trim();
-  if (!raw || raw.toLowerCase() === user.username.toLowerCase()) {
-    return user.username;
-  }
-  // Already full format like "pjhaber82 (Peter)"
-  if (raw.toLowerCase().startsWith(`${user.username.toLowerCase()} (`)) {
-    return raw;
-  }
-  return `${user.username} (${raw})`;
-}
-
-/** Nickname part for the admin editor (empty = show username only). */
-export function nicknameFromStored(user: {
-  username: string;
-  displayName?: string | null;
-}): string {
-  const raw = user.displayName?.trim() ?? "";
-  if (!raw || raw.toLowerCase() === user.username.toLowerCase()) return "";
-  const open = `${user.username} (`;
-  if (raw.toLowerCase().startsWith(open.toLowerCase()) && raw.endsWith(")")) {
-    return raw.slice(open.length, -1).trim();
-  }
+  if (!raw) return user.username;
   return raw;
 }
 
-const NICKNAME_MAX = 24;
+const DISPLAY_NAME_MAX = 40;
 
-/** Validate admin-edited nickname; empty clears the display suffix. */
+/** Validate display name; empty clears it (UI falls back to username). */
 export function normalizeDisplayName(raw: string): string | null {
   const name = raw.trim().replace(/\s+/g, " ");
   if (name.length === 0) return null;
-  if (name.length > NICKNAME_MAX) {
-    throw new Error(`Name must be at most ${NICKNAME_MAX} characters`);
+  if (name.length > DISPLAY_NAME_MAX) {
+    throw new Error(`Display name must be at most ${DISPLAY_NAME_MAX} characters`);
+  }
+  return name;
+}
+
+export const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
+
+export function normalizeUsername(raw: string): string {
+  const name = raw.trim();
+  if (!USERNAME_PATTERN.test(name)) {
+    throw new Error("Username must be 3-20 characters: letters, numbers, underscore");
   }
   return name;
 }

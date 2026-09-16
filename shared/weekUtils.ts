@@ -86,3 +86,47 @@ export function clampToAvailableWeek(seasonType: number, week: number): { season
   if (idx >= 0) return { seasonType, week };
   return { seasonType: DEMO_SEASON_TYPE, week: DEMO_WEEK };
 }
+
+/**
+ * True from Tuesday 12:00 PM America/New_York through Saturday night.
+ * That's when the home page should prefer the upcoming slate over a finished week
+ * that ESPN may still report as "current."
+ */
+export function isAfterTuesdayNoonEt(now = new Date()): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(now);
+
+  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
+  let hour = Number(parts.find((p) => p.type === "hour")?.value);
+  if (!Number.isFinite(hour)) return false;
+  if (hour === 24) hour = 0;
+
+  switch (weekday) {
+    case "Tue":
+      return hour >= 12;
+    case "Wed":
+    case "Thu":
+    case "Fri":
+    case "Sat":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/** Next regular / playoff week within our available options. */
+export function nextAvailableWeek(
+  seasonType: number,
+  week: number,
+): { seasonType: number; week: number } {
+  const options = buildWeekOptions();
+  const idx = weekOptionIndex(seasonType, week);
+  if (idx < 0) return clampToAvailableWeek(seasonType, week);
+  const next = options[idx + 1];
+  if (!next) return { seasonType, week };
+  return { seasonType: next.seasonType, week: next.week };
+}

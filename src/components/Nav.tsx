@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../lib/authContext";
 import { NFL_LOGO_SRC } from "../lib/teamLogos";
 import { MiniWeeklyLeaderboard } from "./MiniWeeklyLeaderboard";
+import { ChangeUsernamePanel } from "./ChangeUsernamePanel";
 
 const links = [
   { to: "/", label: "Picks", icon: Football },
@@ -69,7 +70,8 @@ export function Sidebar() {
 
       <MiniWeeklyLeaderboard />
 
-      <div className="mt-auto pt-4">
+      <div className="mt-auto space-y-2 pt-4">
+        <ChangeUsernamePanel />
         <button
           type="button"
           onClick={() => logout()}

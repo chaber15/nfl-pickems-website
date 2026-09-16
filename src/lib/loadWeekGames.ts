@@ -1,4 +1,5 @@
 import { fetchScoreboard } from "@shared/espnClient";
+import { sortGamesLiveFirstThenChronological } from "@shared/gameOrder";
 import { formatLineLockLabel, mergeGamesWithLineLock, type LineSnapshot } from "@shared/lineLock";
 import type { GameData } from "@shared/types";
 import { getStoredLines, saveStoredLines } from "./localStorage";
@@ -19,7 +20,7 @@ export async function loadWeekGames(seasonType: number, week: number, weekKey: s
   const { games, nextStored, linesLocked, lockAt } = mergeGamesWithLineLock(board.games, stored);
   saveStoredLines(weekKey, nextStored, lockAt);
   return {
-    games,
+    games: sortGamesLiveFirstThenChronological(games),
     seasonType: board.seasonType,
     week: board.week,
     linesLocked,

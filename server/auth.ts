@@ -1,11 +1,10 @@
 import { randomBytes } from "crypto";
-import { eq, and, gt, sql } from "drizzle-orm";
+import { eq, and, gt, sql, ne } from "drizzle-orm";
 import { getDb, schema } from "./db";
-import { publicDisplayName } from "../shared/userDisplay";
+import { normalizeUsername, publicDisplayName } from "../shared/userDisplay";
 
 const SESSION_COOKIE = "pickems_session";
 const SESSION_DAYS = 30;
-const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
 export function getSessionCookieName() {
   return SESSION_COOKIE;
@@ -74,10 +73,7 @@ export async function getUserFromSession(token: string | undefined) {
 
 export async function registerOrLogin(username: string) {
   const db = getDb();
-  const loginName = username.trim();
-  if (!USERNAME_RE.test(loginName)) {
-    throw new Error("Username must be 3-20 chars: letters, numbers, underscore");
-  }
+  const loginName = normalizeUsername(username);
   const key = loginName.toLowerCase();
 
   const [existing] = await db
@@ -130,6 +126,39 @@ export async function registerOrLogin(username: string) {
 
   const token = await createSession(user.id);
   return { user, token, created: true };
+}
+
+/** Change login username if not taken by someone else. */
+export async function changeUsername(userId: string, nextUsername: string) {
+  const db = getDb();
+  const loginName = normalizeUsername(nextUsername);
+  const key = loginName.toLowerCase();
+
+  const [current] = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
+  if (!current) throw new Error("User not found");
+  if (current.isBanned) throw new Error("Account banned");
+
+  const [taken] = await db
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(and(sql`lower(${schema.users.username}) = ${key}`, ne(schema.users.id, userId)))
+    .limit(1);
+  if (taken) throw new Error("Username already taken");
+
+  const prevDisplay = current.displayName?.trim() ?? "";
+  const displayWasDefault =
+    !prevDisplay || prevDisplay.toLowerCase() === current.username.toLowerCase();
+
+  const [updated] = await db
+    .update(schema.users)
+    .set({
+      username: loginName,
+      ...(displayWasDefault ? { displayName: loginName } : {}),
+    })
+    .where(eq(schema.users.id, userId))
+    .returning();
+
+  return updated ?? current;
 }
 
 export async function logout(token: string | undefined) {

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { pgTable, text, boolean, integer, timestamp, uuid, uniqueIndex, pgEnum } from "drizzle-orm/pg-core";
 
 export const weekPhaseEnum = pgEnum("week_phase", [
@@ -75,6 +76,11 @@ export const games = pgTable("games", {
   status: gameStatusEnum("status").notNull().default("scheduled"),
   awayScore: integer("away_score"),
   homeScore: integer("home_score"),
+  period: integer("period"),
+  displayClock: text("display_clock"),
+  statusDetail: text("status_detail"),
+  preOtAwayScore: integer("pre_ot_away_score"),
+  preOtHomeScore: integer("pre_ot_home_score"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -97,6 +103,31 @@ export const picks = pgTable(
   (t) => [uniqueIndex("picks_user_game_idx").on(t.userId, t.gameId)],
 );
 
+export const userBadges = pgTable(
+  "user_badges",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    badgeId: text("badge_id").notNull(),
+    seasonType: integer("season_type"),
+    /** Week-scoped awards use the real week; season_once uses 0 (SEASON_BADGE_WEEK). */
+    weekNumber: integer("week_number").notNull().default(0),
+    earnedAt: timestamp("earned_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One season_once badge per user (howl, week_champion, …) — week_number = 0 sentinel.
+    uniqueIndex("user_badges_season_once_idx")
+      .on(t.userId, t.badgeId)
+      .where(sql`${t.weekNumber} = 0`),
+    // Same week badge at most once per user / season type / week.
+    uniqueIndex("user_badges_unique_week_idx")
+      .on(t.userId, t.badgeId, t.seasonType, t.weekNumber)
+      .where(sql`${t.weekNumber} > 0`),
+  ],
+);
+
 export const siteSettings = pgTable("site_settings", {
   id: integer("id").primaryKey().default(1),
   registrationOpen: boolean("registration_open").notNull().default(true),
@@ -107,3 +138,4 @@ export const siteSettings = pgTable("site_settings", {
 export type User = typeof users.$inferSelect;
 export type Game = typeof games.$inferSelect;
 export type Pick = typeof picks.$inferSelect;
+export type UserBadge = typeof userBadges.$inferSelect;

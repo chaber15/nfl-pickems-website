@@ -1,27 +1,63 @@
 import { useEffect, useMemo, useState } from "react";
-import { Crown } from "@phosphor-icons/react";
-import type { GameData, LeaderboardEntry } from "@shared/types";
+import { Link } from "react-router-dom";
+import { Crown, X } from "@phosphor-icons/react";
+import type { EarnedBadge, GameData, LeaderboardEntry } from "@shared/types";
 import { shortWeekLabel } from "@shared/weekUtils";
+import { badgeDescription, badgeName, isSeasonScopedBadge } from "@shared/badges";
 import { AppShell } from "../components/AppShell";
-import { apiLeaderboard } from "../lib/api";
+import { LeaderboardBadgeTrail } from "../components/BadgeChip";
+import { apiLeaderboard, isDemoMode } from "../lib/api";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
 import { getStoredPicks } from "../lib/localStorage";
 import { loadWeekGames } from "../lib/loadWeekGames";
 import { computeLeaderboardFromLocal } from "@shared/statsCompute";
-import { isCrowdNameVisible, setCrowdNameVisible } from "../lib/crowdVisibility";
+import {
+  isCrowdNameVisible,
+  markTutorialDone,
+  readTutorialDone,
+  setCrowdNameVisible,
+} from "../lib/crowdVisibility";
 
 type Scope = "overall" | "week";
+
+/** Sample earned badges for Vite demo (no DB). */
+function demoEarnedBadges(seasonType: number, week: number): EarnedBadge[] {
+  const ids = ["clean_sweep", "lone_wolf", "hot_hand", "bite_back", "monday_miracle"] as const;
+  const now = new Date().toISOString();
+  return ids.map((id) => ({
+    badgeId: id,
+    name: badgeName(id),
+    description: badgeDescription(id),
+    seasonType,
+    weekNumber: week,
+    earnedAt: now,
+  }));
+}
+
+function recordLabel(entry: LeaderboardEntry, mode: "winPct" | "pl"): string {
+  if (mode === "pl") {
+    const c = entry.confCorrect ?? 0;
+    const t = entry.confTotal ?? 0;
+    return `${c.toFixed(c % 1 === 0 ? 0 : 1)}/${t}`;
+  }
+  return `${entry.correct.toFixed(entry.correct % 1 === 0 ? 0 : 1)}/${entry.total}`;
+}
 
 export function LeaderboardPage() {
   const { username, useBackend } = useAuth();
   const { seasonType, week, weekKey, ready } = useWeek();
-  const [scope, setScope] = useState<Scope>("overall");
+  const [scope, setScope] = useState<Scope>(() => (isDemoMode() ? "week" : "overall"));
   const [mode, setMode] = useState<"winPct" | "pl">("winPct");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [games, setGames] = useState<GameData[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibilityTick, setVisibilityTick] = useState(0);
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  useEffect(() => {
+    setShowTutorial(!readTutorialDone());
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -46,7 +82,11 @@ export function LeaderboardPage() {
           setGames(board.games);
           const picks = getStoredPicks(weekKey);
           if (username) {
-            setEntries([computeLeaderboardFromLocal(username, board.games, picks)]);
+            const entry = computeLeaderboardFromLocal(username, board.games, picks);
+            if (isDemoMode()) {
+              entry.badges = demoEarnedBadges(seasonType, week);
+            }
+            setEntries([entry]);
           } else {
             setEntries([]);
           }
@@ -76,9 +116,50 @@ export function LeaderboardPage() {
     setVisibilityTick((t) => t + 1);
   };
 
+  const dismissTutorial = () => {
+    markTutorialDone();
+    setShowTutorial(false);
+  };
+
+  const badgesForEntry = (entry: LeaderboardEntry): EarnedBadge[] => {
+    const all = entry.badges ?? [];
+    if (scope === "week") {
+      return all.filter((b) => b.weekNumber === week || isSeasonScopedBadge(b.weekNumber));
+    }
+    return all;
+  };
+
+  const showBadgeTrail = sorted.some((e) => badgesForEntry(e).length > 0);
+  const badgeTrailMode = scope === "week" ? "week" : "overall";
+
   return (
     <AppShell games={games}>
       <div className="mx-auto max-w-5xl space-y-6">
+        {showTutorial && (
+          <div className="relative rounded-2xl border-2 border-[var(--accent-blue)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-card)]">
+            <button
+              type="button"
+              onClick={dismissTutorial}
+              className="absolute right-2 top-2 rounded-full p-2 text-[var(--text-muted)]"
+              aria-label="Dismiss"
+            >
+              <X size={18} weight="bold" />
+            </button>
+            <p className="pr-8 font-bold">Tip: lean checkboxes</p>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              Uncheck a player to hide their name under the pick color bar on the home page. They
+              still count in the bar totals — this only cleans up the name list.
+            </p>
+            <button
+              type="button"
+              onClick={dismissTutorial}
+              className="mt-3 min-h-10 rounded-xl bg-[var(--accent-blue)] px-4 text-sm font-bold text-white"
+            >
+              Got it
+            </button>
+          </div>
+        )}
+
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <h2 className="font-display text-3xl sm:text-4xl">Leaderboard</h2>
@@ -138,11 +219,12 @@ export function LeaderboardPage() {
             {scope === "overall"
               ? mode === "winPct"
                 ? "Overall win % across every final game. Missing a pick counts as wrong."
-                : "Overall confidence P/L from eligible weeks only."
+                : "Overall confidence P/L from eligible weeks only. Record is ★ bets (5 per eligible week)."
               : mode === "winPct"
                 ? `Win % for ${shortWeekLabel(seasonType, week)} only.`
-                : `Confidence P/L for ${shortWeekLabel(seasonType, week)} only.`}{" "}
-            Uncheck a player to hide their name on the pick lean — they still count in the bar.
+                : `Confidence P/L for ${shortWeekLabel(seasonType, week)} only. Record is out of 5 ★ bets.`}{" "}
+            Uncheck a player to hide their name on the pick lean — they still count in the bar. Tap a
+            name to view their history.
           </p>
         </div>
 
@@ -155,7 +237,7 @@ export function LeaderboardPage() {
           </div>
         ) : (
           <>
-            <div className="hidden overflow-hidden rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] md:block">
+            <div className="hidden overflow-visible rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] md:block">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="text-[var(--text-muted)]">
@@ -171,17 +253,79 @@ export function LeaderboardPage() {
                     {scope === "overall" && (
                       <th className="px-4 py-3 font-semibold">Weeks</th>
                     )}
+                    {showBadgeTrail && <th className="px-4 py-3" aria-hidden="true" />}
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map((entry, i) => (
-                    <tr
-                      key={entry.userId}
-                      className={`border-t border-[var(--border-card)]/60 ${
-                        i === 0 ? "bg-[var(--accent-gold)]/10" : ""
-                      }`}
-                    >
-                      <td className="px-4 py-3 text-center">
+                  {sorted.map((entry, i) => {
+                    const rowBadges = badgesForEntry(entry);
+                    return (
+                      <tr
+                        key={entry.userId}
+                        className={`whitespace-nowrap border-t border-[var(--border-card)]/60 ${
+                          i === 0 ? "bg-[var(--accent-gold)]/10" : ""
+                        }`}
+                      >
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            className="size-5 accent-[var(--accent-green)]"
+                            checked={isCrowdNameVisible(entry.username)}
+                            onChange={(e) => toggleLean(entry.username, e.target.checked)}
+                            aria-label={`Show ${entry.username} on pick lean`}
+                          />
+                        </td>
+                        <td className="px-4 py-3 font-mono">
+                          {i + 1}
+                          {i === 0 && (
+                            <Crown size={16} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-semibold">
+                          <Link
+                            to={`/history/${encodeURIComponent(entry.username)}`}
+                            className="underline-offset-2 hover:underline"
+                          >
+                            {entry.displayName || entry.username}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 font-mono">
+                          {mode === "winPct"
+                            ? `${entry.winPct.toFixed(1)}%`
+                            : entry.confidencePl.toFixed(2)}
+                        </td>
+                        <td className="px-4 py-3 font-mono">{recordLabel(entry, mode)}</td>
+                        {scope === "overall" && (
+                          <td className="px-4 py-3 font-mono">{entry.weeksComplete}</td>
+                        )}
+                        {showBadgeTrail && (
+                          <td className="max-w-[min(42vw,22rem)] px-4 py-3 align-middle">
+                            {rowBadges.length > 0 ? (
+                              <LeaderboardBadgeTrail badges={rowBadges} mode={badgeTrailMode} />
+                            ) : null}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-3 md:hidden">
+              {sorted.map((entry, i) => {
+                const rowBadges = badgesForEntry(entry);
+                return (
+                  <article
+                    key={entry.userId}
+                    className={`overflow-visible rounded-2xl border-2 p-4 ${
+                      i === 0
+                        ? "border-[var(--accent-gold)] bg-[var(--accent-gold)]/10"
+                        : "border-[var(--border-card)] bg-[var(--bg-card)]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="flex cursor-pointer items-center gap-3">
                         <input
                           type="checkbox"
                           className="size-5 accent-[var(--accent-green)]"
@@ -189,63 +333,30 @@ export function LeaderboardPage() {
                           onChange={(e) => toggleLean(entry.username, e.target.checked)}
                           aria-label={`Show ${entry.username} on pick lean`}
                         />
-                      </td>
-                      <td className="px-4 py-3 font-mono">
-                        {i + 1}
-                        {i === 0 && (
-                          <Crown size={16} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-semibold">{entry.displayName || entry.username}</td>
-                      <td className="px-4 py-3 font-mono">
-                        {mode === "winPct"
-                          ? `${entry.winPct.toFixed(1)}%`
-                          : entry.confidencePl.toFixed(2)}
-                      </td>
-                      <td className="px-4 py-3 font-mono">
-                        {entry.correct.toFixed(entry.correct % 1 === 0 ? 0 : 1)}/{entry.total}
-                      </td>
-                      {scope === "overall" && (
-                        <td className="px-4 py-3 font-mono">{entry.weeksComplete}</td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="space-y-3 md:hidden">
-              {sorted.map((entry, i) => (
-                <article
-                  key={entry.userId}
-                  className={`rounded-2xl border-2 p-4 ${
-                    i === 0
-                      ? "border-[var(--accent-gold)] bg-[var(--accent-gold)]/10"
-                      : "border-[var(--border-card)] bg-[var(--bg-card)]"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <label className="flex cursor-pointer items-center gap-3">
-                      <input
-                        type="checkbox"
-                        className="size-5 accent-[var(--accent-green)]"
-                        checked={isCrowdNameVisible(entry.username)}
-                        onChange={(e) => toggleLean(entry.username, e.target.checked)}
-                        aria-label={`Show ${entry.username} on pick lean`}
-                      />
-                      <span className="font-mono text-lg font-bold">#{i + 1}</span>
-                    </label>
-                    {i === 0 && <Crown size={20} weight="fill" className="text-[var(--accent-gold)]" />}
-                  </div>
-                  <h3 className="mt-2 text-lg font-bold">{entry.displayName || entry.username}</h3>
-                  <p className="mt-1 font-mono text-2xl font-bold text-[var(--accent-green)]">
-                    {mode === "winPct" ? `${entry.winPct.toFixed(1)}%` : entry.confidencePl.toFixed(2)}
-                  </p>
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">
-                    {entry.correct.toFixed(entry.correct % 1 === 0 ? 0 : 1)}/{entry.total} correct
-                  </p>
-                </article>
-              ))}
+                        <span className="font-mono text-lg font-bold">#{i + 1}</span>
+                      </label>
+                      {i === 0 && <Crown size={20} weight="fill" className="text-[var(--accent-gold)]" />}
+                    </div>
+                    <Link
+                      to={`/history/${encodeURIComponent(entry.username)}`}
+                      className="mt-2 block text-lg font-bold underline-offset-2 hover:underline"
+                    >
+                      {entry.displayName || entry.username}
+                    </Link>
+                    <p className="mt-1 font-mono text-2xl font-bold text-[var(--accent-green)]">
+                      {mode === "winPct" ? `${entry.winPct.toFixed(1)}%` : entry.confidencePl.toFixed(2)}
+                    </p>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">
+                      {recordLabel(entry, mode)} {mode === "pl" ? "★" : "correct"}
+                    </p>
+                    {rowBadges.length > 0 && (
+                      <div className="mt-2 min-w-0">
+                        <LeaderboardBadgeTrail badges={rowBadges} mode={badgeTrailMode} />
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
             </div>
           </>
         )}

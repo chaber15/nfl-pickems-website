@@ -1,4 +1,4 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, asc } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import {
   fetchScoreboard,
@@ -14,6 +14,7 @@ import {
   type LineSnapshot,
 } from "../../shared/lineLock";
 import type { GameData } from "../../shared/types";
+import { sortGamesLiveFirstThenChronological } from "../../shared/gameOrder";
 
 /** Don't hit ESPN on every page load while games are live. */
 const READ_REFRESH_MIN_MS = 5 * 60 * 1000;
@@ -49,6 +50,11 @@ export function dbGameToGameData(
     status: game.status,
     awayScore: game.awayScore ?? undefined,
     homeScore: game.homeScore ?? undefined,
+    period: game.period,
+    displayClock: game.displayClock,
+    statusDetail: game.statusDetail,
+    preOtAwayScore: game.preOtAwayScore,
+    preOtHomeScore: game.preOtHomeScore,
     weekNumber: week.weekNumber,
     seasonType: week.seasonType,
     phase: week.phase,
@@ -94,6 +100,43 @@ function existingLineSnapshot(game: typeof schema.games.$inferSelect): LineSnaps
     favoriteSide: game.favoriteSide,
     oddsAway: game.oddsAway,
     oddsHome: game.oddsHome,
+  };
+}
+
+function isInOvertime(g: {
+  period?: number | null;
+  statusDetail?: string | null;
+}): boolean {
+  if (g.period != null && g.period >= 5) return true;
+  const detail = (g.statusDetail ?? "").toLowerCase();
+  return detail.includes("ot") || detail.includes("overtime");
+}
+
+/** Snapshot regulation score the first time we see OT. */
+function resolvePreOtScores(
+  existing: typeof schema.games.$inferSelect | undefined,
+  graded: GameData,
+): { preOtAwayScore: number | null; preOtHomeScore: number | null } {
+  const keptAway = existing?.preOtAwayScore ?? null;
+  const keptHome = existing?.preOtHomeScore ?? null;
+  if (keptAway != null && keptHome != null) {
+    return { preOtAwayScore: keptAway, preOtHomeScore: keptHome };
+  }
+  if (!isInOvertime(graded) || graded.awayScore == null || graded.homeScore == null) {
+    return { preOtAwayScore: keptAway, preOtHomeScore: keptHome };
+  }
+  // Prefer last known regulation scores from DB before OT started.
+  if (
+    existing &&
+    existing.awayScore != null &&
+    existing.homeScore != null &&
+    !isInOvertime(existing)
+  ) {
+    return { preOtAwayScore: existing.awayScore, preOtHomeScore: existing.homeScore };
+  }
+  return {
+    preOtAwayScore: graded.awayScore,
+    preOtHomeScore: graded.homeScore,
   };
 }
 
@@ -171,6 +214,8 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
       oddsHome: lockedLine.oddsHome,
     });
 
+    const preOt = resolvePreOtScores(existing, graded);
+
     const values = {
       weekId: weekRow.id,
       espnEventId: graded.espnEventId,
@@ -187,6 +232,11 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
       status: graded.status,
       awayScore: graded.awayScore ?? null,
       homeScore: graded.homeScore ?? null,
+      period: graded.period ?? null,
+      displayClock: graded.displayClock ?? null,
+      statusDetail: graded.statusDetail ?? null,
+      preOtAwayScore: preOt.preOtAwayScore,
+      preOtHomeScore: preOt.preOtHomeScore,
       updatedAt: new Date(),
     };
 
@@ -196,6 +246,13 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
       await db.insert(schema.games).values(values);
     }
     upserted++;
+  }
+
+  try {
+    const { awardBadgesForWeek } = await import("../badges");
+    await awardBadgesForWeek(board.seasonType, board.week);
+  } catch {
+    /* badges are best-effort; don't fail ESPN sync */
   }
 
   return {
@@ -243,9 +300,12 @@ export async function getGamesForWeek(seasonType: number, weekNumber: number): P
         eq(schema.weeks.seasonType, seasonType),
         eq(schema.weeks.weekNumber, weekNumber),
       ),
-    );
+    )
+    .orderBy(asc(schema.games.kickoffAt));
 
-  return rows.map(({ game, week }) => dbGameToGameData(game, week));
+  return sortGamesLiveFirstThenChronological(
+    rows.map(({ game, week }) => dbGameToGameData(game, week)),
+  );
 }
 
 /** True when the slate is missing or has non-final games older than the refresh window. */

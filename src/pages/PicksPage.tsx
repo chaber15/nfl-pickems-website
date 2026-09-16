@@ -9,6 +9,7 @@ import {
   snapshotLine,
 } from "@shared/lineLock";
 import { toUserPickMap } from "@shared/statsCompute";
+import { sortGamesLiveFirstThenChronological } from "@shared/gameOrder";
 import { AppShell } from "../components/AppShell";
 import { FieldFrame } from "../components/FieldFrame";
 import { GameCard, GameCardSkeleton } from "../components/GameCard";
@@ -88,7 +89,7 @@ export function PicksPage() {
         locked = board.linesLocked;
         label = board.lockLabel;
       }
-      setGames(loadedGames);
+      setGames(sortGamesLiveFirstThenChronological(loadedGames));
       setLinesLocked(locked);
       setLockLabel(label);
 

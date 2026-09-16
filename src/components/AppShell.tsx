@@ -9,6 +9,7 @@ import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
 import { NFL_LOGO_SRC } from "../lib/teamLogos";
 import type { GameData } from "@shared/types";
+import { ChangeUsernamePanel } from "./ChangeUsernamePanel";
 
 interface AppShellProps {
   children: ReactNode;
@@ -48,12 +49,17 @@ export function AppShell({ children, games = [], banner, showWeekSelector = true
                   </p>
                 )}
                 {username && (
-                  <p className="truncate text-sm font-semibold">
-                    Playing as{" "}
-                    <span className="font-mono text-[var(--accent-green)]">
-                      {user?.displayName || username}
-                    </span>
-                  </p>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">
+                      Playing as{" "}
+                      <span className="font-mono text-[var(--accent-green)]">
+                        {user?.displayName || username}
+                      </span>
+                    </p>
+                    <div className="lg:hidden">
+                      <ChangeUsernamePanel compact />
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

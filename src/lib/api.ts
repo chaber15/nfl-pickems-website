@@ -95,16 +95,26 @@ export async function apiLeaderboard(
 export async function apiHistory(
   seasonType?: number,
   week?: number,
-): Promise<{ history: HistoryRow[] }> {
+  username?: string,
+): Promise<{ history: HistoryRow[]; username?: string; displayName?: string }> {
   const params = new URLSearchParams();
   if (seasonType != null) params.set("seasonType", String(seasonType));
   if (week != null) params.set("week", String(week));
+  if (username) params.set("username", username);
   const qs = params.toString();
   return request(`/history${qs ? `?${qs}` : ""}`);
 }
 
-export async function apiStats(): Promise<{ stats: UserStats }> {
-  return request("/stats");
+export async function apiStats(username?: string): Promise<{
+  stats: UserStats;
+  username?: string;
+  displayName?: string;
+  badges?: import("@shared/types").EarnedBadge[];
+}> {
+  const params = new URLSearchParams();
+  if (username) params.set("username", username);
+  const qs = params.toString();
+  return request(`/stats${qs ? `?${qs}` : ""}`);
 }
 
 export async function apiCurrentWeek(): Promise<{ seasonType: number; week: number }> {
@@ -118,6 +128,25 @@ export async function apiSyncEspn(seasonType?: number, week?: number): Promise<{
   });
 }
 
+export async function apiAdminRefreshBadges(opts: {
+  seasonType?: number;
+  week?: number;
+  allCompleted?: boolean;
+}): Promise<{
+  weeks: Array<{
+    seasonType: number;
+    week: number;
+    awarded: number;
+    status: "ok" | "skipped_empty" | "skipped_incomplete";
+  }>;
+  totalAwarded: number;
+}> {
+  return request("/admin/badges", {
+    method: "POST",
+    body: JSON.stringify(opts),
+  });
+}
+
 export async function apiAdminGet(): Promise<{
   users: Array<{
     id: string;
@@ -127,6 +156,14 @@ export async function apiAdminGet(): Promise<{
     isAdmin: boolean;
   }>;
   registrationOpen: boolean;
+  badgeCatalog?: Array<{
+    id: string;
+    name: string;
+    description: string;
+    scope: string;
+    rarity?: import("@shared/badges").BadgeRarity;
+    timesEarned: number;
+  }>;
 }> {
   return request("/admin");
 }
@@ -150,10 +187,24 @@ export async function apiAdminSetAdmin(userId: string, isAdmin: boolean): Promis
   });
 }
 
-export async function apiAdminSetDisplayName(userId: string, displayName: string): Promise<void> {
-  await request("/admin", {
+export async function apiAdminSetDisplayName(userId: string, displayName: string): Promise<{ displayName: string }> {
+  return request("/admin", {
     method: "POST",
     body: JSON.stringify({ action: "set_display_name", userId, displayName }),
+  });
+}
+
+export async function apiAdminSetUsername(userId: string, username: string): Promise<{ user: AuthUser }> {
+  return request("/admin", {
+    method: "POST",
+    body: JSON.stringify({ action: "set_username", userId, username }),
+  });
+}
+
+export async function apiChangeUsername(username: string): Promise<{ user: AuthUser }> {
+  return request("/auth/username", {
+    method: "POST",
+    body: JSON.stringify({ username }),
   });
 }
 
@@ -168,6 +219,7 @@ export async function apiAdminFactoryReset(confirm: string): Promise<{
   deletedWeeks: number;
   deletedSeasons: number;
   keptAdminUsername: string;
+  keptPreseasonGames?: number;
   synced: { upserted: number; week: number; seasonType: number };
 }> {
   return request("/admin/reset", {

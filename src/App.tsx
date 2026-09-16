@@ -18,8 +18,10 @@ export default function App() {
             <Routes>
               <Route path="/" element={<PicksPage />} />
               <Route path="/history" element={<HistoryPage />} />
+              <Route path="/history/:username" element={<HistoryPage />} />
               <Route path="/leaderboard" element={<LeaderboardPage />} />
               <Route path="/stats" element={<StatsPage />} />
+              <Route path="/stats/:username" element={<StatsPage />} />
               <Route path="/how-to-play" element={<HowToPlayPage />} />
               <Route path="/admin" element={<AdminPage />} />
             </Routes>

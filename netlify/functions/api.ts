@@ -7,10 +7,12 @@ import {
   getSessionCookieName,
   getUserFromSession,
   registerOrLogin,
+  changeUsername,
   logout,
   toPublicUser,
 } from "../../server/auth";
 import { syncEspnWeek, getGamesForWeek, dbGameToGameData, findWeekRow, weekNeedsEspnRefresh, getActiveSeasonGameRows, syncScheduledSlates } from "../../server/espn/sync";
+import { sortGamesLiveFirstThenChronological } from "../../shared/gameOrder";
 import { getDb, schema } from "../../server/db";
 import { eq, and, ne, asc } from "drizzle-orm";
 import {
@@ -23,10 +25,12 @@ import {
 } from "../../shared/scoring";
 import type { GameData, LeaderboardEntry, UserPick } from "../../shared/types";
 import { buildHistoryRows, computeUserStats } from "../../shared/statsCompute";
-import { detectCurrentWeek } from "../../shared/espnClient";
+import { resolveCurrentPickemsWeek } from "../../shared/espnClient";
 import { buildWeekOptions } from "../../shared/weekUtils";
 import { factoryReset } from "../../server/factoryReset";
 import { normalizeDisplayName, publicDisplayName } from "../../shared/userDisplay";
+import { badgeDescription, badgeName, BADGE_CATALOG, isSeasonScopedBadge } from "../../shared/badges";
+import { allBadgeRows, badgesForUser } from "../../server/badges";
 
 function json(statusCode: number, body: unknown, headers: Record<string, string> = {}) {
   return {
@@ -75,6 +79,14 @@ async function handleAuth(path: string, event: HandlerEvent) {
     return json(200, { ok: true }, { "Set-Cookie": clearSessionCookie(secure) });
   }
 
+  if (path === "auth/username" && event.httpMethod === "POST") {
+    const user = await getUserFromSession(token);
+    if (!user) return json(401, { error: "Unauthorized" });
+    const body = JSON.parse(event.body ?? "{}") as { username?: string };
+    const updated = await changeUsername(user.id, body.username ?? "");
+    return json(200, { user: toPublicUser(updated) });
+  }
+
   return json(404, { error: "Not found" });
 }
 
@@ -91,7 +103,12 @@ async function handleGames(event: HandlerEvent) {
         games = await getGamesForWeek(seasonType, week);
       }
       if (games.length > 0) {
-        return json(200, { games, seasonType, week, source: "db" });
+        return json(200, {
+          games: sortGamesLiveFirstThenChronological(games),
+          seasonType,
+          week,
+          source: "db",
+        });
       }
     } catch {
       /* fall through to ESPN */
@@ -105,7 +122,7 @@ async function handleGames(event: HandlerEvent) {
 
 async function handleCalendar(path: string, event: HandlerEvent) {
   if (path === "calendar/current" && event.httpMethod === "GET") {
-    const current = await detectCurrentWeek();
+    const current = await resolveCurrentPickemsWeek();
     return json(200, current);
   }
   if (path === "calendar" && event.httpMethod === "GET") {
@@ -306,13 +323,15 @@ async function computeLeaderboard(filter?: {
   for (const u of activeUsers) {
     let correct = 0;
     let total = 0;
+    let confCorrect = 0;
+    let confTotal = 0;
     let confidencePl = 0;
 
     // Eligibility uses ALL ★ bets in a week (even before finals).
     // P/L units only sum from finals.
     const weekStats = new Map<
       string,
-      { count: number; phase: GameData["phase"]; rawPl: number }
+      { count: number; phase: GameData["phase"]; rawPl: number; confCorrect: number; confGraded: number }
     >();
 
     for (const { game, week } of allGames) {
@@ -322,6 +341,8 @@ async function computeLeaderboard(filter?: {
         count: 0,
         phase: week.phase as GameData["phase"],
         rawPl: 0,
+        confCorrect: 0,
+        confGraded: 0,
       };
 
       const userPick = allPicks.find((p) => p.pick.userId === u.id && p.game.id === game.id);
@@ -342,6 +363,10 @@ async function computeLeaderboard(filter?: {
             g.oddsHome,
           );
         }
+        if (isGradedForStandings(g)) {
+          existing.confGraded++;
+          existing.confCorrect += pickCorrectness(userPick.pick.pick, g.atsResult);
+        }
       }
       weekStats.set(weekKey, existing);
 
@@ -351,11 +376,13 @@ async function computeLeaderboard(filter?: {
     }
 
     let weeksComplete = 0;
-    for (const { count, phase, rawPl } of weekStats.values()) {
+    for (const { count, phase, rawPl, confCorrect: wc, confGraded } of weekStats.values()) {
       // Eligible weeks with activity only (skip empty playoff weeks for inactive users)
       if (weekPlEligible(phase, count) && count > 0) {
         confidencePl += rawPl;
         weeksComplete++;
+        confCorrect += wc;
+        confTotal += confGraded;
       }
     }
 
@@ -369,12 +396,35 @@ async function computeLeaderboard(filter?: {
       winPct: computeWinPct(correct, total),
       correct,
       total,
+      confCorrect,
+      confTotal,
       confidencePl,
       weeksComplete,
     });
   }
 
   entries.sort((a, b) => b.winPct - a.winPct || b.confidencePl - a.confidencePl);
+
+  const badgeRows = await allBadgeRows();
+  for (const entry of entries) {
+    const forUser = badgeRows.filter((b) => b.userId === entry.userId);
+    const scoped = filter
+      ? forUser.filter(
+          (b) =>
+            b.seasonType === filter.seasonType &&
+            (b.weekNumber === filter.week || isSeasonScopedBadge(b.weekNumber)),
+        )
+      : forUser;
+    entry.badges = scoped.map((b) => ({
+      badgeId: b.badgeId,
+      name: badgeName(b.badgeId),
+      description: badgeDescription(b.badgeId),
+      seasonType: b.seasonType,
+      weekNumber: isSeasonScopedBadge(b.weekNumber) ? null : b.weekNumber,
+      earnedAt: b.earnedAt.toISOString(),
+    }));
+  }
+
   return entries;
 }
 
@@ -391,11 +441,23 @@ async function handleLeaderboard(event: HandlerEvent) {
 }
 
 async function handleHistory(event: HandlerEvent) {
-  const { user } = await requireUser(event);
+  const { user: sessionUser } = await requireUser(event);
   const db = getDb();
   const params = event.queryStringParameters ?? {};
   const seasonType = params.seasonType != null ? Number(params.seasonType) : null;
   const week = params.week != null ? Number(params.week) : null;
+  const usernameParam = params.username?.trim();
+
+  let targetUser = sessionUser;
+  if (usernameParam) {
+    const [found] = await db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.username, usernameParam))
+      .limit(1);
+    if (!found || found.isBanned) return json(404, { error: "User not found" });
+    targetUser = found;
+  }
 
   let gameRows = await getActiveSeasonGameRows();
 
@@ -405,7 +467,7 @@ async function handleHistory(event: HandlerEvent) {
     );
   }
 
-  const userPicks = await db.select().from(schema.picks).where(eq(schema.picks.userId, user.id));
+  const userPicks = await db.select().from(schema.picks).where(eq(schema.picks.userId, targetUser.id));
 
   const games = gameRows.map(({ game, week: w }) => dbGameToGameData(game, w));
   const espnByDbId = new Map(gameRows.map(({ game }) => [game.id, game.espnEventId]));
@@ -420,16 +482,33 @@ async function handleHistory(event: HandlerEvent) {
     };
   }
 
-  return json(200, { history: buildHistoryRows(games, picks) });
+  return json(200, {
+    history: buildHistoryRows(games, picks),
+    username: targetUser.username,
+    displayName: publicDisplayName(targetUser),
+  });
 }
 
 async function handleStats(event: HandlerEvent) {
-  const { user } = await requireUser(event);
+  const { user: sessionUser } = await requireUser(event);
   const db = getDb();
+  const params = event.queryStringParameters ?? {};
+  const usernameParam = params.username?.trim();
+
+  let targetUser = sessionUser;
+  if (usernameParam) {
+    const [found] = await db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.username, usernameParam))
+      .limit(1);
+    if (!found || found.isBanned) return json(404, { error: "User not found" });
+    targetUser = found;
+  }
 
   const allGames = await getActiveSeasonGameRows();
 
-  const userPicks = await db.select().from(schema.picks).where(eq(schema.picks.userId, user.id));
+  const userPicks = await db.select().from(schema.picks).where(eq(schema.picks.userId, targetUser.id));
 
   const games = allGames.map(({ game, week }) => dbGameToGameData(game, week));
   const espnByDbId = new Map(allGames.map(({ game }) => [game.id, game.espnEventId]));
@@ -444,7 +523,21 @@ async function handleStats(event: HandlerEvent) {
     };
   }
 
-  return json(200, { stats: computeUserStats(games, picks) });
+  const badgeRows = await badgesForUser(targetUser.id);
+
+  return json(200, {
+    stats: computeUserStats(games, picks),
+    username: targetUser.username,
+    displayName: publicDisplayName(targetUser),
+    badges: badgeRows.map((b) => ({
+      badgeId: b.badgeId,
+      name: badgeName(b.badgeId),
+      description: badgeDescription(b.badgeId),
+      seasonType: b.seasonType,
+      weekNumber: isSeasonScopedBadge(b.weekNumber) ? null : b.weekNumber,
+      earnedAt: b.earnedAt.toISOString(),
+    })),
+  });
 }
 
 async function handleAdmin(path: string, event: HandlerEvent) {
@@ -455,6 +548,21 @@ async function handleAdmin(path: string, event: HandlerEvent) {
   if (path === "admin/sync" && event.httpMethod === "POST") {
     const body = JSON.parse(event.body ?? "{}") as { seasonType?: number; week?: number };
     const result = await syncEspnWeek(body.seasonType, body.week);
+    return json(200, result);
+  }
+
+  if (path === "admin/badges" && event.httpMethod === "POST") {
+    const body = JSON.parse(event.body ?? "{}") as {
+      seasonType?: number;
+      week?: number;
+      allCompleted?: boolean;
+    };
+    const { refreshBadges } = await import("../../server/badges");
+    const result = await refreshBadges({
+      seasonType: body.seasonType,
+      week: body.week,
+      allCompleted: body.allCompleted === true,
+    });
     return json(200, result);
   }
 
@@ -478,19 +586,22 @@ async function handleAdmin(path: string, event: HandlerEvent) {
       })
       .from(schema.users)
       .where(ne(schema.users.id, user.id));
-    let registrationOpen = true;
-    try {
-      const [settings] = await db.select().from(schema.siteSettings).limit(1);
-      registrationOpen = settings?.registrationOpen ?? true;
-    } catch {
-      /* site_settings may not exist yet on fresh DBs */
+    const [settings] = await db.select().from(schema.siteSettings).limit(1);
+    const earned = await allBadgeRows();
+    const earnedByBadge = new Map<string, number>();
+    for (const e of earned) {
+      earnedByBadge.set(e.badgeId, (earnedByBadge.get(e.badgeId) ?? 0) + 1);
     }
     return json(200, {
       users: users.map((u) => ({
         ...u,
         displayName: publicDisplayName(u),
       })),
-      registrationOpen,
+      registrationOpen: settings?.registrationOpen ?? true,
+      badgeCatalog: BADGE_CATALOG.map((b) => ({
+        ...b,
+        timesEarned: earnedByBadge.get(b.id) ?? 0,
+      })),
     });
   }
 
@@ -500,6 +611,7 @@ async function handleAdmin(path: string, event: HandlerEvent) {
     registrationOpen?: boolean;
     isAdmin?: boolean;
     displayName?: string;
+    username?: string;
   };
 
   if (body.action === "ban" && body.userId) {
@@ -539,11 +651,18 @@ async function handleAdmin(path: string, event: HandlerEvent) {
 
   if (body.action === "set_display_name" && body.userId && typeof body.displayName === "string") {
     const displayName = normalizeDisplayName(body.displayName);
-    await db
+    const [updated] = await db
       .update(schema.users)
       .set({ displayName })
-      .where(eq(schema.users.id, body.userId));
-    return json(200, { ok: true, displayName });
+      .where(eq(schema.users.id, body.userId))
+      .returning();
+    if (!updated) return json(404, { error: "User not found" });
+    return json(200, { ok: true, displayName: publicDisplayName(updated) });
+  }
+
+  if (body.action === "set_username" && body.userId && typeof body.username === "string") {
+    const updated = await changeUsername(body.userId, body.username);
+    return json(200, { ok: true, user: toPublicUser(updated) });
   }
 
   if (body.action === "registration" && typeof body.registrationOpen === "boolean") {

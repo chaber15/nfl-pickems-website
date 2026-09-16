@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { USERNAME_PATTERN } from "@shared/userDisplay";
 import { useAuth } from "../lib/authContext";
 import { NFL_LOGO_SRC } from "../lib/teamLogos";
 
@@ -22,7 +23,7 @@ export function UsernameGate({ children }: { children: React.ReactNode }) {
     e.preventDefault();
     setError("");
     const val = input.trim();
-    if (!/^[a-zA-Z0-9_]{3,20}$/.test(val)) {
+    if (!USERNAME_PATTERN.test(val)) {
       setError("Use 3-20 characters: letters, numbers, underscore");
       return;
     }

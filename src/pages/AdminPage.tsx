@@ -7,15 +7,19 @@ import {
   apiAdminDeleteUser,
   apiAdminFactoryReset,
   apiAdminGet,
+  apiAdminRefreshBadges,
   apiAdminRegistration,
   apiAdminSetAdmin,
   apiAdminSetDisplayName,
+  apiAdminSetUsername,
   apiAdminUnban,
   apiSyncEspn,
   isDemoMode,
 } from "../lib/api";
 import { Navigate } from "react-router-dom";
-import { nicknameFromStored, publicDisplayName } from "@shared/userDisplay";
+import { publicDisplayName } from "@shared/userDisplay";
+import { BADGE_CATALOG, BADGE_RARITY_LABEL, BADGE_TONE_SOFT, badgeRarity, badgeTone } from "@shared/badges";
+import type { BadgeRarity } from "@shared/badges";
 
 type AdminUser = {
   id: string;
@@ -24,6 +28,70 @@ type AdminUser = {
   isBanned: boolean;
   isAdmin: boolean;
 };
+
+type BadgeCatalogRow = {
+  id: string;
+  name: string;
+  description: string;
+  scope: string;
+  rarity?: BadgeRarity;
+  timesEarned: number;
+};
+
+function demoBadgeCatalog(): BadgeCatalogRow[] {
+  // Sample a few as "earned" so you can see both locked + unlocked styles
+  const sampleEarned = new Set([
+    "lone_wolf",
+    "hot_hand",
+    "clean_sweep",
+    "bite_back",
+    "monday_miracle",
+  ]);
+  return BADGE_CATALOG.map((b) => ({
+    id: b.id,
+    name: b.name,
+    description: b.description,
+    scope: b.scope,
+    rarity: b.rarity,
+    timesEarned: sampleEarned.has(b.id) ? 1 : 0,
+  }));
+}
+
+function CatalogList({ rows }: { rows: BadgeCatalogRow[] }) {
+  const ordered = [...rows].sort(
+    (a, b) => (b.rarity ?? badgeRarity(b.id)) - (a.rarity ?? badgeRarity(a.id)) || a.name.localeCompare(b.name),
+  );
+  return (
+    <ul className="mt-4 space-y-2">
+      {ordered.map((b) => {
+        const rarity = (b.rarity ?? badgeRarity(b.id)) as BadgeRarity;
+        return (
+          <li
+            key={b.id}
+            className={`rounded-xl border-2 px-3 py-2 text-sm ${
+              b.timesEarned > 0
+                ? BADGE_TONE_SOFT[badgeTone(b.id)]
+                : "border-dashed border-[var(--border-card)] opacity-60"
+            }`}
+          >
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <span className="font-bold">{b.name}</span>
+              <span className="font-mono text-xs text-[var(--text-muted)]">
+                {BADGE_RARITY_LABEL[rarity]}
+                {" · "}
+                {b.timesEarned > 0 ? `×${b.timesEarned}` : "locked"}
+              </span>
+            </div>
+            <p className="mt-0.5 text-[var(--text-muted)]">{b.description}</p>
+          </li>
+        );
+      })}
+      {ordered.length === 0 && (
+        <li className="text-sm text-[var(--text-muted)]">No catalog loaded.</li>
+      )}
+    </ul>
+  );
+}
 
 export function AdminPage() {
   const { user, logout } = useAuth();
@@ -34,21 +102,34 @@ export function AdminPage() {
   const [error, setError] = useState("");
   const [syncMsg, setSyncMsg] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [badgeRefreshMsg, setBadgeRefreshMsg] = useState("");
+  const [badgeRefreshing, setBadgeRefreshing] = useState(false);
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [editUsername, setEditUsername] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [badgeCatalog, setBadgeCatalog] = useState<BadgeCatalogRow[]>(() =>
+    isDemoMode() ? demoBadgeCatalog() : [],
+  );
 
   const reloadUsers = async () => {
     const res = await apiAdminGet();
     setUsers(res.users);
     setRegistrationOpen(res.registrationOpen);
+    setBadgeCatalog(res.badgeCatalog ?? []);
   };
 
   useEffect(() => {
     if (!user?.isAdmin) {
+      setLoading(false);
+      return;
+    }
+    if (isDemoMode()) {
+      setBadgeCatalog(demoBadgeCatalog());
+      setUsers([]);
       setLoading(false);
       return;
     }
@@ -63,22 +144,34 @@ export function AdminPage() {
     })();
   }, [user]);
 
-  if (isDemoMode() || !user?.isAdmin) {
-    if (isDemoMode()) {
-      return (
-        <AppShell showWeekSelector={false}>
-          <div className="mx-auto max-w-3xl rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-8 text-center">
-            <h2 className="font-display mb-3 text-3xl">Admin</h2>
-            <p className="text-sm text-[var(--text-muted)]">
-              Admin tools need the Netlify API and database. Run with{" "}
-              <span className="font-mono">npx netlify dev</span> and a{" "}
-              <span className="font-mono">DATABASE_URL</span> to manage users and registration.
+  if (!user?.isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (isDemoMode()) {
+    return (
+      <AppShell showWeekSelector={false}>
+        <div className="mx-auto max-w-3xl space-y-6">
+          <div>
+            <h2 className="font-display text-3xl sm:text-4xl">Admin</h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              Local demo preview — badge catalog only. On the live site (Netlify + DB), Admin still has
+              users, ban/unban, rename, registration toggle, ESPN sync, badge refresh/backfill, and
+              factory reset; the catalog is just one section at the bottom.
             </p>
           </div>
-        </AppShell>
-      );
-    }
-    return <Navigate to="/" replace />;
+
+          <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-6">
+            <p className="font-bold">Badge catalog</p>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              All possible badges, rarest first. Locked rows have never been earned. A few are marked
+              earned so you can preview both styles.
+            </p>
+            <CatalogList rows={badgeCatalog} />
+          </div>
+        </div>
+      </AppShell>
+    );
   }
 
   const handleBan = async (userId: string) => {
@@ -140,30 +233,43 @@ export function AdminPage() {
 
   const startEditName = (u: AdminUser) => {
     setEditingId(u.id);
-    setEditName(nicknameFromStored(u));
+    setEditName(publicDisplayName(u));
+    setEditUsername(u.username);
   };
 
-  const saveDisplayName = async (userId: string) => {
+  const saveNames = async (userId: string) => {
     setSavingId(userId);
     setError("");
     try {
-      await apiAdminSetDisplayName(userId, editName);
-      const nick = editName.trim();
+      const current = users.find((u) => u.id === userId);
+      let nextUsername = current?.username ?? "";
+      let nextDisplay = current?.displayName ?? "";
+
+      if (editUsername.trim() !== current?.username) {
+        const res = await apiAdminSetUsername(userId, editUsername);
+        nextUsername = res.user.username;
+        nextDisplay = res.user.displayName;
+      }
+
+      if (editName.trim() !== publicDisplayName({ username: nextUsername, displayName: nextDisplay })) {
+        const res = await apiAdminSetDisplayName(userId, editName);
+        nextDisplay = res.displayName;
+      }
+
       setUsers((prev) =>
         prev.map((u) =>
           u.id === userId
             ? {
                 ...u,
-                displayName: nick
-                  ? publicDisplayName({ username: u.username, displayName: nick })
-                  : u.username,
+                username: nextUsername,
+                displayName: nextDisplay,
               }
             : u,
         ),
       );
       setEditingId(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update display name");
+      setError(err instanceof Error ? err.message : "Failed to update name");
     } finally {
       setSavingId(null);
     }
@@ -188,6 +294,56 @@ export function AdminPage() {
     }
   };
 
+  const formatBadgeRefreshMsg = (res: Awaited<ReturnType<typeof apiAdminRefreshBadges>>) => {
+    const parts = res.weeks.map((w) => {
+      if (w.status === "skipped_incomplete") {
+        return `S${w.seasonType} W${w.week}: skipped (week not fully final)`;
+      }
+      if (w.status === "skipped_empty") {
+        return `S${w.seasonType} W${w.week}: skipped (no games)`;
+      }
+      return `S${w.seasonType} W${w.week}: +${w.awarded} award(s)`;
+    });
+    return `Done — ${res.totalAwarded} new award(s). ${parts.join(" · ")}`;
+  };
+
+  const handleRefreshBadgesWeek = async () => {
+    setBadgeRefreshing(true);
+    setBadgeRefreshMsg("");
+    setError("");
+    try {
+      const res = await apiAdminRefreshBadges({ seasonType, week });
+      setBadgeRefreshMsg(formatBadgeRefreshMsg(res));
+      await reloadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Badge refresh failed");
+    } finally {
+      setBadgeRefreshing(false);
+    }
+  };
+
+  const handleBackfillAllBadges = async () => {
+    if (
+      !window.confirm(
+        "Backfill badges for every fully final week in the season (oldest → newest)? Safe to re-run — duplicates are ignored.",
+      )
+    ) {
+      return;
+    }
+    setBadgeRefreshing(true);
+    setBadgeRefreshMsg("");
+    setError("");
+    try {
+      const res = await apiAdminRefreshBadges({ allCompleted: true });
+      setBadgeRefreshMsg(formatBadgeRefreshMsg(res));
+      await reloadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Badge backfill failed");
+    } finally {
+      setBadgeRefreshing(false);
+    }
+  };
+
   const handleFactoryReset = async () => {
     if (resetConfirm !== "RESET") {
       setError('Type RESET in the box to confirm');
@@ -199,7 +355,7 @@ export function AdminPage() {
     try {
       const res = await apiAdminFactoryReset("RESET");
       setResetMsg(
-        `Reset complete. Removed ${res.deletedUsers} users, ${res.deletedPicks} picks, ${res.deletedGames} games. Kept ${res.keptAdminUsername}. Synced ${res.synced.upserted} games for week ${res.synced.week}. Logging you out — sign in again as ${res.keptAdminUsername}.`,
+        `Reset complete. Removed ${res.deletedUsers} users, ${res.deletedPicks} picks, ${res.deletedGames} non-preseason games. Kept ${res.keptPreseasonGames ?? 0} preseason games and ${res.keptAdminUsername}. Synced ${res.synced.upserted} games for week ${res.synced.week}. Logging you out — sign in again as ${res.keptAdminUsername}.`,
       );
       setResetConfirm("");
       setUsers([]);
@@ -224,37 +380,6 @@ export function AdminPage() {
           </p>
         )}
 
-        <div className="rounded-2xl border-2 border-[var(--accent-red)] bg-[var(--bg-card)] p-6">
-          <div className="space-y-3">
-            <div>
-              <p className="font-bold text-[var(--accent-red)]">Factory reset</p>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">
-                Deletes all beta users (except you), all picks, and all preseason/season games.
-                Re-opens registration and syncs the current ESPN week. This cannot be undone.
-              </p>
-            </div>
-            <label className="block space-y-2 text-sm font-semibold">
-              <span>Type RESET to confirm</span>
-              <input
-                value={resetConfirm}
-                onChange={(e) => setResetConfirm(e.target.value)}
-                className="min-h-11 w-full max-w-xs rounded-xl border-2 border-[var(--border-card)] bg-[var(--bg-page)] px-3 font-mono"
-                placeholder="RESET"
-                autoComplete="off"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={handleFactoryReset}
-              disabled={resetting || resetConfirm !== "RESET"}
-              className="min-h-11 rounded-2xl bg-[var(--accent-red)] px-4 font-bold text-white disabled:opacity-60"
-            >
-              {resetting ? "Resetting..." : "Wipe beta data"}
-            </button>
-            {resetMsg && <p className="text-sm font-semibold text-[var(--accent-green)]">{resetMsg}</p>}
-          </div>
-        </div>
-
         <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -273,6 +398,38 @@ export function AdminPage() {
             </button>
           </div>
           {syncMsg && <p className="mt-3 text-sm font-semibold">{syncMsg}</p>}
+        </div>
+
+        <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-6">
+          <div className="space-y-4">
+            <div>
+              <p className="font-bold">Refresh badges</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                Recompute awards from stored picks and finals. Use the week selector, then refresh that
+                week (e.g. week 1 backfill), or backfill every fully final week in order. Safe to
+                re-run — already-earned badges are skipped.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={handleRefreshBadgesWeek}
+                disabled={badgeRefreshing}
+                className="min-h-11 rounded-2xl bg-[var(--accent-blue)] px-4 font-bold text-white disabled:opacity-60"
+              >
+                {badgeRefreshing ? "Refreshing..." : `Refresh week ${week}`}
+              </button>
+              <button
+                type="button"
+                onClick={handleBackfillAllBadges}
+                disabled={badgeRefreshing}
+                className="min-h-11 rounded-2xl border-2 border-[var(--border-card)] px-4 font-bold disabled:opacity-60"
+              >
+                Backfill all completed weeks
+              </button>
+            </div>
+            {badgeRefreshMsg && <p className="text-sm font-semibold">{badgeRefreshMsg}</p>}
+          </div>
         </div>
 
         <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-6">
@@ -296,9 +453,9 @@ export function AdminPage() {
         <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-6">
           <h3 className="mb-4 font-bold">Users</h3>
           <p className="mb-4 text-sm text-[var(--text-muted)]">
-            Login username stays the same. Add a real name and everyone sees{" "}
-            <span className="font-mono">pjhaber82 (Peter)</span>. Ban blocks login but keeps
-            their picks; Delete removes the account and picks entirely.
+            Set a freeform <span className="font-semibold">display name</span> (what everyone sees)
+            and/or change their login username if it isn’t taken. Ban blocks login but keeps their
+            picks; Delete removes the account and picks entirely.
           </p>
           {loading ? (
             <p className="text-sm text-[var(--text-muted)]">Loading...</p>
@@ -366,23 +523,44 @@ export function AdminPage() {
                   </div>
 
                   {editingId === u.id && (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-                        Real name / nickname
+                    <div className="space-y-3">
+                      <label className="block space-y-1">
+                        <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                          Login username
+                        </span>
+                        <input
+                          value={editUsername}
+                          onChange={(e) => setEditUsername(e.target.value)}
+                          maxLength={20}
+                          placeholder="pjhaber82"
+                          className="min-h-11 w-full rounded-xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] px-3 text-sm font-semibold"
+                          aria-label={`Login username for ${u.username}`}
+                        />
                       </label>
-                      <div className="flex flex-wrap items-center gap-2">
+                      <label className="block space-y-1">
+                        <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                          Display name
+                        </span>
                         <input
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
-                          maxLength={24}
+                          maxLength={40}
                           placeholder="Peter"
-                          className="min-h-11 min-w-[12rem] flex-1 rounded-xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] px-3 text-sm font-semibold"
-                          aria-label={`Nickname for ${u.username}`}
+                          className="min-h-11 w-full rounded-xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] px-3 text-sm font-semibold"
+                          aria-label={`Display name for ${u.username}`}
                         />
+                      </label>
+                      <p className="text-sm text-[var(--text-muted)]">
+                        Shows as:{" "}
+                        <span className="font-semibold text-[var(--text-primary)]">
+                          {editName.trim() || editUsername.trim() || u.username}
+                        </span>
+                      </p>
+                      <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
                           disabled={savingId === u.id}
-                          onClick={() => saveDisplayName(u.id)}
+                          onClick={() => saveNames(u.id)}
                           className="min-h-11 rounded-xl bg-[var(--accent-green)] px-4 text-sm font-bold text-[var(--accent-on-green)] disabled:opacity-60"
                         >
                           Save
@@ -395,21 +573,52 @@ export function AdminPage() {
                           Cancel
                         </button>
                       </div>
-                      <p className="text-sm text-[var(--text-muted)]">
-                        Shows as:{" "}
-                        <span className="font-semibold text-[var(--text-primary)]">
-                          {publicDisplayName({
-                            username: u.username,
-                            displayName: editName.trim() || null,
-                          })}
-                        </span>
-                      </p>
                     </div>
                   )}
                 </li>
               ))}
             </ul>
           )}
+        </div>
+
+        <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-6">
+          <p className="font-bold">Badge catalog</p>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
+            All possible badges, rarest first. Locked rows have never been earned. Players only see
+            badges they have earned.
+          </p>
+          <CatalogList rows={badgeCatalog} />
+        </div>
+
+        <div className="rounded-2xl border-2 border-[var(--accent-red)] bg-[var(--bg-card)] p-6">
+          <div className="space-y-3">
+            <div>
+              <p className="font-bold text-[var(--accent-red)]">Factory reset</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                Deletes all other users, all picks, and all non-preseason weeks/games. Keeps preseason
+                data and your admin account. Re-opens registration and syncs the current ESPN week.
+              </p>
+            </div>
+            <label className="block space-y-2 text-sm font-semibold">
+              <span>Type RESET to confirm</span>
+              <input
+                value={resetConfirm}
+                onChange={(e) => setResetConfirm(e.target.value)}
+                className="min-h-11 w-full max-w-xs rounded-xl border-2 border-[var(--border-card)] bg-[var(--bg-page)] px-3 font-mono"
+                placeholder="RESET"
+                autoComplete="off"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleFactoryReset}
+              disabled={resetting || resetConfirm !== "RESET"}
+              className="min-h-11 rounded-2xl bg-[var(--accent-red)] px-4 font-bold text-white disabled:opacity-60"
+            >
+              {resetting ? "Resetting..." : "Wipe beta data"}
+            </button>
+            {resetMsg && <p className="text-sm font-semibold text-[var(--accent-green)]">{resetMsg}</p>}
+          </div>
         </div>
       </div>
     </AppShell>

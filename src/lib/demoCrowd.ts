@@ -1,13 +1,13 @@
 import type { GameData, PickSide, WeekComparePlayer } from "@shared/types";
 import { isCrowdNameVisible } from "./crowdVisibility";
 
-export type CrowdName = { username: string; star: boolean };
+export type CrowdName = { username: string; star: boolean; isYou?: boolean };
 
 export type GameCrowdLean = {
   /** Visible names only (Leaderboard lean checkboxes). */
   away: CrowdName[];
   home: CrowdName[];
-  /** Full room counts — every pick counts, even if names are hidden. */
+  /** Full room counts — every pick counts, including you. */
   awayCount: number;
   homeCount: number;
   openCount: number;
@@ -21,12 +21,12 @@ export function venueForPick(game: GameData, pick: PickSide): "away" | "home" | 
 
 /**
  * Build Away/Home lean for a game.
- * Counts include everyone (except you); name lists only include visible players.
+ * Counts include everyone (including you); name lists include you and visible players.
  */
 export function crowdLeanForGame(
   game: GameData,
   players: WeekComparePlayer[],
-  excludeUsername: string | null,
+  currentUsername: string | null,
 ): GameCrowdLean {
   const away: CrowdName[] = [];
   const home: CrowdName[] = [];
@@ -35,15 +35,20 @@ export function crowdLeanForGame(
   let openCount = 0;
 
   for (const p of players) {
-    if (excludeUsername && p.username === excludeUsername) continue;
+    const isYou =
+      currentUsername != null && p.username.toLowerCase() === currentUsername.toLowerCase();
     const entry = p.picks[game.id];
     if (!entry) {
       openCount++;
       continue;
     }
     const venue = venueForPick(game, entry.pick);
-    const row = { username: p.displayName || p.username, star: entry.isConfidenceBet };
-    const showName = isCrowdNameVisible(p.username);
+    const row: CrowdName = {
+      username: p.displayName || p.username,
+      star: entry.isConfidenceBet,
+      isYou,
+    };
+    const showName = isYou || isCrowdNameVisible(p.username);
     if (venue === "away") {
       awayCount++;
       if (showName) away.push(row);

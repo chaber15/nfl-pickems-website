@@ -1,7 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { detectCurrentWeek } from "@shared/espnClient";
+import { resolveCurrentPickemsWeek } from "@shared/espnClient";
 import { DEMO_SEASON_TYPE, DEMO_WEEK } from "@shared/types";
-import { clampToAvailableWeek, isDemoSlate, weekLabel, weekStorageKey } from "@shared/weekUtils";
+import {
+  clampToAvailableWeek,
+  isAfterTuesdayNoonEt,
+  isDemoSlate,
+  nextAvailableWeek,
+  weekLabel,
+  weekStorageKey,
+} from "@shared/weekUtils";
 import { isDemoMode } from "./api";
 
 interface WeekContextValue {
@@ -16,10 +23,18 @@ interface WeekContextValue {
 
 const WeekContext = createContext<WeekContextValue | null>(null);
 
+function fallbackDefaultWeek(): { seasonType: number; week: number } {
+  if (isAfterTuesdayNoonEt()) {
+    return nextAvailableWeek(DEMO_SEASON_TYPE, DEMO_WEEK);
+  }
+  return { seasonType: DEMO_SEASON_TYPE, week: DEMO_WEEK };
+}
+
 export function WeekProvider({ children }: { children: ReactNode }) {
   const demoDefault = isDemoMode();
-  const [seasonType, setSeasonType] = useState(DEMO_SEASON_TYPE);
-  const [week, setWeek] = useState(DEMO_WEEK);
+  const initial = fallbackDefaultWeek();
+  const [seasonType, setSeasonType] = useState(initial.seasonType);
+  const [week, setWeek] = useState(initial.week);
   const [ready, setReady] = useState(demoDefault);
 
   useEffect(() => {
@@ -30,14 +45,18 @@ export function WeekProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const current = await detectCurrentWeek();
+        const current = await resolveCurrentPickemsWeek();
         if (!cancelled) {
           const clamped = clampToAvailableWeek(current.seasonType, current.week);
           setSeasonType(clamped.seasonType);
           setWeek(clamped.week);
         }
       } catch {
-        /* keep Week 1 default */
+        if (!cancelled) {
+          const fb = fallbackDefaultWeek();
+          setSeasonType(fb.seasonType);
+          setWeek(fb.week);
+        }
       } finally {
         if (!cancelled) setReady(true);
       }

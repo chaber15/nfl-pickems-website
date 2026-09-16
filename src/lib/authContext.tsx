@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
-import { apiMe, apiLogin, apiLogout, isDemoMode, type AuthUser } from "./api";
+import { apiMe, apiLogin, apiLogout, apiChangeUsername, isDemoMode, type AuthUser } from "./api";
 import { getStoredUsername, setStoredUsername } from "./localStorage";
 
 interface AuthContextValue {
@@ -9,10 +9,27 @@ interface AuthContextValue {
   useBackend: boolean;
   login: (username: string) => Promise<void>;
   logout: () => Promise<void>;
+  changeUsername: (username: string) => Promise<void>;
   setLocalUsername: (username: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+/** Demo-only: usernames that get the Admin nav + badge catalog. */
+function isDemoAdminName(name: string): boolean {
+  const key = name.trim().toLowerCase();
+  return key === "admin" || key === "demo admin" || key === "demoadmin";
+}
+
+function demoUserFor(name: string): AuthUser {
+  const username = name.trim();
+  return {
+    id: "demo-local",
+    username,
+    displayName: username,
+    isAdmin: isDemoAdminName(username),
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -23,6 +40,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isDemoMode()) {
       setUseBackend(false);
+      const stored = getStoredUsername();
+      if (stored) {
+        setUsername(stored);
+        setUser(demoUserFor(stored));
+      }
       setLoading(false);
       return;
     }
@@ -36,7 +58,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setStoredUsername(u.username);
           setUseBackend(true);
         } else {
-          // Session gone (e.g. after factory reset) — don't keep a ghost local login
           setUser(null);
           setUsername(null);
           setUseBackend(false);
@@ -66,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isDemoMode()) {
       setStoredUsername(display);
       setUsername(display);
-      setUser(null);
+      setUser(demoUserFor(display));
       setUseBackend(false);
       return;
     }
@@ -99,14 +120,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("pickems_username");
   }, []);
 
+  const changeUsername = useCallback(async (name: string) => {
+    if (isDemoMode()) {
+      const display = name.trim();
+      setStoredUsername(display);
+      setUsername(display);
+      setUser(demoUserFor(display));
+      return;
+    }
+    const { user: u } = await apiChangeUsername(name);
+    setUser(u);
+    setUsername(u.username);
+    setStoredUsername(u.username);
+    setUseBackend(true);
+  }, []);
+
   const setLocalUsername = useCallback((name: string) => {
     const display = name.trim();
     setStoredUsername(display);
     setUsername(display);
+    if (isDemoMode()) setUser(demoUserFor(display));
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, username, loading, useBackend, login, logout, setLocalUsername }}>
+    <AuthContext.Provider
+      value={{ user, username, loading, useBackend, login, logout, changeUsername, setLocalUsername }}
+    >
       {children}
     </AuthContext.Provider>
   );

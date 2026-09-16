@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
 import { Check, X, Star } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "motion/react";
-import type { FavoriteSide, GameData, PickSide, UserPick } from "@shared/types";
+import type { AtsResult, FavoriteSide, GameData, PickSide, UserPick } from "@shared/types";
 import { formatKickoff, formatPick, formatSpread, formatJuice, juiceForSide } from "@shared/pickDisplay";
-import { isGameLocked } from "@shared/scoring";
+import { computeAtsResult, isGameLocked } from "@shared/scoring";
+import {
+  formatLiveClockLabel,
+  formatSecondsAsClock,
+  parseClockToSeconds,
+  shouldTickLiveClock,
+} from "@shared/liveClock";
 import type { CrowdName, GameCrowdLean } from "../lib/demoCrowd";
 import { teamLogoSrc, teamLocationName, teamColor } from "../lib/teamLogos";
 
@@ -42,6 +48,26 @@ function pickSideForVenue(favoriteSide: FavoriteSide | null, venue: Venue): Pick
   return favoriteSide === venue ? "favorite" : "underdog";
 }
 
+function venueForPickSide(favoriteSide: FavoriteSide | null, pick: PickSide): Venue | null {
+  if (!favoriteSide) return null;
+  if (pick === "favorite") return favoriteSide;
+  return favoriteSide === "home" ? "away" : "home";
+}
+
+function provisionalAts(game: GameData): AtsResult {
+  if (game.status === "final" && game.atsResult) return game.atsResult;
+  if (
+    game.status !== "in_progress" ||
+    game.spread == null ||
+    !game.favoriteSide ||
+    game.awayScore == null ||
+    game.homeScore == null
+  ) {
+    return null;
+  }
+  return computeAtsResult(game.homeScore, game.awayScore, game.spread, game.favoriteSide);
+}
+
 interface GameCardProps {
   game: GameData;
   userPick?: UserPick;
@@ -60,7 +86,7 @@ function NameList({ names }: { names: CrowdName[] }) {
     <>
       {names.map((r) => (
         <li key={r.username} className="flex items-center justify-center gap-0.5 font-semibold">
-          {r.username}
+          {r.isYou ? "You" : r.username}
           {r.star && <Star size={11} weight="fill" className="text-[var(--accent-gold)]" />}
         </li>
       ))}
@@ -78,6 +104,37 @@ function useFineHover(): boolean {
     return () => mq.removeEventListener("change", sync);
   }, []);
   return fine;
+}
+
+function useEstimatedClock(game: GameData): string | null {
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(() =>
+    shouldTickLiveClock(game) ? parseClockToSeconds(game.displayClock) : null,
+  );
+
+  useEffect(() => {
+    if (!shouldTickLiveClock(game)) {
+      setSecondsLeft(null);
+      return;
+    }
+    const initial = parseClockToSeconds(game.displayClock);
+    setSecondsLeft(initial);
+    if (initial == null) return;
+    const started = Date.now();
+    const id = window.setInterval(() => {
+      const elapsed = Math.floor((Date.now() - started) / 1000);
+      setSecondsLeft(Math.max(0, initial - elapsed));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [game.id, game.displayClock, game.period, game.statusDetail, game.status]);
+
+  if (game.status !== "in_progress") return null;
+  if (secondsLeft != null && shouldTickLiveClock(game)) {
+    return formatLiveClockLabel({
+      ...game,
+      displayClock: formatSecondsAsClock(secondsLeft),
+    });
+  }
+  return formatLiveClockLabel(game);
 }
 
 function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
@@ -235,6 +292,8 @@ export function GameCard({
   const showScores = !notStarted && game.awayScore != null && game.homeScore != null;
   const awayPick = pickSideForVenue(game.favoriteSide, "away");
   const homePick = pickSideForVenue(game.favoriteSide, "home");
+  const liveLabel = useEstimatedClock(game);
+  const liveAts = provisionalAts(game);
   const gradeLabel =
     graded && pick && game.atsResult
       ? game.atsResult === "push"
@@ -244,16 +303,69 @@ export function GameCard({
           : "Wrong"
       : null;
 
+  const resultTone: "win" | "loss" | "push" | null =
+    pick && liveAts
+      ? liveAts === "push"
+        ? "push"
+        : pick === liveAts
+          ? "win"
+          : "loss"
+      : gradeLabel === "Correct"
+        ? "win"
+        : gradeLabel === "Wrong"
+          ? "loss"
+          : gradeLabel === "Push"
+            ? "push"
+            : null;
+
+  const pickVenue = pick ? venueForPickSide(game.favoriteSide, pick) : null;
+  const pickTeamColor =
+    pickVenue === "away"
+      ? teamColor(game.awayAbbrev)
+      : pickVenue === "home"
+        ? teamColor(game.homeAbbrev)
+        : null;
+
+  const resultRing =
+    resultTone === "win"
+      ? "ring-[var(--accent-green)]"
+      : resultTone === "loss"
+        ? "ring-[var(--accent-red)]"
+        : resultTone === "push"
+          ? "ring-[var(--accent-gold)]"
+          : "";
+
+  const ringStrength =
+    game.status === "in_progress" && resultTone
+      ? "ring-4"
+      : resultTone
+        ? "ring-2"
+        : "";
+
   const onPickVenue = (venue: Venue) => {
     const side = pickSideForVenue(game.favoriteSide, venue);
     if (side) onPick(side);
   };
 
+  const borderStyle =
+    locked && pickTeamColor
+      ? { borderColor: pickTeamColor }
+      : isConfidence
+        ? undefined
+        : undefined;
+
   return (
     <motion.article
       layout
+      style={borderStyle}
       className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 shadow-[var(--shadow-card)] ${
-        isConfidence ? "border-[var(--accent-gold)] ring-2 ring-[var(--accent-gold)]/30" : "border-[var(--border-card)]"
+        locked && pickTeamColor
+          ? ""
+          : isConfidence
+            ? "border-[var(--accent-gold)]"
+            : "border-[var(--border-card)]"
+      } ${ringStrength} ${resultRing} ${
+        isConfidence && !(locked && pickTeamColor) ? "ring-[var(--accent-gold)]/30" : ""
       }`}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -266,7 +378,7 @@ export function GameCard({
           )}
           {game.status === "in_progress" && (
             <span className="rounded-full bg-[var(--accent-red)]/15 px-3 py-1 text-xs font-bold text-[var(--accent-red)]">
-              LIVE
+              {liveLabel ?? "LIVE"}
             </span>
           )}
           {game.status === "final" && !gradeLabel && (
@@ -293,11 +405,29 @@ export function GameCard({
               {gradeLabel}
             </span>
           )}
+          {!gradeLabel && game.status === "in_progress" && resultTone && (
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-bold ${
+                resultTone === "win"
+                  ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)]"
+                  : resultTone === "push"
+                    ? "bg-[var(--accent-gold)]/15 text-[var(--accent-gold)]"
+                    : "bg-[var(--accent-red)]/15 text-[var(--accent-red)]"
+              }`}
+            >
+              {resultTone === "win" ? "Covering" : resultTone === "push" ? "Pushing" : "Losing"}
+            </span>
+          )}
         </div>
       </div>
 
       <div className="mb-4 flex items-center justify-center gap-3 sm:gap-4">
-        <div className="flex min-w-0 flex-1 flex-col items-center gap-1 text-center">
+        <div
+          className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl p-1 text-center ${
+            pickVenue === "away" ? "bg-[var(--bg-card-elevated)] ring-2" : ""
+          }`}
+          style={pickVenue === "away" && pickTeamColor ? { boxShadow: `inset 0 0 0 2px ${pickTeamColor}` } : undefined}
+        >
           <TeamLogo abbrev={game.awayAbbrev} name={game.awayTeam} size={showScores ? 44 : 56} />
           <p className="w-full truncate text-sm font-bold leading-tight">{game.awayTeam}</p>
           <p className="font-mono text-xs text-[var(--text-muted)]">
@@ -314,7 +444,12 @@ export function GameCard({
             <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Pre-game</span>
           )}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col items-center gap-1 text-center">
+        <div
+          className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl p-1 text-center ${
+            pickVenue === "home" ? "bg-[var(--bg-card-elevated)]" : ""
+          }`}
+          style={pickVenue === "home" && pickTeamColor ? { boxShadow: `inset 0 0 0 2px ${pickTeamColor}` } : undefined}
+        >
           <TeamLogo abbrev={game.homeAbbrev} name={game.homeTeam} size={showScores ? 44 : 56} />
           <p className="w-full truncate text-sm font-bold leading-tight">{game.homeTeam}</p>
           <p className="font-mono text-xs text-[var(--text-muted)]">
@@ -334,8 +469,18 @@ export function GameCard({
       )}
 
       {locked && pick && (
-        <p className="mb-4 rounded-2xl bg-[var(--bg-card-elevated)] px-4 py-3 text-sm font-semibold">
+        <p
+          className="mb-4 rounded-2xl px-4 py-3 text-sm font-bold sm:font-semibold"
+          style={
+            pickTeamColor
+              ? { backgroundColor: `${pickTeamColor}22`, borderLeft: `4px solid ${pickTeamColor}` }
+              : undefined
+          }
+        >
           Your pick: {formatPick(game, pick)}
+          {isConfidence && (
+            <Star size={14} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
+          )}
         </p>
       )}
 
