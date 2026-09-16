@@ -405,6 +405,15 @@ async function computeLeaderboard(filter?: {
 
   entries.sort((a, b) => b.winPct - a.winPct || b.confidencePl - a.confidencePl);
 
+  // Self-heal: wipe legacy once-per-week By a Nose / Juice Box / Road Dog and
+  // re-grant only when career thresholds are met. Don't rely on Admin clicks.
+  try {
+    const { reconcileLifetimeThresholdBadges } = await import("../../server/badges");
+    await reconcileLifetimeThresholdBadges();
+  } catch {
+    /* best-effort */
+  }
+
   const badgeRows = await allBadgeRows();
   for (const entry of entries) {
     const forUser = badgeRows.filter(
@@ -525,13 +534,20 @@ async function handleStats(event: HandlerEvent) {
     };
   }
 
-  const badgeRows = await badgesForUser(targetUser.id);
+  try {
+    const { reconcileLifetimeThresholdBadges } = await import("../../server/badges");
+    await reconcileLifetimeThresholdBadges();
+  } catch {
+    /* best-effort */
+  }
+
+  const badgeRowsFresh = await badgesForUser(targetUser.id);
 
   return json(200, {
     stats: computeUserStats(games, picks),
     username: targetUser.username,
     displayName: publicDisplayName(targetUser),
-    badges: badgeRows
+    badges: badgeRowsFresh
       .filter((b) => isDisplayableBadgeAward(b.badgeId, b.weekNumber))
       .map((b) => ({
         badgeId: b.badgeId,

@@ -411,15 +411,15 @@ export function isLifetimeThresholdBadge(id: string): id is LifetimeThresholdBad
 }
 
 /**
- * Cumulative badges must be season-scoped (week 0). Legacy once-per-week rows
- * should never be shown even if they still exist in the DB.
+ * Cumulative badges must be season-scoped (week 0 exactly).
+ * Legacy once-per-week rows (week > 0) and null weeks must never display.
  */
 export function isDisplayableBadgeAward(
   badgeId: string,
   weekNumber: number | null | undefined,
 ): boolean {
   if (!isLifetimeThresholdBadge(badgeId)) return true;
-  return isSeasonScopedBadge(weekNumber);
+  return weekNumber === SEASON_BADGE_WEEK;
 }
 
 export type LifetimeBadgeCounts = {

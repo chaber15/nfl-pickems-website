@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Crown, X } from "@phosphor-icons/react";
 import type { EarnedBadge, GameData, LeaderboardEntry } from "@shared/types";
 import { shortWeekLabel } from "@shared/weekUtils";
-import { badgeDescription, badgeName, isSeasonScopedBadge } from "@shared/badges";
+import { badgeDescription, badgeName, isDisplayableBadgeAward, isSeasonScopedBadge } from "@shared/badges";
 import { AppShell } from "../components/AppShell";
 import { LeaderboardBadgeTrail } from "../components/BadgeChip";
 import { apiLeaderboard, isDemoMode } from "../lib/api";
@@ -122,7 +122,9 @@ export function LeaderboardPage() {
   };
 
   const badgesForEntry = (entry: LeaderboardEntry): EarnedBadge[] => {
-    const all = entry.badges ?? [];
+    const all = (entry.badges ?? []).filter((b) =>
+      isDisplayableBadgeAward(b.badgeId, b.weekNumber ?? 0),
+    );
     if (scope === "week") {
       return all.filter((b) => b.weekNumber === week || isSeasonScopedBadge(b.weekNumber));
     }
