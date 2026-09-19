@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { neon } from "@neondatabase/serverless";
 import { getDb, schema } from "./db";
 import {
@@ -28,7 +28,12 @@ async function loadUserPicksMap(
   gameRows: Array<{ game: typeof schema.games.$inferSelect }>,
 ): Promise<Record<string, UserPick>> {
   const db = getDb();
-  const userPicks = await db.select().from(schema.picks).where(eq(schema.picks.userId, userId));
+  const gameIds = gameRows.map(({ game }) => game.id);
+  if (gameIds.length === 0) return {};
+  const userPicks = await db
+    .select()
+    .from(schema.picks)
+    .where(and(eq(schema.picks.userId, userId), inArray(schema.picks.gameId, gameIds)));
   const espnByDbId = new Map(gameRows.map(({ game }) => [game.id, game.espnEventId]));
   const picks: Record<string, UserPick> = {};
   for (const p of userPicks) {

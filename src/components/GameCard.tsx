@@ -67,6 +67,30 @@ function provisionalAts(game: GameData): AtsResult {
   return computeAtsResult(game.homeScore, game.awayScore, game.spread, game.favoriteSide);
 }
 
+function gradeLabelForPick(
+  pick: PickSide | null,
+  ats: AtsResult,
+): "Push" | "Correct" | "Wrong" | null {
+  if (!pick || !ats) return null;
+  if (ats === "push") return "Push";
+  return pick === ats ? "Correct" : "Wrong";
+}
+
+function resultToneFor(
+  pick: PickSide | null,
+  liveAts: AtsResult,
+  gradeLabel: "Push" | "Correct" | "Wrong" | null,
+): "win" | "loss" | "push" | null {
+  if (pick && liveAts) {
+    if (liveAts === "push") return "push";
+    return pick === liveAts ? "win" : "loss";
+  }
+  if (gradeLabel === "Correct") return "win";
+  if (gradeLabel === "Wrong") return "loss";
+  if (gradeLabel === "Push") return "push";
+  return null;
+}
+
 interface GameCardProps {
   game: GameData;
   userPick?: UserPick;
@@ -289,29 +313,8 @@ export function GameCard({
   const homePick = pickSideForVenue(game.favoriteSide, "home");
   const liveLabel = useEstimatedClock(game);
   const liveAts = provisionalAts(game);
-  const gradeLabel =
-    graded && pick && game.atsResult
-      ? game.atsResult === "push"
-        ? "Push"
-        : pick === game.atsResult
-          ? "Correct"
-          : "Wrong"
-      : null;
-
-  const resultTone: "win" | "loss" | "push" | null =
-    pick && liveAts
-      ? liveAts === "push"
-        ? "push"
-        : pick === liveAts
-          ? "win"
-          : "loss"
-      : gradeLabel === "Correct"
-        ? "win"
-        : gradeLabel === "Wrong"
-          ? "loss"
-          : gradeLabel === "Push"
-            ? "push"
-            : null;
+  const gradeLabel = gradeLabelForPick(pick, graded ? game.atsResult : null);
+  const resultTone = resultToneFor(pick, liveAts, gradeLabel);
 
   const pickVenue = pick ? venueForPickSide(game.favoriteSide, pick) : null;
 

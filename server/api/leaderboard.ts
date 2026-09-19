@@ -43,6 +43,17 @@ export async function computeLeaderboard(filter?: {
     .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id));
   const allPicks = pickRows.filter((r) => seasonGameIds.has(r.game.id));
 
+  /** userId → gameId → pick row */
+  const picksByUser = new Map<string, Map<string, (typeof allPicks)[number]>>();
+  for (const row of allPicks) {
+    let byGame = picksByUser.get(row.pick.userId);
+    if (!byGame) {
+      byGame = new Map();
+      picksByUser.set(row.pick.userId, byGame);
+    }
+    byGame.set(row.game.id, row);
+  }
+
   const entries: LeaderboardEntry[] = [];
 
   for (const u of activeUsers) {
@@ -59,6 +70,8 @@ export async function computeLeaderboard(filter?: {
       { count: number; phase: GameData["phase"]; rawPl: number; confCorrect: number; confGraded: number }
     >();
 
+    const userPicks = picksByUser.get(u.id);
+
     for (const { game, week } of allGames) {
       const g = dbGameToGameData(game, week);
       const weekKey = week.id;
@@ -70,7 +83,7 @@ export async function computeLeaderboard(filter?: {
         confGraded: 0,
       };
 
-      const userPick = allPicks.find((p) => p.pick.userId === u.id && p.game.id === game.id);
+      const userPick = userPicks?.get(game.id);
 
       if (userPick?.pick.isConfidenceBet) {
         existing.count++;
@@ -129,15 +142,6 @@ export async function computeLeaderboard(filter?: {
   }
 
   entries.sort((a, b) => b.winPct - a.winPct || b.confidencePl - a.confidencePl);
-
-  // Self-heal: wipe legacy once-per-week By a Nose / Juice Box / Road Dog and
-  // re-grant only when career thresholds are met. Don't rely on Admin clicks.
-  try {
-    const { reconcileLifetimeThresholdBadges } = await import("../badges");
-    await reconcileLifetimeThresholdBadges();
-  } catch {
-    /* best-effort */
-  }
 
   const badgeRows = await allBadgeRows();
   for (const entry of entries) {

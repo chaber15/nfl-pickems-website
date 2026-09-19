@@ -17,3 +17,6 @@ reports/
 
 # Stray Deno lockfile — this project builds with npm
 deno.lock
+
+# Generated graphify analysis output
+graphify-out/

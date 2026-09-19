@@ -1,0 +1,18 @@
+---
+description: Route work through Addy Osmani agent-skills workflows
+alwaysApply: true
+---
+
+# Agent skills
+
+Prefer project skills under `.cursor/skills/` for lifecycle work:
+
+- Spec / clarify: `interview-me`, `spec-driven-development`
+- Plan: `planning-and-task-breakdown`
+- Build: `incremental-implementation`, `frontend-ui-engineering`
+- Test: `test-driven-development`
+- Review / simplify: `code-review-and-quality`, `code-simplification`
+- Security / perf: `security-and-hardening`, `performance-optimization`
+- Ship: `shipping-and-launch`, `git-workflow-and-versioning`
+
+Do not paste full skill bodies into rules. Read the matching `SKILL.md` when the task matches.

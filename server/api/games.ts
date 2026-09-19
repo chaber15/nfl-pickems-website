@@ -5,7 +5,6 @@ import {
   getGamesForWeek,
   shouldSyncWeekOnRead,
 } from "../espn/sync";
-import { sortGamesLiveFirstThenChronological } from "../../shared/gameOrder";
 import { resolveCurrentPickemsWeek } from "../../shared/espnClient";
 import { buildWeekOptions } from "../../shared/weekUtils";
 import { json } from "./http";
@@ -24,7 +23,7 @@ export async function handleGames(event: HandlerEvent) {
       }
       if (games.length > 0) {
         return json(200, {
-          games: sortGamesLiveFirstThenChronological(games),
+          games,
           seasonType,
           week,
           source: "db",

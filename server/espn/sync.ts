@@ -187,14 +187,19 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
   const db = getDb();
   const season = await ensureSeasonYear(board.seasonYear);
 
-  const [settings] = await db.select().from(schema.siteSettings).limit(1);
-  if (!settings) {
-    await db.insert(schema.siteSettings).values({ currentSeasonId: season.id });
-  } else {
-    await db
-      .update(schema.siteSettings)
-      .set({ currentSeasonId: season.id })
-      .where(eq(schema.siteSettings.id, 1));
+  // Only pin the active season when syncing ESPN's current slate — not when an
+  // admin (or on-read path) syncs an arbitrary historical week.
+  const pinActiveSeason = seasonType == null || week == null;
+  if (pinActiveSeason) {
+    const [settings] = await db.select().from(schema.siteSettings).limit(1);
+    if (!settings) {
+      await db.insert(schema.siteSettings).values({ currentSeasonId: season.id });
+    } else {
+      await db
+        .update(schema.siteSettings)
+        .set({ currentSeasonId: season.id })
+        .where(eq(schema.siteSettings.id, 1));
+    }
   }
 
   const weekRow = await ensureWeek(season.id, board.week, board.seasonType, board.games[0]?.phase ?? "regular");

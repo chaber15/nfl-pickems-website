@@ -52,6 +52,7 @@ export async function createSession(userId: string): Promise<string> {
   const db = getDb();
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+  await db.delete(schema.sessions).where(eq(schema.sessions.userId, userId));
   await db.insert(schema.sessions).values({ userId, token, expiresAt });
   return token;
 }

@@ -1,5 +1,5 @@
 import type { HandlerEvent } from "@netlify/functions";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { dbGameToGameData, getActiveSeasonGameRows } from "../espn/sync";
 import type { UserPick } from "../../shared/types";
@@ -14,6 +14,17 @@ import {
 import { badgesForUser } from "../badges";
 import { json, requireUser } from "./http";
 
+async function findUserByUsername(username: string) {
+  const db = getDb();
+  const key = username.toLowerCase();
+  const [found] = await db
+    .select()
+    .from(schema.users)
+    .where(sql`lower(${schema.users.username}) = ${key}`)
+    .limit(1);
+  return found;
+}
+
 export async function handleHistory(event: HandlerEvent) {
   const { user: sessionUser } = await requireUser(event);
   const db = getDb();
@@ -24,11 +35,7 @@ export async function handleHistory(event: HandlerEvent) {
 
   let targetUser = sessionUser;
   if (usernameParam) {
-    const [found] = await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.username, usernameParam))
-      .limit(1);
+    const found = await findUserByUsername(usernameParam);
     if (!found || found.isBanned) return json(404, { error: "User not found" });
     targetUser = found;
   }
@@ -71,11 +78,7 @@ export async function handleStats(event: HandlerEvent) {
 
   let targetUser = sessionUser;
   if (usernameParam) {
-    const [found] = await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.username, usernameParam))
-      .limit(1);
+    const found = await findUserByUsername(usernameParam);
     if (!found || found.isBanned) return json(404, { error: "User not found" });
     targetUser = found;
   }
@@ -95,13 +98,6 @@ export async function handleStats(event: HandlerEvent) {
       pick: p.pick,
       isConfidenceBet: p.isConfidenceBet,
     };
-  }
-
-  try {
-    const { reconcileLifetimeThresholdBadges } = await import("../badges");
-    await reconcileLifetimeThresholdBadges();
-  } catch {
-    /* best-effort */
   }
 
   const badgeRowsFresh = await badgesForUser(targetUser.id);
