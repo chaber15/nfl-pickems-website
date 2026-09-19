@@ -1,15 +1,12 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Question } from "@phosphor-icons/react";
-import type { EarnedBadge, GameData, UserStats } from "@shared/types";
+import { Question } from "../components/icons";
+import type { EarnedBadge, UserStats } from "@shared/types";
 import { AppShell } from "../components/AppShell";
 import { BadgeChipRow } from "../components/BadgeChip";
 import { apiLeaderboard, apiStats } from "../lib/api";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
-import { getStoredPicks } from "../lib/localStorage";
-import { loadWeekGames } from "../lib/loadWeekGames";
-import { computeUserStats } from "@shared/statsCompute";
 import { getVisibleCrowdUsernames } from "../lib/crowdVisibility";
 
 function StatCard({ label, value, help }: { label: string; value: string; help: string }) {
@@ -103,11 +100,10 @@ const STAT_HELP = {
 
 export function StatsPage() {
   const { username: routeUser } = useParams<{ username?: string }>();
-  const { username, useBackend } = useAuth();
+  const { username } = useAuth();
   const navigate = useNavigate();
-  const { seasonType, week, weekKey, ready } = useWeek();
+  const { ready } = useWeek();
   const [stats, setStats] = useState<UserStats | null>(null);
-  const [games, setGames] = useState<GameData[]>([]);
   const [loading, setLoading] = useState(true);
   const [badges, setBadges] = useState<EarnedBadge[]>([]);
   const [viewLabel, setViewLabel] = useState<string | null>(null);
@@ -119,7 +115,7 @@ export function StatsPage() {
   const isOwnStats = !viewingOther;
 
   useEffect(() => {
-    if (!useBackend || !ready) return;
+    if (!ready) return;
     (async () => {
       try {
         const res = await apiLeaderboard();
@@ -133,47 +129,29 @@ export function StatsPage() {
         setStarredUsers([]);
       }
     })();
-  }, [useBackend, ready, username]);
+  }, [ready, username]);
 
   useEffect(() => {
     if (!ready) return;
     (async () => {
       setLoading(true);
       try {
-        if (useBackend) {
-          try {
-            const res = await apiStats(viewingOther ? routeUser : undefined);
-            setStats(res.stats);
-            setBadges(res.badges ?? []);
-            setViewLabel(res.displayName ?? res.username ?? routeUser ?? null);
-            setGames([]);
-            return;
-          } catch {
-            /* fall through */
-          }
-        }
-        if (viewingOther) {
-          setStats(null);
-          setBadges([]);
-          setViewLabel(routeUser ?? null);
-          return;
-        }
-        const board = await loadWeekGames(seasonType, week, weekKey);
-        setGames(board.games);
-        const picks = getStoredPicks(weekKey);
-        setStats(computeUserStats(board.games, picks));
-        setBadges([]);
-        setViewLabel(null);
+        const res = await apiStats(viewingOther ? routeUser : undefined);
+        setStats(res.stats);
+        setBadges(res.badges ?? []);
+        setViewLabel(res.displayName ?? res.username ?? routeUser ?? null);
       } catch {
         setStats(null);
+        setBadges([]);
+        setViewLabel(routeUser ?? null);
       } finally {
         setLoading(false);
       }
     })();
-  }, [username, useBackend, seasonType, week, weekKey, ready, routeUser, viewingOther]);
+  }, [ready, routeUser, viewingOther]);
 
   return (
-    <AppShell games={games}>
+    <AppShell>
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>

@@ -415,7 +415,7 @@ export const LIFETIME_THRESHOLD_BADGE_IDS = Object.keys(
 ) as LifetimeThresholdBadgeId[];
 
 export function isLifetimeThresholdBadge(id: string): id is LifetimeThresholdBadgeId {
-  return Object.prototype.hasOwnProperty.call(LIFETIME_BADGE_THRESHOLDS, id);
+  return Object.hasOwn(LIFETIME_BADGE_THRESHOLDS, id);
 }
 
 /**

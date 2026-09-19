@@ -2,16 +2,18 @@
 
 Family NFL spread pick'em pool with Retro Bowl arcade styling, ESPN sync, dual leaderboards, confidence bets, and rarity-colored badges.
 
-## Quick start (demo mode)
+## Quick start
 
-No database required. Picks are stored in `localStorage`. Defaults to **Regular Season Week 1**.
+Requires a Postgres database (Neon or Netlify DB) and Netlify Dev for the API.
 
 ```bash
+cp .env.example .env   # set DATABASE_URL, SESSION_SECRET, ADMIN_USERNAMES
 npm install
-npm run dev
+npm run db:push
+npx netlify dev
 ```
 
-Open http://localhost:5173, enter a username, and make picks. Use the week selector to browse other weeks (preseason / regular / playoffs) against live ESPN data.
+Open http://localhost:8888 (or the URL Netlify prints), enter a username, and make picks.
 
 ## Environment variables
 
@@ -19,20 +21,9 @@ Copy `.env.example` to `.env`:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | Production | Neon/Netlify DB Postgres connection string |
+| `DATABASE_URL` | Yes | Neon/Netlify DB Postgres connection string |
 | `SESSION_SECRET` | Recommended | Secret for sessions |
 | `ADMIN_USERNAMES` | Optional | Comma-separated usernames bootstrapped as admin |
-| `VITE_USE_BACKEND` | Optional | Set `true` with Netlify Dev to hit API |
-| `VITE_DEMO_MODE` | Optional | Force client-only demo even in production builds |
-
-### Local backend (optional)
-
-1. Create a Neon database (or enable Netlify DB on deploy).
-2. Set `DATABASE_URL` in `.env`.
-3. Push schema: `npm run db:push`
-4. Run with Netlify Dev: `npx netlify dev` (sets `VITE_USE_BACKEND=true`)
-
-Without `DATABASE_URL`, the app runs in **demo mode**: ESPN fetch + localStorage picks only.
 
 After pulling schema changes (badges, live-clock columns, etc.), run `npm run db:push` against the target database **before** (or with) shipping code that reads those columns. Netlify build does **not** auto-push schema.
 
@@ -40,17 +31,14 @@ After pulling schema changes (badges, live-clock columns, etc.), run `npm run db
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Vite dev server (client-side demo) |
 | `npm run build` | Production build to `dist/` |
 | `npm run preview` | Preview production build |
 | `npm test` | Scoring / line-lock unit tests |
 | `npm run db:push` | Apply Drizzle schema to database |
-| `npx netlify dev` | Local dev with Netlify Functions |
+| `npx netlify dev` | Local dev with Vite + Netlify Functions |
 | `npx netlify deploy --prod --build` | Build and publish production from this machine |
 
 ## Deploy to Netlify
-
-This site is published with the Netlify CLI from a linked local project (not from a GitHub build):
 
 ```bash
 npx netlify deploy --prod --build
@@ -63,7 +51,7 @@ One-time / dashboard setup:
 3. Apply schema once: `DATABASE_URL=... npm run db:push`
 4. Build / publish / functions are already set in `netlify.toml` (`npm run build`, `dist`, `netlify/functions`).
 
-**Deploy blockers if missing:** `DATABASE_URL` (auth/picks/leaderboards), `ADMIN_USERNAMES` (first admin), and a successful `db:push`. Demo-only deploys can set `VITE_DEMO_MODE=true` and skip the database.
+**Deploy blockers if missing:** `DATABASE_URL` (auth/picks/leaderboards), `ADMIN_USERNAMES` (first admin), and a successful `db:push`.
 
 ### Scheduled ESPN sync
 
@@ -110,6 +98,5 @@ src/           React frontend
 shared/        Scoring, badges, ESPN client, types (frontend + functions)
 server/        Drizzle schema, auth, badge awards, ESPN sync
 netlify/       Netlify Functions (API + scheduled sync)
-scripts/       One-off tools (import, factory reset, reports)
 public/        PWA manifest and icons
 ```

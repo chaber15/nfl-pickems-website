@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, X, Star } from "@phosphor-icons/react";
-import { motion, useReducedMotion } from "motion/react";
+import { Check, X, Star } from "./icons";
 import type { AtsResult, FavoriteSide, GameData, PickSide, UserPick } from "@shared/types";
 import { formatKickoff, formatPick, formatSpread, formatJuice, juiceForSide } from "@shared/pickDisplay";
 import { computeAtsResult, isGameLocked } from "@shared/scoring";
@@ -10,7 +9,7 @@ import {
   parseClockToSeconds,
   shouldTickLiveClock,
 } from "@shared/liveClock";
-import type { CrowdName, GameCrowdLean } from "../lib/demoCrowd";
+import type { CrowdName, GameCrowdLean } from "../lib/crowdLean";
 import { teamLogoSrc, teamLocationName, teamColor } from "../lib/teamLogos";
 
 type Venue = FavoriteSide;
@@ -74,7 +73,6 @@ interface GameCardProps {
   onPick: (side: PickSide) => void;
   onToggleConfidence: () => void;
   confidenceDisabled?: boolean;
-  forceUnlocked?: boolean;
   crowd?: GameCrowdLean;
 }
 
@@ -230,7 +228,6 @@ function PickButton({
   disabled: boolean;
   onClick: () => void;
 }) {
-  const reduce = useReducedMotion();
   const isFavorite = game.favoriteSide === venue;
   const pickSide = pickSideForVenue(game.favoriteSide, venue);
   const abbrev = venue === "away" ? game.awayAbbrev : game.homeAbbrev;
@@ -243,18 +240,17 @@ function PickButton({
   const juice = pickSide ? formatJuice(juiceForSide(game, pickSide)) : null;
 
   return (
-    <motion.button
+    <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      whileTap={reduce || disabled ? undefined : { scale: 0.98 }}
-      className={`flex min-h-14 w-full flex-col items-center justify-center gap-0.5 rounded-2xl border-2 px-3 py-3 text-center transition-colors ${
+      className={`flex min-h-14 w-full flex-col items-center justify-center gap-0.5 rounded-2xl border-2 px-3 py-3 text-center transition-colors transition-transform ${
         selected
           ? "border-[var(--accent-green)] bg-[var(--accent-green)] text-[var(--accent-on-green)]"
           : isFavorite
             ? "border-[var(--accent-blue)] bg-[var(--bg-card)] text-[var(--text-primary)]"
             : "border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-primary)]"
-      } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+      } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer active:scale-[0.98]"}`}
     >
       <span className={`text-[10px] font-bold tracking-wide ${selected ? "opacity-80" : "text-[var(--text-muted)]"}`}>
         {venueLabel}
@@ -269,7 +265,7 @@ function PickButton({
           juice {juice}
         </span>
       )}
-    </motion.button>
+    </button>
   );
 }
 
@@ -279,10 +275,9 @@ export function GameCard({
   onPick,
   onToggleConfidence,
   confidenceDisabled,
-  forceUnlocked,
   crowd,
 }: GameCardProps) {
-  const locked = isGameLocked(game.kickoffAt) && !forceUnlocked;
+  const locked = isGameLocked(game.kickoffAt);
   const hasLine = game.spread != null && game.favoriteSide;
   const pick = userPick?.pick ?? null;
   const isConfidence = userPick?.isConfidenceBet ?? false;
@@ -335,8 +330,7 @@ export function GameCard({
           : "border-[var(--border-card)]";
 
   return (
-    <motion.article
-      layout
+    <article
       className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 shadow-[var(--shadow-card)] ${cardBorderClass}`}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -494,7 +488,7 @@ export function GameCard({
           No pick yet - counts as wrong at kickoff
         </p>
       )}
-    </motion.article>
+    </article>
   );
 }
 

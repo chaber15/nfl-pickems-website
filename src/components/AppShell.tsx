@@ -1,12 +1,11 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { SignOut } from "@phosphor-icons/react";
+import { SignOut } from "./icons";
 import { TickerBar } from "./TickerBar";
 import { Sidebar, BottomNav } from "./Nav";
 import { ThemeToggle } from "./ThemeToggle";
 import { WeekSelector } from "./WeekSelector";
 import { useAuth } from "../lib/authContext";
-import { useWeek } from "../lib/weekContext";
 import { NFL_LOGO_SRC } from "../lib/teamLogos";
 import type { GameData } from "@shared/types";
 import { ChangeUsernamePanel } from "./ChangeUsernamePanel";
@@ -20,8 +19,6 @@ interface AppShellProps {
 
 export function AppShell({ children, games = [], banner, showWeekSelector = true }: AppShellProps) {
   const { username, user, logout } = useAuth();
-  const { isDemo } = useWeek();
-  const displayBanner = banner ?? (isDemo ? "DEMO MODE" : undefined);
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-page text-[var(--text-primary)]">
@@ -43,9 +40,9 @@ export function AppShell({ children, games = [], banner, showWeekSelector = true
                 />
               </Link>
               <div className="min-w-0">
-                {displayBanner && (
+                {banner && (
                   <p className="font-display mb-0.5 text-lg text-[var(--accent-gold)] sm:text-xl">
-                    {displayBanner}
+                    {banner}
                   </p>
                 )}
                 {username && (

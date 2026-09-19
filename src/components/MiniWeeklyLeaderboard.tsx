@@ -1,14 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Crown } from "@phosphor-icons/react";
+import { Crown } from "./icons";
 import type { LeaderboardEntry } from "@shared/types";
-import { shortWeekLabel, weekStorageKey } from "@shared/weekUtils";
-import { apiLeaderboard, isDemoMode } from "../lib/api";
-import { useAuth } from "../lib/authContext";
+import { shortWeekLabel } from "@shared/weekUtils";
+import { apiLeaderboard } from "../lib/api";
 import { useWeek } from "../lib/weekContext";
-import { getStoredPicks } from "../lib/localStorage";
-import { loadWeekGames } from "../lib/loadWeekGames";
-import { computeLeaderboardFromLocal } from "@shared/statsCompute";
 
 const TOP_N = 5;
 
@@ -16,7 +12,6 @@ type SortMode = "winPct" | "pl";
 
 /** Compact current-week standings for the desktop sidebar. */
 export function MiniWeeklyLeaderboard() {
-  const { username, useBackend } = useAuth();
   const { seasonType, week, ready } = useWeek();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,23 +23,8 @@ export function MiniWeeklyLeaderboard() {
     (async () => {
       setLoading(true);
       try {
-        if (useBackend && !isDemoMode()) {
-          try {
-            const res = await apiLeaderboard(seasonType, week);
-            if (!cancelled) setEntries(res.entries);
-            return;
-          } catch {
-            /* fall through */
-          }
-        }
-        const weekKey = weekStorageKey(seasonType, week);
-        const board = await loadWeekGames(seasonType, week, weekKey);
-        const picks = getStoredPicks(weekKey);
-        if (!cancelled) {
-          setEntries(
-            username ? [computeLeaderboardFromLocal(username, board.games, picks)] : [],
-          );
-        }
+        const res = await apiLeaderboard(seasonType, week);
+        if (!cancelled) setEntries(res.entries);
       } catch {
         if (!cancelled) setEntries([]);
       } finally {
@@ -54,7 +34,7 @@ export function MiniWeeklyLeaderboard() {
     return () => {
       cancelled = true;
     };
-  }, [ready, useBackend, username, seasonType, week]);
+  }, [ready, seasonType, week]);
 
   const top = useMemo(
     () =>

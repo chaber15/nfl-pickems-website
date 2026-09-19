@@ -1,17 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Crown, X } from "@phosphor-icons/react";
-import type { EarnedBadge, GameData, LeaderboardEntry } from "@shared/types";
+import { Crown, X } from "../components/icons";
+import type { EarnedBadge, LeaderboardEntry } from "@shared/types";
 import { shortWeekLabel } from "@shared/weekUtils";
-import { badgeDescription, badgeName, isDisplayableBadgeAward, isSeasonScopedBadge } from "@shared/badges";
+import { isDisplayableBadgeAward, isSeasonScopedBadge } from "@shared/badges";
 import { AppShell } from "../components/AppShell";
 import { LeaderboardBadgeTrail } from "../components/BadgeChip";
-import { apiLeaderboard, isDemoMode } from "../lib/api";
-import { useAuth } from "../lib/authContext";
+import { apiLeaderboard } from "../lib/api";
 import { useWeek } from "../lib/weekContext";
-import { getStoredPicks } from "../lib/localStorage";
-import { loadWeekGames } from "../lib/loadWeekGames";
-import { computeLeaderboardFromLocal } from "@shared/statsCompute";
 import {
   isCrowdNameVisible,
   markTutorialDone,
@@ -20,20 +16,6 @@ import {
 } from "../lib/crowdVisibility";
 
 type Scope = "overall" | "week";
-
-/** Sample earned badges for Vite demo (no DB). */
-function demoEarnedBadges(seasonType: number, week: number): EarnedBadge[] {
-  const ids = ["clean_sweep", "lone_wolf", "hot_hand", "kennel_club", "monday_miracle"] as const;
-  const now = new Date().toISOString();
-  return ids.map((id) => ({
-    badgeId: id,
-    name: badgeName(id),
-    description: badgeDescription(id),
-    seasonType,
-    weekNumber: week,
-    earnedAt: now,
-  }));
-}
 
 function recordLabel(entry: LeaderboardEntry, mode: "winPct" | "pl"): string {
   if (mode === "pl") {
@@ -45,12 +27,10 @@ function recordLabel(entry: LeaderboardEntry, mode: "winPct" | "pl"): string {
 }
 
 export function LeaderboardPage() {
-  const { username, useBackend } = useAuth();
-  const { seasonType, week, weekKey, ready } = useWeek();
-  const [scope, setScope] = useState<Scope>(() => (isDemoMode() ? "week" : "overall"));
+  const { seasonType, week, ready } = useWeek();
+  const [scope, setScope] = useState<Scope>("overall");
   const [mode, setMode] = useState<"winPct" | "pl">("winPct");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [games, setGames] = useState<GameData[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibilityTick, setVisibilityTick] = useState(0);
   const [showTutorial, setShowTutorial] = useState(false);
@@ -64,43 +44,18 @@ export function LeaderboardPage() {
     (async () => {
       setLoading(true);
       try {
-        if (useBackend) {
-          try {
-            const res =
-              scope === "overall"
-                ? await apiLeaderboard()
-                : await apiLeaderboard(seasonType, week);
-            setEntries(res.entries);
-            setGames([]);
-            return;
-          } catch {
-            /* fall through */
-          }
-        }
-        if (scope === "week" || !useBackend) {
-          const board = await loadWeekGames(seasonType, week, weekKey);
-          setGames(board.games);
-          const picks = getStoredPicks(weekKey);
-          if (username) {
-            const entry = computeLeaderboardFromLocal(username, board.games, picks);
-            if (isDemoMode()) {
-              entry.badges = demoEarnedBadges(seasonType, week);
-            }
-            setEntries([entry]);
-          } else {
-            setEntries([]);
-          }
-        } else {
-          setEntries([]);
-          setGames([]);
-        }
+        const res =
+          scope === "overall"
+            ? await apiLeaderboard()
+            : await apiLeaderboard(seasonType, week);
+        setEntries(res.entries);
       } catch {
         setEntries([]);
       } finally {
         setLoading(false);
       }
     })();
-  }, [username, useBackend, ready, scope, seasonType, week, weekKey]);
+  }, [ready, scope, seasonType, week]);
 
   const sorted = useMemo(() => {
     void visibilityTick;
@@ -135,7 +90,7 @@ export function LeaderboardPage() {
   const badgeTrailMode = scope === "week" ? "week" : "overall";
 
   return (
-    <AppShell games={games}>
+    <AppShell>
       <div className="mx-auto max-w-5xl space-y-6">
         {showTutorial && (
           <div className="relative rounded-2xl border-2 border-[var(--accent-blue)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-card)]">

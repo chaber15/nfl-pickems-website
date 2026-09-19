@@ -11,15 +11,12 @@ import {
 import { toUserPickMap } from "@shared/statsCompute";
 import { sortGamesLiveFirstThenChronological } from "@shared/gameOrder";
 import { AppShell } from "../components/AppShell";
-import { FieldFrame } from "../components/FieldFrame";
 import { GameCard, GameCardSkeleton } from "../components/GameCard";
 import { ConfidenceBetCounter } from "../components/ConfidenceBetCounter";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
-import { getStoredPicks, saveStoredPicks } from "../lib/localStorage";
-import { loadWeekGames } from "../lib/loadWeekGames";
-import { apiGames, apiSavePick, apiUserPicks, apiWeekPicks, isDemoMode } from "../lib/api";
-import { crowdLeanForGame } from "../lib/demoCrowd";
+import { apiGames, apiSavePick, apiUserPicks, apiWeekPicks } from "../lib/api";
+import { crowdLeanForGame } from "../lib/crowdLean";
 
 /** Crowd lean refresh while picks can still change (tab visible only). */
 const CROWD_POLL_MS = 60_000;
@@ -33,9 +30,10 @@ function lockInfoForGames(games: GameData[]) {
     lockLabel: lockAt ? formatLineLockLabel(lockAt) : null,
   };
 }
+
 export function PicksPage() {
-  const { username, useBackend } = useAuth();
-  const { seasonType, week, weekKey, isDemo, ready } = useWeek();
+  const { username } = useAuth();
+  const { seasonType, week, ready } = useWeek();
   const [games, setGames] = useState<GameData[]>([]);
   const [picks, setPicks] = useState<Record<string, UserPick>>({});
   const [players, setPlayers] = useState<WeekComparePlayer[]>([]);
@@ -45,77 +43,36 @@ export function PicksPage() {
   const [linesLocked, setLinesLocked] = useState(false);
   const [lockLabel, setLockLabel] = useState<string | null>(null);
 
-  const loadCrowd = useCallback(
-    async (_loadedGames: GameData[]) => {
-      if (!useBackend || isDemoMode()) {
-        setPlayers([]);
-        return;
-      }
-      try {
-        const res = await apiWeekPicks(seasonType, week);
-        setPlayers(res.players);
-      } catch {
-        setPlayers([]);
-      }
-    },
-    [useBackend, seasonType, week],
-  );
+  const loadCrowd = useCallback(async () => {
+    try {
+      const res = await apiWeekPicks(seasonType, week);
+      setPlayers(res.players);
+    } catch {
+      setPlayers([]);
+    }
+  }, [seasonType, week]);
 
   const load = useCallback(async () => {
     if (!ready) return;
     setLoading(true);
     setError("");
     try {
-      let loadedGames: GameData[] = [];
-      let locked = false;
-      let label: string | null = null;
+      const res = await apiGames(seasonType, week);
+      const loadedGames = sortGamesLiveFirstThenChronological(res.games);
+      const info = lockInfoForGames(loadedGames);
+      setGames(loadedGames);
+      setLinesLocked(info.linesLocked);
+      setLockLabel(info.lockLabel);
 
-      if (useBackend) {
-        try {
-          const res = await apiGames(seasonType, week);
-          loadedGames = res.games;
-          const info = lockInfoForGames(loadedGames);
-          locked = info.linesLocked;
-          label = info.lockLabel;
-        } catch {
-          const board = await loadWeekGames(seasonType, week, weekKey);
-          loadedGames = board.games;
-          locked = board.linesLocked;
-          label = board.lockLabel;
-        }
-      } else {
-        const board = await loadWeekGames(seasonType, week, weekKey);
-        loadedGames = board.games;
-        locked = board.linesLocked;
-        label = board.lockLabel;
-      }
-      setGames(sortGamesLiveFirstThenChronological(loadedGames));
-      setLinesLocked(locked);
-      setLockLabel(label);
-
-      if (useBackend) {
-        try {
-          const res = await apiUserPicks(seasonType, week);
-          const mapped = toUserPickMap(res.picks);
-          setPicks(mapped);
-          // Keep local cache in sync so a later update never rebuilds from empty storage
-          if (username) saveStoredPicks(weekKey, username, mapped);
-        } catch {
-          setPicks(getStoredPicks(weekKey));
-        }
-      } else if (username) {
-        setPicks(getStoredPicks(weekKey));
-      } else {
-        setPicks({});
-      }
-
-      await loadCrowd(loadedGames);
+      const picksRes = await apiUserPicks(seasonType, week);
+      setPicks(toUserPickMap(picksRes.picks));
+      await loadCrowd();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load games");
     } finally {
       setLoading(false);
     }
-  }, [useBackend, username, seasonType, week, weekKey, ready, loadCrowd]);
+  }, [seasonType, week, ready, loadCrowd]);
 
   useEffect(() => {
     void load();
@@ -127,16 +84,16 @@ export function PicksPage() {
   );
 
   useEffect(() => {
-    if (!useBackend || isDemoMode() || allLocked || games.length === 0) return;
+    if (allLocked || games.length === 0) return;
 
     const refreshCrowd = () => {
       if (document.visibilityState !== "visible") return;
-      void loadCrowd(games);
+      void loadCrowd();
     };
 
     const id = window.setInterval(refreshCrowd, CROWD_POLL_MS);
     const onVisible = () => {
-      if (document.visibilityState === "visible") void loadCrowd(games);
+      if (document.visibilityState === "visible") void loadCrowd();
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
@@ -146,10 +103,9 @@ export function PicksPage() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [loadCrowd, useBackend, games, allLocked]);
+  }, [loadCrowd, games, allLocked]);
 
   const phase = games[0]?.phase ?? (seasonType === 1 ? "preseason" : seasonType === 3 ? "wildcard" : "regular");
-  const demoUnlock = isDemo && allLocked;
 
   const confCount = useMemo(() => countConfidenceBets(picks), [picks]);
   const pickedCount = useMemo(
@@ -157,12 +113,12 @@ export function PicksPage() {
     [games, picks],
   );
   const unpickedOpen = useMemo(
-    () => games.filter((g) => (!isGameLocked(g.kickoffAt) || demoUnlock) && !picks[g.id]?.pick).length,
-    [games, picks, demoUnlock],
+    () => games.filter((g) => !isGameLocked(g.kickoffAt) && !picks[g.id]?.pick).length,
+    [games, picks],
   );
   const unpickedLocked = useMemo(
-    () => games.filter((g) => isGameLocked(g.kickoffAt) && !demoUnlock && !picks[g.id]?.pick).length,
-    [games, picks, demoUnlock],
+    () => games.filter((g) => isGameLocked(g.kickoffAt) && !picks[g.id]?.pick).length,
+    [games, picks],
   );
 
   const weekReady =
@@ -173,25 +129,21 @@ export function PicksPage() {
   const applyPickUpdate = (gameId: string, update: Partial<UserPick>) => {
     setPicks((prev) => {
       const existing = prev[gameId] ?? { gameId, pick: null, isConfidenceBet: false };
-      const next = {
+      return {
         ...prev,
         [gameId]: { ...existing, ...update, gameId },
       };
-      if (username) saveStoredPicks(weekKey, username, next);
-      return next;
     });
   };
 
   const handlePick = async (gameId: string, side: PickSide) => {
     setPickError("");
-    if (useBackend) {
-      try {
-        await apiSavePick({ gameId, pick: side });
-        void loadCrowd(games);
-      } catch (err) {
-        setPickError(err instanceof Error ? err.message : "Failed to save pick");
-        return;
-      }
+    try {
+      await apiSavePick({ gameId, pick: side });
+      void loadCrowd();
+    } catch (err) {
+      setPickError(err instanceof Error ? err.message : "Failed to save pick");
+      return;
     }
     applyPickUpdate(gameId, {
       pick: side,
@@ -205,21 +157,18 @@ export function PicksPage() {
     if (!current.isConfidenceBet && confCount >= 5) return;
 
     const nextConf = !current.isConfidenceBet;
-    if (useBackend) {
-      try {
-        await apiSavePick({ gameId, action: "toggle_confidence" });
-        void loadCrowd(games);
-      } catch (err) {
-        setPickError(err instanceof Error ? err.message : "Failed to update confidence bet");
-        return;
-      }
+    try {
+      await apiSavePick({ gameId, action: "toggle_confidence" });
+      void loadCrowd();
+    } catch (err) {
+      setPickError(err instanceof Error ? err.message : "Failed to update confidence bet");
+      return;
     }
     applyPickUpdate(gameId, { isConfidenceBet: nextConf });
   };
 
   return (
     <AppShell games={games}>
-      <FieldFrame>
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="space-y-3">
           <h2 className="font-display text-3xl sm:text-4xl">Make Your Picks</h2>
@@ -232,11 +181,6 @@ export function PicksPage() {
           {!linesLocked && lockLabel && (
             <div className="rounded-2xl border-2 border-dashed border-[var(--border-card)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-muted)]">
               Lines update until {lockLabel}, then freeze for the week.
-            </div>
-          )}
-          {demoUnlock && (
-            <div className="rounded-2xl border-2 border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 px-4 py-3 text-sm font-semibold">
-              Demo unlock: these games are final on ESPN. Picks stay editable so you can try the UI.
             </div>
           )}
           {weekReady && (
@@ -296,14 +240,12 @@ export function PicksPage() {
                 onPick={(side) => handlePick(game.id, side)}
                 onToggleConfidence={() => handleConfidence(game.id)}
                 confidenceDisabled={!picks[game.id]?.isConfidenceBet && confCount >= 5}
-                forceUnlocked={demoUnlock}
                 crowd={crowdLeanForGame(game, players, username)}
               />
             ))}
           </div>
         )}
       </div>
-      </FieldFrame>
     </AppShell>
   );
 }

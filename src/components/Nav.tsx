@@ -7,7 +7,7 @@ import {
   Question,
   ShieldCheck,
   SignOut,
-} from "@phosphor-icons/react";
+} from "./icons";
 import { useAuth } from "../lib/authContext";
 import { NFL_LOGO_SRC } from "../lib/teamLogos";
 import { MiniWeeklyLeaderboard } from "./MiniWeeklyLeaderboard";

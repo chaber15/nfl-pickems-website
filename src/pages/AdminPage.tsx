@@ -14,12 +14,10 @@ import {
   apiAdminSetUsername,
   apiAdminUnban,
   apiSyncEspn,
-  isDemoMode,
 } from "../lib/api";
 import { Navigate } from "react-router-dom";
 import { publicDisplayName } from "@shared/userDisplay";
 import {
-  BADGE_CATALOG,
   BADGE_RARITY_LABEL,
   badgeName,
   badgeRarity,
@@ -46,25 +44,6 @@ type BadgeCatalogRow = {
   rarity?: BadgeRarity;
   timesEarned: number;
 };
-
-function demoBadgeCatalog(): BadgeCatalogRow[] {
-  // Sample a few as "earned" so you can see both locked + unlocked styles
-  const sampleEarned = new Set([
-    "lone_wolf",
-    "hot_hand",
-    "clean_sweep",
-    "bite_back",
-    "monday_miracle",
-  ]);
-  return BADGE_CATALOG.map((b) => ({
-    id: b.id,
-    name: b.name,
-    description: b.description,
-    scope: b.scope,
-    rarity: b.rarity,
-    timesEarned: sampleEarned.has(b.id) ? 1 : 0,
-  }));
-}
 
 function CatalogList({ rows }: { rows: BadgeCatalogRow[] }) {
   const ordered = [...rows].sort(
@@ -120,9 +99,7 @@ export function AdminPage() {
   const [editName, setEditName] = useState("");
   const [editUsername, setEditUsername] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [badgeCatalog, setBadgeCatalog] = useState<BadgeCatalogRow[]>(() =>
-    isDemoMode() ? demoBadgeCatalog() : [],
-  );
+  const [badgeCatalog, setBadgeCatalog] = useState<BadgeCatalogRow[]>([]);
 
   const reloadUsers = async () => {
     const res = await apiAdminGet();
@@ -133,12 +110,6 @@ export function AdminPage() {
 
   useEffect(() => {
     if (!user?.isAdmin) {
-      setLoading(false);
-      return;
-    }
-    if (isDemoMode()) {
-      setBadgeCatalog(demoBadgeCatalog());
-      setUsers([]);
       setLoading(false);
       return;
     }
@@ -155,32 +126,6 @@ export function AdminPage() {
 
   if (!user?.isAdmin) {
     return <Navigate to="/" replace />;
-  }
-
-  if (isDemoMode()) {
-    return (
-      <AppShell showWeekSelector={false}>
-        <div className="mx-auto max-w-3xl space-y-6">
-          <div>
-            <h2 className="font-display text-3xl sm:text-4xl">Admin</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              Local demo preview — badge catalog only. On the live site (Netlify + DB), Admin still has
-              users, ban/unban, rename, registration toggle, ESPN sync, badge refresh/backfill, and
-              factory reset; the catalog is just one section at the bottom.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-6">
-            <p className="font-bold">Badge catalog</p>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              All possible badges, rarest first. Locked rows have never been earned. A few are marked
-              earned so you can preview both styles.
-            </p>
-            <CatalogList rows={badgeCatalog} />
-          </div>
-        </div>
-      </AppShell>
-    );
   }
 
   const handleBan = async (userId: string) => {

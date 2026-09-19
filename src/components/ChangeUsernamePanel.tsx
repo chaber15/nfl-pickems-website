@@ -1,18 +1,16 @@
 import { useState } from "react";
 import { USERNAME_PATTERN } from "@shared/userDisplay";
 import { useAuth } from "../lib/authContext";
-import { isDemoMode } from "../lib/api";
 
 /** Lets the signed-in user rename their login username (unique). */
 export function ChangeUsernamePanel({ compact = false }: { compact?: boolean }) {
-  const { username, useBackend, changeUsername } = useAuth();
+  const { username, changeUsername } = useAuth();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(username ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
   if (!username) return null;
-  if (!useBackend && !isDemoMode()) return null;
 
   const start = () => {
     setValue(username);

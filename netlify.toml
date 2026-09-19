@@ -10,9 +10,6 @@
   command = "vite"
   targetPort = 5173
 
-[dev.environment]
-  VITE_USE_BACKEND = "true"
-
 [functions]
   node_bundler = "esbuild"
   included_files = ["shared/**", "server/**"]

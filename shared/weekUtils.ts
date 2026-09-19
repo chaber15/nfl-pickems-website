@@ -1,4 +1,4 @@
-import { DEMO_SEASON_TYPE, DEMO_WEEK, type WeekPhase } from "./types";
+import { DEFAULT_SEASON_TYPE, DEFAULT_WEEK, type WeekPhase } from "./types";
 
 export interface WeekOption {
   seasonType: number;
@@ -15,10 +15,6 @@ export function fanPreseasonWeek(espnWeek: number): number {
 export function weekStorageKey(seasonType: number, week: number): string {
   const prefix = seasonType === 1 ? "preseason" : seasonType === 3 ? "playoffs" : "regular";
   return `${prefix}-${week}`;
-}
-
-export function isDemoSlate(seasonType: number, week: number): boolean {
-  return seasonType === DEMO_SEASON_TYPE && week === DEMO_WEEK;
 }
 
 export function phaseFor(seasonType: number, week: number): WeekPhase {
@@ -84,7 +80,7 @@ export function clampToAvailableWeek(seasonType: number, week: number): { season
   }
   const idx = weekOptionIndex(seasonType, week);
   if (idx >= 0) return { seasonType, week };
-  return { seasonType: DEMO_SEASON_TYPE, week: DEMO_WEEK };
+  return { seasonType: DEFAULT_SEASON_TYPE, week: DEFAULT_WEEK };
 }
 
 /**

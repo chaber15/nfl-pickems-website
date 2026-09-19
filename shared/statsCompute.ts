@@ -1,7 +1,6 @@
 import type {
   GameData,
   HistoryRow,
-  LeaderboardEntry,
   PickSide,
   UserPick,
   UserStats,
@@ -14,7 +13,6 @@ import {
   countConfidenceBets,
   isGameLocked,
   isGradedForStandings,
-  isPlayoffPhase,
   pickCorrectness,
   unitsDelta,
   weekPlEligible,
@@ -78,45 +76,6 @@ export function confidencePlForWeek(
     pl += unitsDelta(up.pick, g.atsResult, g.favoriteSide, g.oddsAway, g.oddsHome);
   }
   return { pl, confCount, eligible: true };
-}
-
-export function computeLeaderboardFromLocal(
-  username: string,
-  games: GameData[],
-  picks: Record<string, UserPick>,
-): LeaderboardEntry {
-  let correct = 0;
-  let total = 0;
-  let confCorrect = 0;
-  let confTotal = 0;
-
-  for (const g of games) {
-    if (!isGradedForStandings(g)) continue;
-    total++;
-    const up = picks[g.id];
-    correct += pickCorrectness(up?.pick ?? null, g.atsResult);
-    if (up?.pick && up.isConfidenceBet) {
-      confTotal++;
-      confCorrect += pickCorrectness(up.pick, g.atsResult);
-    }
-  }
-
-  const { pl: confidencePl, eligible } = confidencePlForWeek(games, picks);
-  const phase = games[0]?.phase ?? "regular";
-  const weeksComplete = isPlayoffPhase(phase) || eligible ? 1 : 0;
-
-  return {
-    userId: "local",
-    username,
-    displayName: username,
-    winPct: computeWinPct(correct, total),
-    correct,
-    total,
-    confCorrect,
-    confTotal,
-    confidencePl,
-    weeksComplete,
-  };
 }
 
 function streakFromWeekWinPcts(weekWinPctsNewestFirst: number[]): number {

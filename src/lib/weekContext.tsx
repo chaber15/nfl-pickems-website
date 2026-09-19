@@ -1,22 +1,19 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { resolveCurrentPickemsWeek } from "@shared/espnClient";
-import { DEMO_SEASON_TYPE, DEMO_WEEK } from "@shared/types";
+import { DEFAULT_SEASON_TYPE, DEFAULT_WEEK } from "@shared/types";
 import {
   clampToAvailableWeek,
   isAfterTuesdayNoonEt,
-  isDemoSlate,
   nextAvailableWeek,
   weekLabel,
   weekStorageKey,
 } from "@shared/weekUtils";
-import { isDemoMode } from "./api";
 
 interface WeekContextValue {
   seasonType: number;
   week: number;
   weekKey: string;
   label: string;
-  isDemo: boolean;
   ready: boolean;
   setWeekSelection: (seasonType: number, week: number) => void;
 }
@@ -25,23 +22,18 @@ const WeekContext = createContext<WeekContextValue | null>(null);
 
 function fallbackDefaultWeek(): { seasonType: number; week: number } {
   if (isAfterTuesdayNoonEt()) {
-    return nextAvailableWeek(DEMO_SEASON_TYPE, DEMO_WEEK);
+    return nextAvailableWeek(DEFAULT_SEASON_TYPE, DEFAULT_WEEK);
   }
-  return { seasonType: DEMO_SEASON_TYPE, week: DEMO_WEEK };
+  return { seasonType: DEFAULT_SEASON_TYPE, week: DEFAULT_WEEK };
 }
 
 export function WeekProvider({ children }: { children: ReactNode }) {
-  const demoDefault = isDemoMode();
   const initial = fallbackDefaultWeek();
   const [seasonType, setSeasonType] = useState(initial.seasonType);
   const [week, setWeek] = useState(initial.week);
-  const [ready, setReady] = useState(demoDefault);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (demoDefault) {
-      setReady(true);
-      return;
-    }
     let cancelled = false;
     (async () => {
       try {
@@ -64,7 +56,7 @@ export function WeekProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [demoDefault]);
+  }, []);
 
   const value = useMemo<WeekContextValue>(
     () => ({
@@ -72,7 +64,6 @@ export function WeekProvider({ children }: { children: ReactNode }) {
       week,
       weekKey: weekStorageKey(seasonType, week),
       label: weekLabel(seasonType, week),
-      isDemo: isDemoSlate(seasonType, week) && demoDefault,
       ready,
       setWeekSelection: (nextSeasonType, nextWeek) => {
         const clamped = clampToAvailableWeek(nextSeasonType, nextWeek);
@@ -80,7 +71,7 @@ export function WeekProvider({ children }: { children: ReactNode }) {
         setWeek(clamped.week);
       },
     }),
-    [seasonType, week, ready, demoDefault],
+    [seasonType, week, ready],
   );
 
   return <WeekContext.Provider value={value}>{children}</WeekContext.Provider>;

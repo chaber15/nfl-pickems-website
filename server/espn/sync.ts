@@ -309,31 +309,6 @@ export async function getGamesForWeek(seasonType: number, weekNumber: number): P
   );
 }
 
-/** True when the slate is missing or has non-final games older than the refresh window. */
-export async function weekNeedsEspnRefresh(seasonType: number, weekNumber: number): Promise<boolean> {
-  const db = getDb();
-  const seasonId = await resolveActiveSeasonId();
-  if (!seasonId) return true;
-
-  const rows = await db
-    .select({ status: schema.games.status, updatedAt: schema.games.updatedAt })
-    .from(schema.games)
-    .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
-    .where(
-      and(
-        eq(schema.weeks.seasonId, seasonId),
-        eq(schema.weeks.seasonType, seasonType),
-        eq(schema.weeks.weekNumber, weekNumber),
-      ),
-    );
-
-  if (rows.length === 0) return true;
-  if (rows.every((r) => r.status === "final")) return false;
-
-  const newest = Math.max(...rows.map((r) => r.updatedAt.getTime()));
-  return Date.now() - newest >= READ_REFRESH_MIN_MS;
-}
-
 /**
  * Whether a games GET should trigger ESPN sync on the request path.
  * Empty slates still bootstrap on read; live refresh only during NFL game windows.

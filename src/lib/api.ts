@@ -8,28 +8,7 @@ import type {
 
 const API_BASE = "/api";
 
-/** True when running Vite-only dev without Netlify/backend (localStorage demo). */
-export function isDemoMode(): boolean {
-  if (import.meta.env.VITE_USE_BACKEND === "true") return false;
-  if (import.meta.env.VITE_DEMO_MODE === "true") return true;
-  return import.meta.env.DEV;
-}
-
-export function isApiAvailable(): boolean {
-  return !isDemoMode();
-}
-
-export class ApiUnavailableError extends Error {
-  constructor() {
-    super("API unavailable in demo mode");
-    this.name = "ApiUnavailableError";
-  }
-}
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  if (isDemoMode()) {
-    throw new ApiUnavailableError();
-  }
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },

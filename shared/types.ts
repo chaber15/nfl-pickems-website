@@ -138,7 +138,6 @@ export interface WeekCompareResponse {
 }
 
 export const CONFIDENCE_BETS_PER_WEEK = 5;
-/** Default slate when ESPN detect fails / local demo: regular season Week 1. */
-export const DEMO_WEEK_KEY = "regular-1";
-export const DEMO_SEASON_TYPE = 2;
-export const DEMO_WEEK = 1;
+/** Fallback slate when ESPN calendar detect fails: regular season Week 1. */
+export const DEFAULT_SEASON_TYPE = 2;
+export const DEFAULT_WEEK = 1;

@@ -1,12 +1,5 @@
 import type { GameData } from "./types";
 
-/** Earliest kickoff first — TNF → Sunday → SNF/MNF. */
-export function sortGamesChronological<T extends { kickoffAt: string }>(games: readonly T[]): T[] {
-  return [...games].sort(
-    (a, b) => new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime(),
-  );
-}
-
 /**
  * Live / in-progress games first (by kickoff), then the rest chronologically.
  * Keeps Monday night on top while it's being played; otherwise TNF → Sunday → SNF/MNF.
@@ -20,12 +13,4 @@ export function sortGamesLiveFirstThenChronological<
     if (aLive !== bLive) return aLive - bLive;
     return new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime();
   });
-}
-
-export function sortGameDataChronological(games: readonly GameData[]): GameData[] {
-  return sortGamesChronological(games);
-}
-
-export function sortGameDataLiveFirst(games: readonly GameData[]): GameData[] {
-  return sortGamesLiveFirstThenChronological(games);
 }

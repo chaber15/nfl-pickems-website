@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { CaretLeft, CaretRight } from "@phosphor-icons/react";
+import { CaretLeft, CaretRight } from "./icons";
 import { buildWeekOptions, shortWeekLabel, weekOptionIndex } from "@shared/weekUtils";
 import { useWeek } from "../lib/weekContext";
 

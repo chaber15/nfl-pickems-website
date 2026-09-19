@@ -1,7 +1,6 @@
-import { Moon, Sun, Monitor } from "@phosphor-icons/react";
-import { motion, useReducedMotion } from "motion/react";
-import { cycleTheme, getThemeMode, type ThemeMode } from "../lib/theme";
 import { useState } from "react";
+import { Moon, Sun, Monitor } from "./icons";
+import { cycleTheme, getThemeMode, type ThemeMode } from "../lib/theme";
 
 const labels: Record<ThemeMode, string> = {
   light: "Light mode",
@@ -11,24 +10,21 @@ const labels: Record<ThemeMode, string> = {
 
 export function ThemeToggle() {
   const [mode, setMode] = useState<ThemeMode>(() => getThemeMode());
-  const reduce = useReducedMotion();
 
   const handleClick = () => {
-    const next = cycleTheme();
-    setMode(next);
+    setMode(cycleTheme());
   };
 
   const Icon = mode === "dark" ? Moon : mode === "light" ? Sun : Monitor;
 
   return (
-    <motion.button
+    <button
       type="button"
       onClick={handleClick}
       aria-label={labels[mode]}
-      className="flex h-11 w-11 items-center justify-center rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-primary)]"
-      whileTap={reduce ? undefined : { scale: 0.95 }}
+      className="flex h-11 w-11 items-center justify-center rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-primary)] transition-transform active:scale-95"
     >
-      <Icon size={22} weight="bold" />
-    </motion.button>
+      <Icon size={22} />
+    </button>
   );
 }

@@ -1,13 +1,10 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Star } from "@phosphor-icons/react";
-import { buildHistoryRows } from "@shared/statsCompute";
-import type { GameData, HistoryRow } from "@shared/types";
+import { Star } from "../components/icons";
+import type { HistoryRow } from "@shared/types";
 import { AppShell } from "../components/AppShell";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
-import { getStoredPicks } from "../lib/localStorage";
-import { loadWeekGames } from "../lib/loadWeekGames";
 import { apiHistory } from "../lib/api";
 import { teamColor } from "../lib/teamLogos";
 
@@ -16,7 +13,6 @@ function outcomeLabel(row: HistoryRow): string {
   if (row.outcome === "win") return "Win";
   if (row.outcome === "loss") return "Loss";
   if (row.outcome === "push") return "Push";
-  // Only call it Pending once the user has a pick waiting on the result
   if (row.pickDisplay) return "Pending";
   return "—";
 }
@@ -34,7 +30,6 @@ function unitsClass(units: number): string {
   return "";
 }
 
-/** Outcome colors only — plain until win / loss / push / no-pick. */
 function rowBorderClass(row: HistoryRow): string {
   if (row.outcome === "win") return "border-[var(--accent-green)]";
   if (row.outcome === "loss" || row.outcome === "no_pick") return "border-[var(--accent-red)]";
@@ -55,10 +50,9 @@ function resultText(row: HistoryRow): string {
 
 export function HistoryPage() {
   const { username: routeUser } = useParams<{ username?: string }>();
-  const { username, useBackend } = useAuth();
-  const { seasonType, week, weekKey, ready } = useWeek();
+  const { username } = useAuth();
+  const { seasonType, week, ready } = useWeek();
   const [rows, setRows] = useState<HistoryRow[]>([]);
-  const [games, setGames] = useState<GameData[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewLabel, setViewLabel] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -67,7 +61,6 @@ export function HistoryPage() {
   const viewingOther =
     routeUser != null && username != null && routeUser.toLowerCase() !== username.toLowerCase();
 
-  // Re-load when returning to this tab so picks made on Home show up before lock.
   useEffect(() => {
     const bump = () => {
       if (document.visibilityState === "visible") setRefreshTick((n) => n + 1);
@@ -86,30 +79,10 @@ export function HistoryPage() {
     (async () => {
       setLoading(true);
       try {
-        if (useBackend) {
-          try {
-            const res = await apiHistory(seasonType, week, routeUser);
-            if (cancelled) return;
-            setRows(res.history);
-            setViewLabel(res.displayName ?? res.username ?? routeUser ?? null);
-            setGames([]);
-            return;
-          } catch {
-            /* fall through to local */
-          }
-        }
-        if (viewingOther) {
-          if (cancelled) return;
-          setRows([]);
-          setViewLabel(routeUser);
-          return;
-        }
-        const board = await loadWeekGames(seasonType, week, weekKey);
+        const res = await apiHistory(seasonType, week, routeUser);
         if (cancelled) return;
-        setGames(board.games);
-        const picks = getStoredPicks(weekKey);
-        setRows(buildHistoryRows(board.games, picks));
-        setViewLabel(null);
+        setRows(res.history);
+        setViewLabel(res.displayName ?? res.username ?? routeUser ?? null);
       } catch {
         if (!cancelled) setRows([]);
       } finally {
@@ -119,10 +92,10 @@ export function HistoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [useBackend, username, seasonType, week, weekKey, ready, routeUser, viewingOther, refreshTick]);
+  }, [seasonType, week, ready, routeUser, refreshTick]);
 
   return (
-    <AppShell games={games}>
+    <AppShell>
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>

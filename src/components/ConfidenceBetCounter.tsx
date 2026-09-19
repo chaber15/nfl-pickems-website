@@ -1,4 +1,4 @@
-import { Star } from "@phosphor-icons/react";
+import { Star } from "./icons";
 import { CONFIDENCE_BETS_PER_WEEK } from "@shared/types";
 
 interface ConfidenceBetCounterProps {
