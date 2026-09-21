@@ -15,6 +15,8 @@ npx netlify dev
 
 Open http://localhost:8888 (or the URL Netlify prints), enter a username, and make picks.
 
+> **Local tip:** SPA fallback is in `public/_redirects` (not a catch-all in `netlify.toml`) so Vite module URLs keep working under `netlify dev`.
+
 ## Environment variables
 
 Copy `.env.example` to `.env`:
@@ -25,7 +27,7 @@ Copy `.env.example` to `.env`:
 | `SESSION_SECRET` | Recommended | Secret for sessions |
 | `ADMIN_USERNAMES` | Optional | Comma-separated usernames bootstrapped as admin |
 
-After pulling schema changes (badges, live-clock columns, etc.), run `npm run db:push` against the target database **before** (or with) shipping code that reads those columns. Netlify build does **not** auto-push schema.
+After pulling schema changes (badges, live-clock columns, team records, etc.), run `npm run db:push` against the target database **before** (or with) shipping code that reads those columns. Netlify build does **not** auto-push schema.
 
 ## Scripts
 
@@ -66,12 +68,13 @@ Handlers skip work outside their windows to stay within free-tier limits:
 
 ## Features
 
-- **Picks**: Favorite/Underdog + team + spread, 5 confidence bets/week, kickoff lock, live clock / lean bar
+- **Picks**: Favorite/Underdog + team + spread + juice, ESPN team records, 5 confidence bets/week, kickoff lock, live clock / lean bar
+- **Game cards**: Live first, then upcoming by kickoff, completed last; win/loss tint when scored; desktop crowd-name list expands only when a locked card sits beside an open-picks card
 - **History**: Past picks with results and units (no pick = wrong)
-- **Leaderboard**: Win % and Confidence P/L, overall or by week
-- **Stats**: Confidence P/L vs Hypothetical P/L, streaks, weekly table
-- **Badges**: Week awards and career-threshold badges (rarity-colored chips on leaderboard / stats). Cumulative badges (`By a Nose`, `Juice Box`, `Road Dog`, `Steamroller`, `Bite Back`) require career totals, not a single hit — definitions live in `shared/badges.ts` (`LIFETIME_BADGE_THRESHOLDS`)
-- **Admin**: Ban/unban/delete, display names, lock registration, ESPN sync, one-button badge wipe & recalculate, factory reset
+- **Leaderboard**: Win % and Confidence P/L, overall or by week; badge chips with hover tooltips
+- **Stats**: Confidence P/L vs Hypothetical P/L, streaks, weekly table, earned badges
+- **Badges**: Week awards and career-threshold badges (rarity-colored chips). Cumulative badges (`By a Nose`, `Juice Box`, `Road Dog`, `Steamroller`, `Bite Back`) need career totals — definitions in `shared/badges.ts` (`LIFETIME_BADGE_THRESHOLDS`)
+- **Admin**: Ban/unban/delete, display names, lock registration, ESPN sync, badge reset & recalculate, factory **Reset**
 - **Themes**: Light / dark / system
 
 ## Scoring
@@ -88,15 +91,15 @@ See `shared/scoring.ts` (run `npm test`):
 Catalog and evaluation: `shared/badges.ts`. Server award / wipe / reconcile: `server/badges.ts`.
 
 - Week-scoped badges award when a slate is fully final (also on Admin recalculate).
-- Career-threshold badges are wiped and re-granted from season totals on leaderboard/stats load and after Admin **Reset & recalculate badges**.
+- Career-threshold badges are wiped and re-granted from season totals during week award / Admin **Reset & recalculate badges** — not on every leaderboard or stats read.
 - To change a threshold: edit `LIFETIME_BADGE_THRESHOLDS` **and** the matching catalog description, then ship + run recalculate if old rows were granted under the previous rule.
 
 ## Project structure
 
 ```
 src/           React frontend
-shared/        Scoring, badges, ESPN client, types (frontend + functions)
-server/        Drizzle schema, auth, badge awards, ESPN sync
+shared/        Scoring, badges, ESPN client, types, game order (frontend + functions)
+server/        Drizzle schema, API handlers, auth, badge awards, ESPN sync
 netlify/       Netlify Functions (API + scheduled sync)
-public/        PWA manifest and icons
+public/        PWA assets + `_redirects` (SPA fallback)
 ```
