@@ -67,6 +67,8 @@ export const games = pgTable("games", {
   awayAbbrev: text("away_abbrev").notNull(),
   homeTeam: text("home_team").notNull(),
   homeAbbrev: text("home_abbrev").notNull(),
+  awayRecord: text("away_record"),
+  homeRecord: text("home_record"),
   kickoffAt: timestamp("kickoff_at", { withTimezone: true }).notNull(),
   spread: integer("spread_cents"),
   favoriteSide: favoriteSideEnum("favorite_side"),

@@ -100,14 +100,28 @@ interface GameCardProps {
   crowd?: GameCrowdLean;
 }
 
-function NameList({ names }: { names: CrowdName[] }) {
+function NameList({
+  names,
+  tone,
+}: {
+  names: CrowdName[];
+  tone?: "win" | "loss" | "push" | null;
+}) {
   if (names.length === 0) {
     return <li className="italic text-[var(--text-muted)]">Nobody yet</li>;
   }
+  const toneClass =
+    tone === "win"
+      ? "text-[var(--accent-green)]"
+      : tone === "loss"
+        ? "text-[var(--accent-red)]"
+        : tone === "push"
+          ? "text-[var(--accent-gold)]"
+          : "text-[var(--text-muted)]";
   return (
     <>
       {names.map((r) => (
-        <li key={r.username} className="flex items-center justify-center gap-0.5 font-semibold">
+        <li key={r.username} className={`flex items-center justify-center gap-0.5 font-semibold ${toneClass}`}>
           {r.isYou ? "You" : r.username}
           {r.star && <Star size={11} weight="fill" className="text-[var(--accent-gold)]" />}
         </li>
@@ -159,20 +173,36 @@ function useEstimatedClock(game: GameData): string | null {
   return formatLiveClockLabel(game);
 }
 
+function crowdSideTone(
+  game: GameData,
+  venue: "away" | "home",
+): "win" | "loss" | "push" | null {
+  if (game.status !== "final" || game.awayScore == null || game.homeScore == null) return null;
+  if (game.awayScore === game.homeScore) return "push";
+  const awayWon = game.awayScore > game.homeScore;
+  if (venue === "away") return awayWon ? "win" : "loss";
+  return awayWon ? "loss" : "win";
+}
+
 function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
   const [pinned, setPinned] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const fineHover = useFineHover();
 
   const hasAnyone = crowd.awayCount > 0 || crowd.homeCount > 0 || crowd.openCount > 0;
   if (!hasAnyone) return null;
 
+  const gameOver = game.status === "final";
   const picked = crowd.awayCount + crowd.homeCount;
   const awayPct = picked ? (crowd.awayCount / picked) * 100 : 0;
   const homePct = picked ? (crowd.homeCount / picked) * 100 : 0;
-  const open = pinned || (fineHover && hovered);
+  const open =
+    gameOver && fineHover ? !collapsed : pinned || (fineHover && hovered);
   const awayColor = teamColor(game.awayAbbrev);
   const homeColor = teamColor(game.homeAbbrev);
+  const awayTone = crowdSideTone(game, "away");
+  const homeTone = crowdSideTone(game, "home");
 
   return (
     <div
@@ -186,7 +216,10 @@ function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
     >
       <button
         type="button"
-        onClick={() => setPinned((v) => !v)}
+        onClick={() => {
+          if (gameOver && fineHover) setCollapsed((v) => !v);
+          else setPinned((v) => !v);
+        }}
         aria-expanded={open}
         aria-label={`Crowd lean: ${crowd.awayCount} away, ${crowd.homeCount} home — show names`}
         className="flex w-full items-center gap-2 rounded-lg py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)]"
@@ -220,12 +253,12 @@ function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
       </button>
 
       {open && (
-        <div className="grid grid-cols-2 gap-3 rounded-xl bg-[var(--bg-card-elevated)] px-2 py-2">
-          <ul className="space-y-0.5 text-center text-xs text-[var(--text-muted)]">
-            <NameList names={crowd.away} />
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-[var(--bg-card-elevated)] px-3 py-3 sm:gap-6 sm:px-4">
+          <ul className="space-y-1 text-center text-xs sm:text-sm">
+            <NameList names={crowd.away} tone={awayTone} />
           </ul>
-          <ul className="space-y-0.5 text-center text-xs text-[var(--text-muted)]">
-            <NameList names={crowd.home} />
+          <ul className="space-y-1 text-center text-xs sm:text-sm">
+            <NameList names={crowd.home} tone={homeTone} />
           </ul>
         </div>
       )}
@@ -256,6 +289,7 @@ function PickButton({
   const pickSide = pickSideForVenue(game.favoriteSide, venue);
   const abbrev = venue === "away" ? game.awayAbbrev : game.homeAbbrev;
   const location = teamLocationName(abbrev, venue === "away" ? game.awayTeam : game.homeTeam);
+  const record = venue === "away" ? game.awayRecord : game.homeRecord;
   const venueLabel = venue === "away" ? "AWAY" : "HOME";
   const spread =
     game.spread != null && pickSide && game.favoriteSide
@@ -282,7 +316,14 @@ function PickButton({
           <span className={selected ? "" : " text-[var(--accent-blue)]"}> · FAV</span>
         )}
       </span>
-      <span className="w-full truncate text-sm font-semibold leading-tight">{location}</span>
+      <span className="w-full truncate text-sm font-semibold leading-tight">
+        {location}
+        {record ? (
+          <span className={`ml-1 font-mono text-xs font-medium ${selected ? "opacity-80" : "text-[var(--text-muted)]"}`}>
+            ({record})
+          </span>
+        ) : null}
+      </span>
       {spread && <span className="font-mono text-base font-bold">{spread}</span>}
       {juice && (
         <span className={`font-mono text-xs ${selected ? "opacity-80" : "text-[var(--text-muted)]"}`}>
@@ -317,6 +358,23 @@ export function GameCard({
   const resultTone = resultToneFor(pick, liveAts, gradeLabel);
 
   const pickVenue = pick ? venueForPickSide(game.favoriteSide, pick) : null;
+  const fillMatchup = locked || showScores;
+  const awayWon = showScores && (game.awayScore ?? 0) > (game.homeScore ?? 0);
+  const homeWon = showScores && (game.homeScore ?? 0) > (game.awayScore ?? 0);
+  const scoreTied = showScores && game.awayScore === game.homeScore;
+
+  const teamPanelClass = (venue: Venue) => {
+    if (showScores) {
+      const won = venue === "away" ? awayWon : homeWon;
+      if (won) return "bg-[var(--accent-green)]/15 ring-2 ring-[var(--accent-green)]";
+      if (scoreTied) return "bg-[var(--accent-gold)]/15 ring-2 ring-[var(--accent-gold)]";
+      return "bg-[var(--accent-red)]/15 ring-2 ring-[var(--accent-red)]";
+    }
+    if (pickVenue === venue) {
+      return "bg-[var(--bg-card-elevated)] ring-2 ring-[var(--border-card)]";
+    }
+    return fillMatchup ? "bg-[var(--bg-card-elevated)]/60" : "";
+  };
 
   const onPickVenue = (venue: Venue) => {
     const side = pickSideForVenue(game.favoriteSide, venue);
@@ -331,6 +389,58 @@ export function GameCard({
         : resultTone === "push"
           ? "border-[var(--accent-gold)]"
           : "border-[var(--border-card)]";
+
+  const renderTeam = (venue: Venue) => {
+    const abbrev = venue === "away" ? game.awayAbbrev : game.homeAbbrev;
+    const name = venue === "away" ? game.awayTeam : game.homeTeam;
+    const record = venue === "away" ? game.awayRecord : game.homeRecord;
+    const score = venue === "away" ? game.awayScore : game.homeScore;
+    const venueHint = venue === "away" ? "away" : "home";
+    const meta = [record, showScores ? null : venueHint].filter(Boolean).join(" · ");
+    const won = venue === "away" ? awayWon : homeWon;
+    const scoreClass = showScores
+      ? won
+        ? "text-[var(--accent-green)]"
+        : scoreTied
+          ? "text-[var(--accent-gold)]"
+          : "text-[var(--accent-red)]"
+      : "";
+
+    return (
+      <div
+        className={`flex min-w-0 flex-1 rounded-xl ${teamPanelClass(venue)} ${
+          fillMatchup
+            ? "flex-col items-center gap-1 p-2 text-center sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4 sm:py-3 sm:text-left"
+            : "flex-col items-center gap-1 p-1 text-center"
+        }`}
+      >
+        <div
+          className={`flex min-w-0 items-center gap-1 ${
+            fillMatchup ? "flex-col sm:flex-1 sm:flex-row sm:gap-3" : "flex-col"
+          }`}
+        >
+          <TeamLogo abbrev={abbrev} name={name} size={showScores ? 44 : 56} />
+          <div className={`min-w-0 ${fillMatchup ? "w-full sm:flex-1 sm:text-left" : "w-full text-center"}`}>
+            <p
+              className={`font-bold leading-tight ${
+                fillMatchup
+                  ? "w-full truncate text-sm sm:whitespace-normal sm:text-base"
+                  : "w-full truncate text-sm"
+              }`}
+            >
+              {name}
+            </p>
+            {meta ? <p className="font-mono text-xs text-[var(--text-muted)]">{meta}</p> : null}
+          </div>
+        </div>
+        {showScores && (
+          <span className={`font-mono text-2xl font-bold tabular-nums sm:text-3xl ${scoreClass}`}>
+            {score}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <article
@@ -389,43 +499,15 @@ export function GameCard({
         </div>
       </div>
 
-      <div className="mb-4 flex items-center justify-center gap-3 sm:gap-4">
-        <div
-          className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl p-1 text-center ${
-            pickVenue === "away" ? "bg-[var(--bg-card-elevated)] ring-2 ring-[var(--border-card)]" : ""
-          }`}
-        >
-          <TeamLogo abbrev={game.awayAbbrev} name={game.awayTeam} size={showScores ? 44 : 56} />
-          <p className="w-full truncate text-sm font-bold leading-tight">{game.awayTeam}</p>
-          <p className="font-mono text-xs text-[var(--text-muted)]">
-            {game.awayAbbrev}
-            {showScores ? "" : " · away"}
-          </p>
-          {showScores && (
-            <span className="font-mono text-2xl font-bold tabular-nums">{game.awayScore}</span>
-          )}
-        </div>
-        <div className="flex shrink-0 flex-col items-center gap-1 px-1">
+      <div className={`mb-4 flex gap-2 sm:gap-3 ${fillMatchup ? "items-stretch" : "items-center justify-center gap-3 sm:gap-4"}`}>
+        {renderTeam("away")}
+        <div className="flex shrink-0 flex-col items-center justify-center gap-1 px-0.5">
           <span className="font-display text-2xl text-[var(--text-muted)]">@</span>
           {notStarted && (
             <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Pre-game</span>
           )}
         </div>
-        <div
-          className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl p-1 text-center ${
-            pickVenue === "home" ? "bg-[var(--bg-card-elevated)] ring-2 ring-[var(--border-card)]" : ""
-          }`}
-        >
-          <TeamLogo abbrev={game.homeAbbrev} name={game.homeTeam} size={showScores ? 44 : 56} />
-          <p className="w-full truncate text-sm font-bold leading-tight">{game.homeTeam}</p>
-          <p className="font-mono text-xs text-[var(--text-muted)]">
-            {game.homeAbbrev}
-            {showScores ? "" : " · home"}
-          </p>
-          {showScores && (
-            <span className="font-mono text-2xl font-bold tabular-nums">{game.homeScore}</span>
-          )}
-        </div>
+        {renderTeam("home")}
       </div>
 
       {!hasLine && !locked && (

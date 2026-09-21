@@ -10,6 +10,9 @@ export interface GameData {
   awayAbbrev: string;
   homeTeam: string;
   homeAbbrev: string;
+  /** Overall W-L(-T) from ESPN, e.g. "2-0" or "1-1-1". */
+  awayRecord?: string | null;
+  homeRecord?: string | null;
   kickoffAt: string;
   spread: number | null;
   favoriteSide: FavoriteSide | null;

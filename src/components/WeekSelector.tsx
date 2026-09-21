@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { CaretLeft, CaretRight } from "./icons";
 import { buildWeekOptions, shortWeekLabel, weekOptionIndex } from "@shared/weekUtils";
 import { useWeek } from "../lib/weekContext";
@@ -23,12 +23,29 @@ export function WeekSelector() {
   const next = index >= 0 && index < options.length - 1 ? options[index + 1] : null;
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<PhaseTab>(() => phaseTabFor(seasonType));
+  const [panelTop, setPanelTop] = useState<number | undefined>(undefined);
   const rootRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
 
   useEffect(() => {
     setTab(phaseTabFor(seasonType));
   }, [seasonType]);
+
+  // Mobile uses position:fixed — keep the panel under the trigger and inside the viewport.
+  useLayoutEffect(() => {
+    if (!open || !rootRef.current) return;
+    const place = () => {
+      const rect = rootRef.current?.getBoundingClientRect();
+      if (rect) setPanelTop(rect.bottom + 8);
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -86,7 +103,12 @@ export function WeekSelector() {
           id={panelId}
           role="dialog"
           aria-label="Jump to week"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(18rem,calc(100vw-2rem))] rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-card)]"
+          style={
+            panelTop != null
+              ? ({ "--week-panel-top": `${panelTop}px` } as CSSProperties)
+              : undefined
+          }
+          className="fixed inset-x-4 top-[var(--week-panel-top,5.5rem)] z-40 w-auto rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-card)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-[calc(100%+0.5rem)] sm:w-[min(18rem,calc(100vw-2rem))]"
         >
           <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-[var(--bg-page)] p-1">
             {(

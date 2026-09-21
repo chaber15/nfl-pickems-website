@@ -173,11 +173,6 @@ export function PicksPage() {
         <div className="space-y-3">
           <h2 className="font-display text-3xl sm:text-4xl">Make Your Picks</h2>
           <ConfidenceBetCounter count={confCount} phase={phase} />
-          {linesLocked && lockLabel && (
-            <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card-elevated)] px-4 py-3 text-sm font-semibold">
-              Spread &amp; juice locked since {lockLabel}. Everyone bets the same line.
-            </div>
-          )}
           {!linesLocked && lockLabel && (
             <div className="rounded-2xl border-2 border-dashed border-[var(--border-card)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-muted)]">
               Lines update until {lockLabel}, then freeze for the week.
@@ -243,6 +238,12 @@ export function PicksPage() {
                 crowd={crowdLeanForGame(game, players, username)}
               />
             ))}
+          </div>
+        )}
+
+        {linesLocked && lockLabel && (
+          <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card-elevated)] px-4 py-3 text-sm font-semibold">
+            Spread &amp; juice locked since {lockLabel}. Everyone bets the same line.
           </div>
         )}
       </div>

@@ -13,6 +13,10 @@ interface EspnTeam {
     abbreviation: string;
   };
   score?: string;
+  records?: Array<{
+    type?: string;
+    summary?: string;
+  }>;
 }
 
 interface EspnOddsBlock {
@@ -189,6 +193,14 @@ async function fetchOddsFallback(eventId: string, competitionId: string): Promis
   }
 }
 
+function extractTeamRecord(competitor: EspnTeam): string | null {
+  const records = competitor.records;
+  if (!records?.length) return null;
+  const total = records.find((r) => r.type === "total") ?? records[0];
+  const summary = total?.summary?.trim();
+  return summary || null;
+}
+
 function parseEvent(event: EspnEvent, oddsBlock?: EspnOddsBlock | null): GameData | null {
   const comp = event.competitions[0];
   if (!comp) return null;
@@ -219,6 +231,8 @@ function parseEvent(event: EspnEvent, oddsBlock?: EspnOddsBlock | null): GameDat
     awayAbbrev: away.team.abbreviation,
     homeTeam: home.team.displayName,
     homeAbbrev: home.team.abbreviation,
+    awayRecord: extractTeamRecord(away),
+    homeRecord: extractTeamRecord(home),
     kickoffAt: comp.date || event.date,
     spread: odds.spread,
     favoriteSide: odds.favoriteSide,

@@ -83,15 +83,7 @@ export function Crown({ size, className }: IconProps) {
 export function Question({ size, className }: IconProps) {
   return (
     <Icon size={size} className={className}>
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="24"
-        d="M128 180v-8m0-32a36 36 0 1 0-36-36"
-      />
-      <circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" strokeWidth="24" />
+      <path d="M144,180a16,16,0,1,1-16-16A16,16,0,0,1,144,180Zm92-52A108,108,0,1,1,128,20,108.12,108.12,0,0,1,236,128Zm-24,0a84,84,0,1,0-84,84A84.09,84.09,0,0,0,212,128ZM128,64c-24.26,0-44,17.94-44,40v4a12,12,0,0,0,24,0v-4c0-8.82,9-16,20-16s20,7.18,20,16-9,16-20,16a12,12,0,0,0-12,12v8a12,12,0,0,0,23.73,2.56C158.31,137.88,172,122.37,172,104,172,81.94,152.26,64,128,64Z" />
     </Icon>
   );
 }
@@ -99,14 +91,7 @@ export function Question({ size, className }: IconProps) {
 export function SignOut({ size, className }: IconProps) {
   return (
     <Icon size={size} className={className}>
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="24"
-        d="M112 40H48v176h64M112 128h104m-40-40 40 40-40 40"
-      />
+      <path d="M124,216a12,12,0,0,1-12,12H48a12,12,0,0,1-12-12V40A12,12,0,0,1,48,28h64a12,12,0,0,1,0,24H60V204h52A12,12,0,0,1,124,216Zm108.49-96.49-40-40a12,12,0,0,0-17,17L195,116H112a12,12,0,0,0,0,24h83l-19.52,19.51a12,12,0,0,0,17,17l40-40A12,12,0,0,0,232.49,119.51Z" />
     </Icon>
   );
 }
@@ -191,23 +176,7 @@ export function Monitor({ size, className }: IconProps) {
 export function Football({ size, className }: IconProps) {
   return (
     <Icon size={size} className={className}>
-      <ellipse
-        cx="128"
-        cy="128"
-        rx="80"
-        ry="48"
-        transform="rotate(-45 128 128)"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="24"
-      />
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="16"
-        d="M104 104l48 48M120 96l40 40M96 120l40 40"
-      />
+      <path d="M233.06,53.18a37,37,0,0,0-30.24-30.24c-15.24-2.58-38.75-4.78-64.26-.61C107.66,27.39,81.56,40.39,61,61s-33.59,46.68-38.65,77.58c-4.17,25.51-2,49,.61,64.26a37,37,0,0,0,30.24,30.24A209.43,209.43,0,0,0,87.9,236a184.13,184.13,0,0,0,29.54-2.33c30.9-5.06,57-18.06,77.58-38.65s33.59-46.68,38.65-77.58C237.84,91.93,235.64,68.42,233.06,53.18Zm-23.66,4A192,192,0,0,1,212,83.06L172.93,44a190.57,190.57,0,0,1,25.88,2.64A13,13,0,0,1,209.4,57.19ZM46.6,198.81A191.79,191.79,0,0,1,44,172.94L83.06,212a191.79,191.79,0,0,1-25.87-2.63A13,13,0,0,1,46.6,198.81Zm131.45-20.76c-11,11-31.31,26.16-63.2,31.83L46.12,141.15C51.79,109.26,67,88.93,78,78s31.3-26.16,63.2-31.83l68.73,68.73C204.21,146.74,189,167.07,178.05,178.05Zm-13.56-69.57L159,114l5.52,5.51a12,12,0,0,1-17,17L142,131l-11,11,5.52,5.52a12,12,0,0,1-17,17L114,159l-5.52,5.52a12,12,0,0,1-17-17L97,142l-5.52-5.51a12,12,0,1,1,17-17L114,125l11-11-5.52-5.52a12,12,0,1,1,17-17L142,97l5.52-5.52a12,12,0,0,1,17,17Z" />
     </Icon>
   );
 }
@@ -215,14 +184,7 @@ export function Football({ size, className }: IconProps) {
 export function Trophy({ size, className }: IconProps) {
   return (
     <Icon size={size} className={className}>
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="24"
-        d="M80 208h96M128 168v40M72 48h112v40a56 56 0 0 1-112 0Zm-24 8H32a40 40 0 0 0 40 40m120-40h16a40 40 0 0 1-40 40"
-      />
+      <path d="M232,60H212V48a12,12,0,0,0-12-12H56A12,12,0,0,0,44,48V60H24A20,20,0,0,0,4,80V96a44.05,44.05,0,0,0,44,44h.77A84.18,84.18,0,0,0,116,195.15V212H96a12,12,0,0,0,0,24h64a12,12,0,0,0,0-24H140V195.11c30.94-4.51,56.53-26.2,67-55.11h1a44.05,44.05,0,0,0,44-44V80A20,20,0,0,0,232,60ZM28,96V84H44v28c0,1.21,0,2.41.09,3.61A20,20,0,0,1,28,96Zm160,15.1c0,33.33-26.71,60.65-59.54,60.9A60,60,0,0,1,68,112V60H188ZM228,96a20,20,0,0,1-16.12,19.62c.08-1.5.12-3,.12-4.52V84h16Z" />
     </Icon>
   );
 }
@@ -230,21 +192,7 @@ export function Trophy({ size, className }: IconProps) {
 export function ClockCounterClockwise({ size, className }: IconProps) {
   return (
     <Icon size={size} className={className}>
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="24"
-        d="M128 80v48l32 32m48-104v48h-48"
-      />
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="24"
-        d="M69.5 58.5A96 96 0 1 1 48 128"
-      />
+      <path d="M140,80v41.21l34.17,20.5a12,12,0,1,1-12.34,20.58l-40-24A12,12,0,0,1,116,128V80a12,12,0,0,1,24,0ZM128,28A99.38,99.38,0,0,0,57.24,57.34c-4.69,4.74-9,9.37-13.24,14V64a12,12,0,0,0-24,0v40a12,12,0,0,0,12,12H72a12,12,0,0,0,0-24H57.77C63,86,68.37,80.22,74.26,74.26a76,76,0,1,1,1.58,109,12,12,0,0,0-16.48,17.46A100,100,0,1,0,128,28Z" />
     </Icon>
   );
 }
@@ -252,14 +200,7 @@ export function ClockCounterClockwise({ size, className }: IconProps) {
 export function ChartBar({ size, className }: IconProps) {
   return (
     <Icon size={size} className={className}>
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="24"
-        d="M48 208V120m64 88V48m64 160v-72"
-      />
+      <path d="M224,196h-4V40a12,12,0,0,0-12-12H152a12,12,0,0,0-12,12V76H96A12,12,0,0,0,84,88v36H48a12,12,0,0,0-12,12v60H32a12,12,0,0,0,0,24H224a12,12,0,0,0,0-24ZM164,52h32V196H164Zm-56,48h32v96H108ZM60,148H84v48H60Z" />
     </Icon>
   );
 }
@@ -267,22 +208,7 @@ export function ChartBar({ size, className }: IconProps) {
 export function ShieldCheck({ size, className }: IconProps) {
   return (
     <Icon size={size} className={className}>
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="24"
-        d="M128 224s80-40 80-112V56L128 32 48 56v56c0 72 80 112 80 112Z"
-      />
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="24"
-        d="m96 128 24 24 40-40"
-      />
+      <path d="M208,36H48A20,20,0,0,0,28,56v56c0,54.29,26.32,87.22,48.4,105.29,23.71,19.39,47.44,26,48.44,26.29a12.1,12.1,0,0,0,6.32,0c1-.28,24.73-6.9,48.44-26.29,22.08-18.07,48.4-51,48.4-105.29V56A20,20,0,0,0,208,36Zm-4,76c0,35.71-13.09,64.69-38.91,86.15A126.28,126.28,0,0,1,128,219.38a126.14,126.14,0,0,1-37.09-21.23C65.09,176.69,52,147.71,52,112V60H204ZM79.51,144.49a12,12,0,1,1,17-17L112,143l47.51-47.52a12,12,0,0,1,17,17l-56,56a12,12,0,0,1-17,0Z" />
     </Icon>
   );
 }

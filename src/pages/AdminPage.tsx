@@ -551,7 +551,7 @@ export function AdminPage() {
               disabled={resetting || resetConfirm !== "RESET"}
               className="min-h-11 rounded-2xl bg-[var(--accent-red)] px-4 font-bold text-white disabled:opacity-60"
             >
-              {resetting ? "Resetting..." : "Wipe beta data"}
+              {resetting ? "Resetting..." : "Reset"}
             </button>
             {resetMsg && <p className="text-sm font-semibold text-[var(--accent-green)]">{resetMsg}</p>}
           </div>
