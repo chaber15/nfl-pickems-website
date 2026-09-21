@@ -226,8 +226,16 @@ export function PicksPage() {
             <p className="mt-2 text-sm text-[var(--text-muted)]">Check back when ESPN posts the slate.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {games.map((game) => (
+          <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
+            {games.map((game, index) => {
+              const pairIndex = index % 2 === 0 ? index + 1 : index - 1;
+              const neighbor = pairIndex >= 0 && pairIndex < games.length ? games[pairIndex] : null;
+              const neighborOpen = neighbor != null && !isGameLocked(neighbor.kickoffAt);
+              const selfLocked = isGameLocked(game.kickoffAt);
+              // Desktop 2-col: shorter locked cards fill empty row height when beside open picks.
+              const expandCrowdNames = selfLocked && neighborOpen;
+
+              return (
               <GameCard
                 key={game.id}
                 game={game}
@@ -236,8 +244,10 @@ export function PicksPage() {
                 onToggleConfidence={() => handleConfidence(game.id)}
                 confidenceDisabled={!picks[game.id]?.isConfidenceBet && confCount >= 5}
                 crowd={crowdLeanForGame(game, players, username)}
+                expandCrowdNames={expandCrowdNames}
               />
-            ))}
+              );
+            })}
           </div>
         )}
 

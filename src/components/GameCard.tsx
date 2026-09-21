@@ -98,6 +98,8 @@ interface GameCardProps {
   onToggleConfidence: () => void;
   confidenceDisabled?: boolean;
   crowd?: GameCrowdLean;
+  /** Desktop: open names to fill row height when paired with a taller open-picks card. */
+  expandCrowdNames?: boolean;
 }
 
 function NameList({
@@ -184,7 +186,17 @@ function crowdSideTone(
   return awayWon ? "loss" : "win";
 }
 
-function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
+function CrowdLean({
+  crowd,
+  game,
+  expandByDefault = false,
+  fillHeight = false,
+}: {
+  crowd: GameCrowdLean;
+  game: GameData;
+  expandByDefault?: boolean;
+  fillHeight?: boolean;
+}) {
   const [pinned, setPinned] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -194,19 +206,24 @@ function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
   if (!hasAnyone) return null;
 
   const gameOver = game.status === "final";
+  const autoExpand = expandByDefault && fineHover;
   const picked = crowd.awayCount + crowd.homeCount;
   const awayPct = picked ? (crowd.awayCount / picked) * 100 : 0;
   const homePct = picked ? (crowd.homeCount / picked) * 100 : 0;
-  const open =
-    gameOver && fineHover ? !collapsed : pinned || (fineHover && hovered);
+  const open = autoExpand
+    ? !collapsed
+    : gameOver && fineHover
+      ? !collapsed
+      : pinned || (fineHover && hovered);
   const awayColor = teamColor(game.awayAbbrev);
   const homeColor = teamColor(game.homeAbbrev);
   const awayTone = crowdSideTone(game, "away");
   const homeTone = crowdSideTone(game, "home");
+  const defaultExpanded = autoExpand || (gameOver && fineHover);
 
   return (
     <div
-      className="mt-3 space-y-2"
+      className={`mt-3 space-y-2 ${fillHeight && open ? "flex min-h-0 flex-1 flex-col" : ""}`}
       onMouseEnter={() => {
         if (fineHover) setHovered(true);
       }}
@@ -217,12 +234,12 @@ function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
       <button
         type="button"
         onClick={() => {
-          if (gameOver && fineHover) setCollapsed((v) => !v);
+          if (defaultExpanded) setCollapsed((v) => !v);
           else setPinned((v) => !v);
         }}
         aria-expanded={open}
         aria-label={`Crowd lean: ${crowd.awayCount} away, ${crowd.homeCount} home — show names`}
-        className="flex w-full items-center gap-2 rounded-lg py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)]"
+        className="flex w-full shrink-0 items-center gap-2 rounded-lg py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)]"
       >
         <span className="w-5 shrink-0 text-center font-mono text-xs font-bold tabular-nums text-[var(--text-muted)]">
           {crowd.awayCount}
@@ -253,7 +270,11 @@ function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
       </button>
 
       {open && (
-        <div className="grid grid-cols-2 gap-3 rounded-xl bg-[var(--bg-card-elevated)] px-3 py-3 sm:gap-6 sm:px-4">
+        <div
+          className={`grid grid-cols-2 gap-3 rounded-xl bg-[var(--bg-card-elevated)] px-3 py-3 sm:gap-6 sm:px-4 ${
+            fillHeight ? "min-h-0 flex-1 content-start" : ""
+          }`}
+        >
           <ul className="space-y-1 text-center text-xs sm:text-sm">
             <NameList names={crowd.away} tone={awayTone} />
           </ul>
@@ -264,7 +285,7 @@ function CrowdLean({ crowd, game }: { crowd: GameCrowdLean; game: GameData }) {
       )}
 
       {crowd.openCount > 0 && (
-        <p className="text-center text-[10px] font-medium text-[var(--text-muted)]">
+        <p className="shrink-0 text-center text-[10px] font-medium text-[var(--text-muted)]">
           {crowd.openCount} still open
         </p>
       )}
@@ -341,6 +362,7 @@ export function GameCard({
   onToggleConfidence,
   confidenceDisabled,
   crowd,
+  expandCrowdNames = false,
 }: GameCardProps) {
   const locked = isGameLocked(game.kickoffAt);
   const hasLine = game.spread != null && game.favoriteSide;
@@ -444,7 +466,7 @@ export function GameCard({
 
   return (
     <article
-      className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 shadow-[var(--shadow-card)] ${cardBorderClass}`}
+      className={`flex h-full flex-col rounded-2xl border-2 bg-[var(--bg-card)] p-4 shadow-[var(--shadow-card)] ${cardBorderClass}`}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold text-[var(--text-muted)]">{formatKickoff(game.kickoffAt)}</p>
@@ -550,7 +572,14 @@ export function GameCard({
         </div>
       )}
 
-      {crowd && <CrowdLean crowd={crowd} game={game} />}
+      {crowd && (
+        <CrowdLean
+          crowd={crowd}
+          game={game}
+          expandByDefault={expandCrowdNames}
+          fillHeight={expandCrowdNames}
+        />
+      )}
 
       {!locked && hasLine && !isPlayoff && (
         <button
