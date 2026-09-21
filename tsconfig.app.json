@@ -17,6 +17,8 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
+    // TODO(ts7): migrate path aliases off baseUrl before TypeScript 7 removes it — https://aka.ms/ts6
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],

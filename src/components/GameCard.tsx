@@ -190,12 +190,10 @@ function CrowdLean({
   crowd,
   game,
   expandByDefault = false,
-  fillHeight = false,
 }: {
   crowd: GameCrowdLean;
   game: GameData;
   expandByDefault?: boolean;
-  fillHeight?: boolean;
 }) {
   const [pinned, setPinned] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -219,7 +217,7 @@ function CrowdLean({
 
   return (
     <div
-      className={`mt-3 space-y-2 ${fillHeight && open ? "flex min-h-0 flex-1 flex-col" : ""}`}
+      className="mt-3 space-y-2"
       onMouseEnter={() => {
         if (fineHover) setHovered(true);
       }}
@@ -266,22 +264,18 @@ function CrowdLean({
       </button>
 
       {open && (
-        <div
-          className={`grid grid-cols-2 gap-3 rounded-xl bg-[var(--bg-card-elevated)] px-3 py-3 sm:gap-6 sm:px-4 ${
-            fillHeight ? "min-h-0 flex-1 content-start" : ""
-          }`}
-        >
-          <ul className="space-y-1 text-center text-xs sm:text-sm">
+        <div className="grid max-h-40 grid-cols-2 gap-3 overflow-y-auto rounded-xl bg-[var(--bg-card-elevated)] px-3 py-2 sm:gap-4 sm:px-3">
+          <ul className="space-y-0.5 text-center text-xs">
             <NameList names={crowd.away} tone={awayTone} />
           </ul>
-          <ul className="space-y-1 text-center text-xs sm:text-sm">
+          <ul className="space-y-0.5 text-center text-xs">
             <NameList names={crowd.home} tone={homeTone} />
           </ul>
         </div>
       )}
 
       {crowd.openCount > 0 && (
-        <p className="shrink-0 text-center text-[10px] font-medium text-[var(--text-muted)]">
+        <p className="text-center text-[10px] font-medium text-[var(--text-muted)]">
           {crowd.openCount} still open
         </p>
       )}
@@ -413,8 +407,6 @@ export function GameCard({
     const name = venue === "away" ? game.awayTeam : game.homeTeam;
     const record = venue === "away" ? game.awayRecord : game.homeRecord;
     const score = venue === "away" ? game.awayScore : game.homeScore;
-    const venueHint = venue === "away" ? "away" : "home";
-    const meta = [record, showScores ? null : venueHint].filter(Boolean).join(" · ");
     const won = venue === "away" ? awayWon : homeWon;
     const scoreClass = showScores
       ? won
@@ -428,17 +420,17 @@ export function GameCard({
       <div
         className={`flex min-w-0 flex-1 rounded-xl ${teamPanelClass(venue)} ${
           fillMatchup
-            ? "flex-col items-center gap-1 p-2 text-center sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4 sm:py-3 sm:text-left"
+            ? "flex-col items-center gap-1 p-2 text-center sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4 sm:py-3"
             : "flex-col items-center gap-1 p-1 text-center"
         }`}
       >
         <div
-          className={`flex min-w-0 items-center gap-1 ${
-            fillMatchup ? "flex-col sm:flex-1 sm:flex-row sm:gap-3" : "flex-col"
+          className={`flex min-w-0 flex-col items-center gap-1 ${
+            fillMatchup ? "sm:flex-1 sm:flex-row sm:gap-3" : ""
           }`}
         >
           <TeamLogo abbrev={abbrev} name={name} size={showScores ? 44 : 56} />
-          <div className={`min-w-0 ${fillMatchup ? "w-full sm:flex-1 sm:text-left" : "w-full text-center"}`}>
+          <div className={`min-w-0 text-center ${fillMatchup ? "w-full sm:flex-1" : "w-full"}`}>
             <p
               className={`font-bold leading-tight ${
                 fillMatchup
@@ -448,7 +440,11 @@ export function GameCard({
             >
               {name}
             </p>
-            {meta ? <p className="font-mono text-xs text-[var(--text-muted)]">{meta}</p> : null}
+            <p className="font-mono text-xs text-[var(--text-muted)]">
+              {(game.status === "in_progress" || game.status === "final") && record
+                ? record
+                : `${abbrev} · ${venue === "away" ? "away" : "home"}`}
+            </p>
           </div>
         </div>
         {showScores && (
@@ -573,7 +569,6 @@ export function GameCard({
           crowd={crowd}
           game={game}
           expandByDefault={expandCrowdNames}
-          fillHeight={expandCrowdNames}
         />
       )}
 
