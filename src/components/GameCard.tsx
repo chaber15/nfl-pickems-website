@@ -205,21 +205,17 @@ function CrowdLean({
   const hasAnyone = crowd.awayCount > 0 || crowd.homeCount > 0 || crowd.openCount > 0;
   if (!hasAnyone) return null;
 
-  const gameOver = game.status === "final";
   const autoExpand = expandByDefault && fineHover;
   const picked = crowd.awayCount + crowd.homeCount;
   const awayPct = picked ? (crowd.awayCount / picked) * 100 : 0;
   const homePct = picked ? (crowd.homeCount / picked) * 100 : 0;
   const open = autoExpand
     ? !collapsed
-    : gameOver && fineHover
-      ? !collapsed
-      : pinned || (fineHover && hovered);
+    : pinned || (fineHover && hovered);
   const awayColor = teamColor(game.awayAbbrev);
   const homeColor = teamColor(game.homeAbbrev);
   const awayTone = crowdSideTone(game, "away");
   const homeTone = crowdSideTone(game, "home");
-  const defaultExpanded = autoExpand || (gameOver && fineHover);
 
   return (
     <div
@@ -234,7 +230,7 @@ function CrowdLean({
       <button
         type="button"
         onClick={() => {
-          if (defaultExpanded) setCollapsed((v) => !v);
+          if (autoExpand) setCollapsed((v) => !v);
           else setPinned((v) => !v);
         }}
         aria-expanded={open}
