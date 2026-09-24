@@ -1,4 +1,5 @@
 import { HttpError } from "./errors";
+import { isValidPickemsWeek } from "../../shared/weekUtils";
 
 /** Public, CDN-cacheable read endpoints (no per-user data). */
 const PUBLIC_CACHEABLE_PATHS = new Set(["games", "calendar", "calendar/current"]);
@@ -47,16 +48,9 @@ export function isOriginAllowed(
   return originHost.toLowerCase() === host.trim().toLowerCase();
 }
 
-/**
- * Is (seasonType, week) a week this site runs pick'ems for?
- * Regular season (2): weeks 1–18. Postseason (3): weeks 1–5.
- * TODO(merge): use isValidPickemsWeek from shared/weekUtils (Agent A).
- */
+/** Is (seasonType, week) a week this site runs pick'ems for? (Regular 1–18, playoffs excl. Pro Bowl.) */
 export function isValidWeekParams(seasonType: number, week: number): boolean {
-  if (!Number.isInteger(seasonType) || !Number.isInteger(week)) return false;
-  if (seasonType === 2) return week >= 1 && week <= 18;
-  if (seasonType === 3) return week >= 1 && week <= 5;
-  return false;
+  return isValidPickemsWeek(seasonType, week);
 }
 
 /** Parse + validate ?seasonType=&week= (defaults 2 / 1). Invalid → 400. */

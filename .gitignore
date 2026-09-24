@@ -20,3 +20,6 @@ deno.lock
 
 # Generated graphify analysis output
 graphify-out/
+
+# Claude Code agent worktrees
+.claude/

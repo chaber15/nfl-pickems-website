@@ -1,6 +1,5 @@
 import type { HandlerEvent } from "@netlify/functions";
 import { hasDatabase } from "../db";
-import { syncScheduledSlates } from "../espn/sync";
 import { errorToResponse } from "./errors";
 import { getHeader, json, requireUser, type ApiResponse } from "./http";
 import { cacheHeadersFor, isOriginAllowed } from "./policy";
@@ -75,14 +74,3 @@ export async function routeApiRequest(event: HandlerEvent): Promise<ApiResponse>
   };
 }
 
-export async function runScheduledSync() {
-  if (!hasDatabase()) {
-    return { statusCode: 503, body: "DATABASE_URL not configured" };
-  }
-  try {
-    const result = await syncScheduledSlates();
-    return { statusCode: 200, body: JSON.stringify(result) };
-  } catch (err) {
-    return { statusCode: 500, body: err instanceof Error ? err.message : "Sync failed" };
-  }
-}

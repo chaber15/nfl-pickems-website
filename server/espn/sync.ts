@@ -4,7 +4,6 @@ import {
   fetchScoreboard,
   fetchCurrentScoreboard,
   applyAtsToGame,
-  detectCurrentWeek,
   type ScoreboardOptions,
 } from "../../shared/espnClient";
 import {
@@ -20,7 +19,7 @@ import {
 import { computeAtsResult } from "../../shared/scoring";
 import type { AtsResult, GameData } from "../../shared/types";
 import { sortGamesLiveFirstThenChronological } from "../../shared/gameOrder";
-import { isValidPickemsWeek, phaseFor, previousAvailableWeek } from "../../shared/weekUtils";
+import { isValidPickemsWeek, phaseFor } from "../../shared/weekUtils";
 
 type GameRow = typeof schema.games.$inferSelect;
 
@@ -274,14 +273,6 @@ export async function findWeekRow(seasonType: number, weekNumber: number) {
   return weekRow ?? null;
 }
 
-/** Prior slate to keep grading when ESPN has already rolled the "current" week. */
-export function previousSlate(
-  seasonType: number,
-  week: number,
-): { seasonType: number; week: number } | null {
-  return previousAvailableWeek(seasonType, week);
-}
-
 export async function syncEspnWeek(seasonType?: number, week?: number) {
   const db = getDb();
   const now = new Date();
@@ -421,26 +412,6 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
   return result;
 }
 
-/**
- * Legacy cron entry (still referenced by server/api/router.ts runScheduledSync):
- * refresh ESPN's current week, and the previous week if it still has non-final games.
- * The hourly scheduled function uses server/espn/scheduled.ts instead.
- */
-export async function syncScheduledSlates() {
-  const current = await detectCurrentWeek();
-  const primary = await syncEspnWeek(current.seasonType, current.week);
-
-  const prev = previousSlate(current.seasonType, current.week);
-  let secondary: Awaited<ReturnType<typeof syncEspnWeek>> | null = null;
-  if (prev) {
-    const prevGames = await getGamesForWeek(prev.seasonType, prev.week);
-    if (prevGames.length === 0 || prevGames.some((g) => g.status !== "final")) {
-      secondary = await syncEspnWeek(prev.seasonType, prev.week);
-    }
-  }
-
-  return { current: primary, previous: secondary };
-}
 
 export async function getGamesForWeek(seasonType: number, weekNumber: number): Promise<GameData[]> {
   const db = getDb();
