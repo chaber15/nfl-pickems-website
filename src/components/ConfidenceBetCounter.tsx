@@ -1,31 +1,20 @@
 import { Star } from "./icons";
-import { CONFIDENCE_BETS_PER_WEEK } from "@shared/types";
+import { CONFIDENCE_BETS_PER_WEEK, type WeekPhase } from "@shared/types";
+import { isPlayoffPhase } from "@shared/scoring";
+import { HelpTip, PL_HELP } from "./HelpTip";
 
 interface ConfidenceBetCounterProps {
   count: number;
   max?: number;
-  phase: string;
+  phase: WeekPhase;
 }
 
 export function ConfidenceBetCounter({ count, max = CONFIDENCE_BETS_PER_WEEK, phase }: ConfidenceBetCounterProps) {
-  const isPlayoff = ["wildcard", "divisional", "conf", "superbowl"].includes(phase);
-  if (isPlayoff) {
+  if (isPlayoffPhase(phase)) {
     return (
       <div className="rounded-2xl border-2 border-[var(--accent-gold)] bg-[var(--bg-card)] px-4 py-3 text-sm font-semibold text-[var(--text-primary)]">
-        Playoffs: all games count toward P/L
-      </div>
-    );
-  }
-  if (phase === "preseason") {
-    return (
-      <div className="rounded-2xl border-2 border-[var(--accent-gold)] bg-[var(--bg-card)] px-4 py-3 text-sm font-semibold text-[var(--text-primary)]">
-        <span className="inline-flex items-center gap-2">
-          <Star size={18} weight="fill" className="text-[var(--accent-gold)]" />
-          <span className="font-mono">
-            {count}/{max}
-          </span>{" "}
-          confidence bets (practice - regular season requires exactly {max})
-        </span>
+        Playoffs: every game you pick counts toward P/L{" "}
+        <HelpTip label="What is P/L?">{PL_HELP}</HelpTip>
       </div>
     );
   }
@@ -39,20 +28,24 @@ export function ConfidenceBetCounter({ count, max = CONFIDENCE_BETS_PER_WEEK, ph
           : "border-[var(--accent-gold)] bg-[var(--bg-card)] text-[var(--text-primary)]"
       }`}
     >
-      <span className="inline-flex items-center gap-2">
+      <span className="inline-flex flex-wrap items-center gap-x-2">
         <Star size={18} weight="fill" className="text-[var(--accent-gold)]" />
-        <span className="font-mono">
-          {count}/{max}
-        </span>{" "}
-        confidence bets selected
-        {!complete && (
-          <span className="text-[var(--text-muted)]">
-            {" "}
-            - need exactly {max} for this week to count toward P/L rankings
-            {count > 0 ? ` (${max - count} more)` : ""}
-          </span>
-        )}
-        {complete && " - P/L week locked in"}
+        <span>
+          <span className="font-mono">
+            {count}/{max}
+          </span>{" "}
+          confidence bets selected
+          {!complete && (
+            <span className="text-[var(--text-muted)]">
+              {" "}
+              - pick exactly {max} for this week to count on the P/L board
+              {count > 0 && count < max ? ` (${max - count} more)` : ""}
+              {count > max ? ` (${count - max} too many)` : ""}
+            </span>
+          )}
+          {complete && " - this week counts on the P/L board"}
+        </span>
+        <HelpTip label="What is P/L?">{PL_HELP}</HelpTip>
       </span>
     </div>
   );

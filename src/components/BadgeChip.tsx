@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { EarnedBadge } from "@shared/types";
 import {
@@ -19,7 +19,11 @@ type Props = {
 export function BadgeChip({ badge, showWeek = false, className = "", dense = false }: Props) {
   const chipRef = useRef<HTMLButtonElement>(null);
   const tipId = useId();
-  const [open, setOpen] = useState(false);
+  /** Mouse hover or keyboard focus. */
+  const [hover, setHover] = useState(false);
+  /** Tapped / clicked open — stays until tapped again, tapped elsewhere, or Escape. */
+  const [pinned, setPinned] = useState(false);
+  const open = hover || pinned;
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const chipClass = badgeChipClass(badge.badgeId);
   const description = badge.description?.trim() || "Earned badge";
@@ -52,16 +56,50 @@ export function BadgeChip({ badge, showWeek = false, className = "", dense = fal
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!pinned) return;
+    const onPointer = (e: PointerEvent) => {
+      if (!chipRef.current?.contains(e.target as Node)) setPinned(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPinned(false);
+        setHover(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pinned]);
+
   return (
     <>
       <button
         ref={chipRef}
         type="button"
         aria-describedby={open ? tipId : undefined}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
+        aria-expanded={pinned}
+        onPointerEnter={(e) => {
+          if (e.pointerType === "mouse") setHover(true);
+        }}
+        onPointerLeave={(e) => {
+          if (e.pointerType === "mouse") setHover(false);
+        }}
+        onFocus={(e) => {
+          // Keyboard focus only — a tap also focuses, and the click handler owns taps.
+          if (e.currentTarget.matches(":focus-visible")) setHover(true);
+        }}
+        onBlur={() => {
+          setHover(false);
+          setPinned(false);
+        }}
+        onClick={() => {
+          setPinned((v) => !v);
+          setHover(false);
+        }}
         className={`inline-flex shrink-0 cursor-help rounded-full border font-bold outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] ${
           dense
             ? "border px-1.5 py-0 text-[9px] leading-4 sm:text-[10px]"

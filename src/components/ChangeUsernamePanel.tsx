@@ -47,7 +47,7 @@ export function ChangeUsernamePanel({ compact = false }: { compact?: boolean }) 
         onClick={start}
         className={
           compact
-            ? "text-xs font-semibold text-[var(--accent-blue)] underline-offset-2 hover:underline"
+            ? "-my-2 inline-flex min-h-11 items-center text-xs font-semibold text-[var(--accent-blue)] underline-offset-2 hover:underline"
             : "flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-card-elevated)]"
         }
       >
@@ -73,6 +73,9 @@ export function ChangeUsernamePanel({ compact = false }: { compact?: boolean }) 
           onChange={(e) => setValue(e.target.value)}
           maxLength={20}
           autoComplete="username"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           className="min-h-11 w-full rounded-xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] px-3 text-sm font-semibold"
           aria-label="New username"
         />
@@ -83,7 +86,7 @@ export function ChangeUsernamePanel({ compact = false }: { compact?: boolean }) 
           type="button"
           disabled={saving}
           onClick={() => void save()}
-          className="min-h-10 rounded-xl bg-[var(--accent-green)] px-3 text-sm font-bold text-[var(--accent-on-green)] disabled:opacity-60"
+          className="min-h-11 rounded-xl bg-[var(--accent-green)] px-3 text-sm font-bold text-[var(--accent-on-green)] disabled:opacity-60"
         >
           {saving ? "Saving..." : "Save"}
         </button>
@@ -91,7 +94,7 @@ export function ChangeUsernamePanel({ compact = false }: { compact?: boolean }) 
           type="button"
           disabled={saving}
           onClick={() => setOpen(false)}
-          className="min-h-10 rounded-xl border-2 border-[var(--border-card)] px-3 text-sm font-bold"
+          className="min-h-11 rounded-xl border-2 border-[var(--border-card)] px-3 text-sm font-bold"
         >
           Cancel
         </button>

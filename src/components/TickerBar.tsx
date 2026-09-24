@@ -1,11 +1,12 @@
-import type { GameData } from "@shared/types";
 import { tickerLine } from "@shared/pickDisplay";
+import { useGames } from "../lib/gamesContext";
 
-interface TickerBarProps {
-  games: GameData[];
-}
+/** Scrolling score strip for the selected week. Hidden when there is nothing to show. */
+export function TickerBar() {
+  const { games, loading, error } = useGames();
 
-export function TickerBar({ games }: TickerBarProps) {
+  if (games.length === 0 && (!loading || error)) return null;
+
   const items =
     games.length > 0
       ? games.map((g) => {
@@ -22,7 +23,7 @@ export function TickerBar({ games }: TickerBarProps) {
   const doubled = [...items, ...items];
 
   return (
-    <div className="sticky top-0 z-40 overflow-hidden bg-[var(--ticker-bg)] py-2 text-sm">
+    <div className="sticky top-0 z-40 overflow-hidden bg-[var(--ticker-bg)] py-2 text-sm" aria-hidden>
       <div className="ticker-track flex w-max items-center whitespace-nowrap">
         {doubled.map((item, i) => (
           <span key={`${item.line}-${i}`} className="inline-flex items-center">

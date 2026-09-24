@@ -1,7 +1,11 @@
+import { storageGet, storageSet } from "./storage";
+
 export type ThemeMode = "light" | "dark" | "system";
 
+const THEME_KEY = "theme";
+
 export function getThemeMode(): ThemeMode {
-  const stored = localStorage.getItem("theme");
+  const stored = storageGet(THEME_KEY);
   if (stored === "light" || stored === "dark" || stored === "system") return stored;
   return "system";
 }
@@ -9,7 +13,11 @@ export function getThemeMode(): ThemeMode {
 export function resolveDark(mode: ThemeMode): boolean {
   if (mode === "dark") return true;
   if (mode === "light") return false;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  try {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  } catch {
+    return false;
+  }
 }
 
 export function applyTheme(mode: ThemeMode) {
@@ -20,7 +28,7 @@ export function applyTheme(mode: ThemeMode) {
 }
 
 export function setThemeMode(mode: ThemeMode) {
-  localStorage.setItem("theme", mode);
+  storageSet(THEME_KEY, mode);
   applyTheme(mode);
 }
 

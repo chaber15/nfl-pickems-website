@@ -1,8 +1,10 @@
+import { storageGet, storageSet } from "./storage";
+
 const HIDDEN_KEY = "pickems_crowd_hidden";
 
 function readHidden(): Set<string> {
   try {
-    const raw = localStorage.getItem(HIDDEN_KEY);
+    const raw = storageGet(HIDDEN_KEY);
     if (!raw) return new Set();
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return new Set();
@@ -13,7 +15,7 @@ function readHidden(): Set<string> {
 }
 
 function writeHidden(hidden: Set<string>) {
-  localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden]));
+  storageSet(HIDDEN_KEY, JSON.stringify([...hidden]));
 }
 
 /** True unless the user opted this username out of lean name lists. */
@@ -32,28 +34,15 @@ export function setCrowdNameVisible(username: string, visible: boolean) {
 const TUTORIAL_KEY = "pickems_leaderboard_lean_tutorial_v1";
 
 export function readTutorialDone(): boolean {
-  try {
-    return localStorage.getItem(TUTORIAL_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return storageGet(TUTORIAL_KEY) === "1";
 }
 
 export function markTutorialDone() {
-  try {
-    localStorage.setItem(TUTORIAL_KEY, "1");
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Snapshot of currently hidden usernames (lowercase). */
-export function getHiddenCrowdNames(): Set<string> {
-  return readHidden();
+  storageSet(TUTORIAL_KEY, "1");
 }
 
 /** Usernames currently visible on the lean (not hidden). */
 export function getVisibleCrowdUsernames(allUsernames: string[]): string[] {
-  const hidden = getHiddenCrowdNames();
+  const hidden = readHidden();
   return allUsernames.filter((u) => !hidden.has(u.toLowerCase()));
 }
