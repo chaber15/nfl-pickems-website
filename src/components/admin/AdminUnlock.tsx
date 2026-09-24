@@ -61,8 +61,8 @@ export function AdminUnlock({
         <p className="font-bold">{title}</p>
         <p className="mt-1 text-sm text-[var(--text-muted)]">{description}</p>
       </div>
-      <label className="block space-y-1">
-        <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Passphrase</span>
+      <label className="block">
+        <span className="mb-2 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Passphrase</span>
         <input
           type="password"
           value={pin}

@@ -230,8 +230,8 @@ export function UsersSection({ users, setUsers, tier, currentUserId, onError }: 
 
                 {editingId === u.id && (
                   <div className="space-y-3">
-                    <label className="block space-y-1">
-                      <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
                         Login username
                       </span>
                       <input
@@ -246,8 +246,8 @@ export function UsersSection({ users, setUsers, tier, currentUserId, onError }: 
                         aria-label={`Login username for ${u.username}`}
                       />
                     </label>
-                    <label className="block space-y-1">
-                      <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
                         Display name
                       </span>
                       <input

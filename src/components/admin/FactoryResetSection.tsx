@@ -55,8 +55,8 @@ export function FactoryResetSection({
             registration and syncs the current ESPN week.
           </p>
         </div>
-        <label className="block space-y-2 text-sm font-semibold">
-          <span>Type RESET to confirm</span>
+        <label className="block text-sm font-semibold">
+          <span className="mb-2 block">Type RESET to confirm</span>
           <input
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}

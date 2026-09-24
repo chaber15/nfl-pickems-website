@@ -64,8 +64,8 @@ export function ChangeUsernamePanel({ compact = false }: { compact?: boolean }) 
           : "space-y-2 rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-page)] p-3"
       }
     >
-      <label className="block space-y-1">
-        <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+      <label className="block">
+        <span className="mb-2 block text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
           New username
         </span>
         <input

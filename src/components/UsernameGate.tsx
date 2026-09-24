@@ -109,8 +109,8 @@ export function UsernameGate({ children }: { children: ReactNode }) {
                 Enter your username to start picking. No password needed for family play.
               </p>
               <form onSubmit={handleSubmit} className="space-y-4">
-                <label className="block space-y-2">
-                  <span className="text-sm font-semibold">Username</span>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-semibold">Username</span>
                   <input
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
