@@ -1,21 +1,20 @@
 import type { HandlerEvent } from "@netlify/functions";
 import {
-  parseCookies,
   buildSessionCookie,
   clearSessionCookie,
-  getSessionCookieName,
   getUserFromSession,
   registerOrLogin,
   changeUsername,
   logout,
   toPublicUser,
 } from "../auth";
-import { json, isSecure } from "./http";
+import { clearAdminCookies } from "../adminAuth";
+import { HttpError } from "./errors";
+import { json, isSecure, getSessionToken, parseJsonBody } from "./http";
 
 export async function handleAuth(path: string, event: HandlerEvent) {
   const secure = isSecure(event);
-  const cookies = parseCookies(event.headers.cookie ?? null);
-  const token = cookies[getSessionCookieName()];
+  const token = getSessionToken(event);
 
   if (path === "auth/me" && event.httpMethod === "GET") {
     const user = await getUserFromSession(token);
@@ -25,27 +24,29 @@ export async function handleAuth(path: string, event: HandlerEvent) {
   }
 
   if (path === "auth/login" && event.httpMethod === "POST") {
-    const body = JSON.parse(event.body ?? "{}") as { username?: string };
-    const { user, token: newToken, created } = await registerOrLogin(body.username ?? "");
-    return json(
-      200,
-      { user: toPublicUser(user), created },
-      { "Set-Cookie": buildSessionCookie(newToken, secure) },
-    );
+    const body = parseJsonBody(event);
+    const { user, token: newToken, created } = await registerOrLogin(body.username, {
+      create: body.create === true,
+    });
+    return json(200, { user: toPublicUser(user), created }, {}, [
+      buildSessionCookie(newToken, secure),
+      // A new session never inherits a previous admin unlock on this browser.
+      ...clearAdminCookies(secure),
+    ]);
   }
 
   if (path === "auth/logout" && event.httpMethod === "POST") {
     await logout(token);
-    return json(200, { ok: true }, { "Set-Cookie": clearSessionCookie(secure) });
+    return json(200, { ok: true }, {}, [clearSessionCookie(secure), ...clearAdminCookies(secure)]);
   }
 
   if (path === "auth/username" && event.httpMethod === "POST") {
     const user = await getUserFromSession(token);
-    if (!user) return json(401, { error: "Unauthorized" });
-    const body = JSON.parse(event.body ?? "{}") as { username?: string };
-    const updated = await changeUsername(user.id, body.username ?? "");
+    if (!user) throw new HttpError(401, "Unauthorized", "UNAUTHORIZED");
+    const body = parseJsonBody(event);
+    const updated = await changeUsername(user.id, body.username);
     return json(200, { user: toPublicUser(updated) });
   }
 
-  return json(404, { error: "Not found" });
+  return json(404, { error: "Not found", code: "NOT_FOUND" });
 }

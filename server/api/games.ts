@@ -7,35 +7,49 @@ import {
 } from "../espn/sync";
 import { resolveCurrentPickemsWeek } from "../../shared/espnClient";
 import { buildWeekOptions } from "../../shared/weekUtils";
+import { HttpError } from "./errors";
 import { json } from "./http";
+import { parseWeekQuery } from "./policy";
 
 export async function handleGames(event: HandlerEvent) {
-  const params = event.queryStringParameters ?? {};
-  const seasonType = Number(params.seasonType ?? 2);
-  const week = Number(params.week ?? 1);
+  const { seasonType, week } = parseWeekQuery(event.queryStringParameters ?? {});
 
   if (hasDatabase()) {
+    let games: Awaited<ReturnType<typeof getGamesForWeek>> = [];
     try {
-      let games = await getGamesForWeek(seasonType, week);
+      games = await getGamesForWeek(seasonType, week);
+    } catch (err) {
+      console.error("[games] DB read failed:", err);
+    }
+
+    try {
       if (await shouldSyncWeekOnRead(seasonType, week)) {
         await syncEspnWeek(seasonType, week);
         games = await getGamesForWeek(seasonType, week);
       }
-      if (games.length > 0) {
-        return json(200, {
-          games,
-          seasonType,
-          week,
-          source: "db",
-        });
-      }
-    } catch {
-      /* fall through to ESPN */
+    } catch (err) {
+      // Keep serving whatever the DB already has; a failed refresh isn't fatal.
+      console.error("[games] sync on read failed:", err);
+    }
+
+    if (games.length > 0) {
+      return json(200, {
+        games,
+        seasonType,
+        week,
+        source: "db",
+      });
     }
   }
 
   const { fetchScoreboard } = await import("../../shared/espnClient");
-  const board = await fetchScoreboard(seasonType, week);
+  let board: Awaited<ReturnType<typeof fetchScoreboard>>;
+  try {
+    board = await fetchScoreboard(seasonType, week);
+  } catch (err) {
+    console.error("[games] ESPN fallback failed:", err);
+    throw new HttpError(502, "Couldn't load games right now — try again shortly", "UPSTREAM_UNAVAILABLE");
+  }
   return json(200, { ...board, source: "espn" });
 }
 
@@ -47,5 +61,5 @@ export async function handleCalendar(path: string, event: HandlerEvent) {
   if (path === "calendar" && event.httpMethod === "GET") {
     return json(200, { weeks: buildWeekOptions() });
   }
-  return json(404, { error: "Not found" });
+  return json(404, { error: "Not found", code: "NOT_FOUND" });
 }

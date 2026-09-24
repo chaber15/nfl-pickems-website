@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, boolean, integer, timestamp, uuid, uniqueIndex, pgEnum } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  boolean,
+  integer,
+  timestamp,
+  uuid,
+  uniqueIndex,
+  index,
+  pgEnum,
+} from "drizzle-orm/pg-core";
 
 export const weekPhaseEnum = pgEnum("week_phase", [
   "preseason",
@@ -21,6 +31,8 @@ export const users = pgTable("users", {
   /** Shown in UI; login still uses username. */
   displayName: text("display_name"),
   isAdmin: boolean("is_admin").notNull().default(false),
+  /** Owner tier (grant/revoke admin, delete players, factory reset). Set only via SQL. */
+  isSuperAdmin: boolean("is_super_admin").notNull().default(false),
   isBanned: boolean("is_banned").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -35,12 +47,16 @@ export const sessions = pgTable("sessions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const seasons = pgTable("seasons", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  year: integer("year").notNull(),
-  label: text("label").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const seasons = pgTable(
+  "seasons",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    year: integer("year").notNull(),
+    label: text("label").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("seasons_year_idx").on(t.year)],
+);
 
 export const weeks = pgTable(
   "weeks",
@@ -57,35 +73,39 @@ export const weeks = pgTable(
   (t) => [uniqueIndex("weeks_season_week_idx").on(t.seasonId, t.weekNumber, t.seasonType)],
 );
 
-export const games = pgTable("games", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  weekId: uuid("week_id")
-    .notNull()
-    .references(() => weeks.id, { onDelete: "cascade" }),
-  espnEventId: text("espn_event_id").notNull().unique(),
-  awayTeam: text("away_team").notNull(),
-  awayAbbrev: text("away_abbrev").notNull(),
-  homeTeam: text("home_team").notNull(),
-  homeAbbrev: text("home_abbrev").notNull(),
-  awayRecord: text("away_record"),
-  homeRecord: text("home_record"),
-  kickoffAt: timestamp("kickoff_at", { withTimezone: true }).notNull(),
-  spread: integer("spread_cents"),
-  favoriteSide: favoriteSideEnum("favorite_side"),
-  oddsAway: integer("odds_away"),
-  oddsHome: integer("odds_home"),
-  atsResult: atsResultEnum("ats_result"),
-  status: gameStatusEnum("status").notNull().default("scheduled"),
-  awayScore: integer("away_score"),
-  homeScore: integer("home_score"),
-  period: integer("period"),
-  displayClock: text("display_clock"),
-  statusDetail: text("status_detail"),
-  preOtAwayScore: integer("pre_ot_away_score"),
-  preOtHomeScore: integer("pre_ot_home_score"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const games = pgTable(
+  "games",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    weekId: uuid("week_id")
+      .notNull()
+      .references(() => weeks.id, { onDelete: "cascade" }),
+    espnEventId: text("espn_event_id").notNull().unique(),
+    awayTeam: text("away_team").notNull(),
+    awayAbbrev: text("away_abbrev").notNull(),
+    homeTeam: text("home_team").notNull(),
+    homeAbbrev: text("home_abbrev").notNull(),
+    awayRecord: text("away_record"),
+    homeRecord: text("home_record"),
+    kickoffAt: timestamp("kickoff_at", { withTimezone: true }).notNull(),
+    spread: integer("spread_cents"),
+    favoriteSide: favoriteSideEnum("favorite_side"),
+    oddsAway: integer("odds_away"),
+    oddsHome: integer("odds_home"),
+    atsResult: atsResultEnum("ats_result"),
+    status: gameStatusEnum("status").notNull().default("scheduled"),
+    awayScore: integer("away_score"),
+    homeScore: integer("home_score"),
+    period: integer("period"),
+    displayClock: text("display_clock"),
+    statusDetail: text("status_detail"),
+    preOtAwayScore: integer("pre_ot_away_score"),
+    preOtHomeScore: integer("pre_ot_home_score"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("games_week_id_idx").on(t.weekId)],
+);
 
 export const picks = pgTable(
   "picks",
@@ -102,7 +122,10 @@ export const picks = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("picks_user_game_idx").on(t.userId, t.gameId)],
+  (t) => [
+    uniqueIndex("picks_user_game_idx").on(t.userId, t.gameId),
+    index("picks_game_id_idx").on(t.gameId),
+  ],
 );
 
 export const userBadges = pgTable(
@@ -119,6 +142,7 @@ export const userBadges = pgTable(
     earnedAt: timestamp("earned_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    index("user_badges_user_id_idx").on(t.userId),
     // One season_once badge per user (howl, week_champion, …) — week_number = 0 sentinel.
     uniqueIndex("user_badges_season_once_idx")
       .on(t.userId, t.badgeId)

@@ -29,3 +29,32 @@ export function normalizeUsername(raw: string): string {
   }
   return name;
 }
+
+/** Names nobody can newly register or rename to (case-insensitive). */
+export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
+  "admin",
+  "administrator",
+  "root",
+  "mod",
+  "moderator",
+  "superadmin",
+  "system",
+  "null",
+  "undefined",
+]);
+
+export function isReservedUsername(name: string): boolean {
+  return RESERVED_USERNAMES.has(name.trim().toLowerCase());
+}
+
+/**
+ * Validate a username for a NEW registration or a rename: format + not reserved.
+ * (Existing accounts with a reserved name can still log in via normalizeUsername.)
+ */
+export function normalizeNewUsername(raw: string): string {
+  const name = normalizeUsername(raw);
+  if (isReservedUsername(name)) {
+    throw new Error("That username is reserved, pick another");
+  }
+  return name;
+}
