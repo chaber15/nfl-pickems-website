@@ -29,7 +29,11 @@ assert.equal(weekPlEligible("regular", 4), false);
 assert.equal(weekPlEligible("preseason", 5), true);
 assert.equal(weekPlEligible("preseason", 3), false);
 assert.equal(weekPlEligible("wildcard", 2), true);
-assert.equal(isGradedForStandings({ status: "final" }), true);
+assert.equal(isGradedForStandings({ status: "final", atsResult: "favorite" }), true);
+assert.equal(isGradedForStandings({ status: "final", atsResult: "push" }), true);
+// Final with no line: excluded, not a loss
+assert.equal(isGradedForStandings({ status: "final", atsResult: null }), false);
+assert.equal(isGradedForStandings({ status: "final" }), false);
 assert.equal(isGradedForStandings({ status: "in_progress" }), false);
 assert.equal(isGradedForStandings({ status: "scheduled" }), false);
 

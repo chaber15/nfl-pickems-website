@@ -16,18 +16,9 @@
 
 # Redirects (API + SPA fallback) live in public/_redirects — keep them in one place.
 
-# Midweek: twice daily Tue/Wed/Fri/Sat (UTC) for lines / catch-up. Quiet on pure game days.
+# One hourly ESPN sync. The handler skips Mar–Jul and 2–8:59am ET without touching the DB,
+# then one DB query decides whether anything is live / kicking off / due a line refresh
+# before calling ESPN (server/espn/scheduled.ts). Viewers get fresher live scores via
+# read-triggered sync on /api/games.
 [functions."sync-espn"]
-  schedule = "0 6,18 * * 2,3,5,6"
-
-# Sunday slate (every 15m). Handler skips before ~9am ET.
-[functions."sync-espn-sun"]
-  schedule = "*/15 * * * 0"
-
-# Mon/Thu evening kickoff window in UTC (covers EDT/EST primetime start).
-[functions."sync-espn-primetime"]
-  schedule = "*/15 22-23 * * 1,4"
-
-# After midnight UTC: SNF (Mon), MNF (Tue), TNF (Fri).
-[functions."sync-espn-late"]
-  schedule = "*/15 0-4 * * 1,2,5"
+  schedule = "0 * * * *"
