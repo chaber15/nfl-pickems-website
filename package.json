@@ -7,10 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types shared/scoring.test.ts && node --experimental-strip-types shared/lineLock.test.ts",
+    "test": "tsx --test \"shared/**/*.test.ts\" \"server/**/*.test.ts\"",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "typecheck": "tsc -b"
   },
   "dependencies": {
     "@fontsource/bebas-neue": "^5.3.0",
@@ -30,6 +31,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "drizzle-kit": "^0.31.10",
     "tailwindcss": "^4.0.9",
+    "tsx": "^4.23.15",
     "typescript": "~5.7.2",
     "vite": "^6.2.0"
   }
