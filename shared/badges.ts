@@ -364,15 +364,17 @@ export type BadgeAward = {
 export type PrimetimeSlot = "tnf" | "snf" | "mnf" | null;
 
 /** Classify TNF / SNF / MNF from kickoff (US Eastern). */
+let easternFmt: Intl.DateTimeFormat | null = null;
+
 export function primetimeSlot(kickoffAt: string): PrimetimeSlot {
   const d = new Date(kickoffAt);
-  const fmt = new Intl.DateTimeFormat("en-US", {
+  easternFmt ??= new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
     weekday: "short",
     hour: "numeric",
     hour12: false,
   });
-  const parts = fmt.formatToParts(d);
+  const parts = easternFmt.formatToParts(d);
   const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
   const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
   if (weekday === "Thu" && hour >= 19) return "tnf";
@@ -511,9 +513,21 @@ export type WeekPlayerContext = {
 };
 
 /**
+ * Tie-aware standing of one player on a weekly board.
+ * `first`: nobody scored strictly higher (co-leaders are all first).
+ * `last`: nobody scored strictly lower AND somebody scored higher (an all-way tie has no "last").
+ */
+export type BoardStanding = { first: boolean; last: boolean };
+
+export const NO_STANDING: BoardStanding = { first: false, last: false };
+
+/**
  * Evaluate badges for one user for a completed week.
- * `priorWeekRanks` / `weekRanks` are 0-based ranks (0 = first) among active players.
+ * Standings are tie-aware (see `BoardStanding`); `prior*` refer to the previous week of the
+ * same season type (NO_STANDING when the player wasn't ranked then, or there is no prior week).
  * `atsStreak` / `confStreak` are current week-ending streaks including this week.
+ * season_once badges (howl, no_show, week_champion, bankroll_king) are emitted every time the
+ * condition holds; the caller keeps only the first (see `computeDesiredBadges`).
  */
 export function evaluateWeekBadges(args: {
   games: GameData[];
@@ -523,16 +537,10 @@ export function evaluateWeekBadges(args: {
   allPlayers: WeekComparePlayer[];
   atsStreak: number;
   confStreak: number;
-  weekRankAts: number;
-  weekRankPl: number;
-  playerCount: number;
-  priorWeekRankAts: number | null;
-  priorWeekRankPl: number | null;
-  priorPlayerCount: number | null;
-  alreadyHasHowl: boolean;
-  alreadyHasNoShow: boolean;
-  alreadyHasWeekChampion: boolean;
-  alreadyHasBankrollKing: boolean;
+  ats: BoardStanding;
+  pl: BoardStanding;
+  priorAts: BoardStanding;
+  priorPl: BoardStanding;
 }): BadgeAward[] {
   const {
     games,
@@ -542,16 +550,10 @@ export function evaluateWeekBadges(args: {
     allPlayers,
     atsStreak,
     confStreak,
-    weekRankAts,
-    weekRankPl,
-    playerCount,
-    priorWeekRankAts,
-    priorWeekRankPl,
-    priorPlayerCount,
-    alreadyHasHowl,
-    alreadyHasNoShow,
-    alreadyHasWeekChampion,
-    alreadyHasBankrollKing,
+    ats,
+    pl,
+    priorAts,
+    priorPl,
   } = args;
 
   const awards: BadgeAward[] = [];
@@ -577,7 +579,11 @@ export function evaluateWeekBadges(args: {
   if (pickedGames.length === graded.length && graded.every((g) => pickCorrectness(picks[g.id]!.pick, g.atsResult) === 1)) {
     week("clean_sweep");
   }
-  if (graded.every((g) => pickCorrectness(picks[g.id]?.pick ?? null, g.atsResult) === 0)) {
+  // Needs at least one pick: a player who sat the week out didn't "wipe out".
+  if (
+    pickedGames.length > 0 &&
+    graded.every((g) => pickCorrectness(picks[g.id]?.pick ?? null, g.atsResult) === 0)
+  ) {
     week("total_wipeout");
   }
   if (confPicks.length === 5 && confPicks.every((g) => pickCorrectness(picks[g.id]!.pick, g.atsResult) === 1)) {
@@ -615,7 +621,7 @@ export function evaluateWeekBadges(args: {
   }
   if (earnedLoneWolf) {
     week("lone_wolf");
-    if (!alreadyHasHowl) season("howl");
+    season("howl");
   }
 
   if (atsStreak >= 5) week("tide_rider");
@@ -637,8 +643,8 @@ export function evaluateWeekBadges(args: {
     if (ok) week("primetime");
   }
 
-  if (weekRankAts === 0 && !alreadyHasWeekChampion) season("week_champion");
-  if (weekRankPl === 0 && !alreadyHasBankrollKing) season("bankroll_king");
+  if (ats.first) season("week_champion");
+  if (pl.first) season("bankroll_king");
 
   // Monday Miracle: without MNF result would be ≤50%, with it >50%
   const mnf = bySlot.mnf;
@@ -716,21 +722,13 @@ export function evaluateWeekBadges(args: {
 
   if (winPct === 50 && graded.length > 0) week("split_decision");
 
-  // From the Dead / Fall From Grace
-  if (priorWeekRankAts != null && priorPlayerCount != null && priorPlayerCount > 1) {
-    const wasLast = priorWeekRankAts === priorPlayerCount - 1;
-    const wasFirst = priorWeekRankAts === 0;
-    if (wasLast && weekRankAts === 0) week("from_the_dead_ats");
-    if (wasFirst && weekRankAts === playerCount - 1) week("fall_from_grace_ats");
-  }
-  if (priorWeekRankPl != null && priorPlayerCount != null && priorPlayerCount > 1) {
-    const wasLast = priorWeekRankPl === priorPlayerCount - 1;
-    const wasFirst = priorWeekRankPl === 0;
-    if (wasLast && weekRankPl === 0) week("from_the_dead_pl");
-    if (wasFirst && weekRankPl === playerCount - 1) week("fall_from_grace_pl");
-  }
+  // From the Dead / Fall From Grace (tie-aware: co-leaders / co-last all count)
+  if (priorAts.last && ats.first) week("from_the_dead_ats");
+  if (priorAts.first && ats.last) week("fall_from_grace_ats");
+  if (priorPl.last && pl.first) week("from_the_dead_pl");
+  if (priorPl.first && pl.last) week("fall_from_grace_pl");
 
-  if (!alreadyHasNoShow && missed.length > 0 && pickedGames.length > 0) {
+  if (missed.length > 0 && pickedGames.length > 0) {
     season("no_show");
   }
 
@@ -780,4 +778,401 @@ export function weekConfWinPct(
     correct += pickCorrectness(up.pick, g.atsResult);
   }
   return computeWinPct(correct, total);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Season badge engine (pure): desired rows for a whole season + diff vs. DB rows
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Scores closer than this are treated as tied (float sums of juice-based units). */
+const SCORE_EPS = 1e-9;
+
+/**
+ * Tie-aware standings for one board. Everyone sharing the top score is `first`;
+ * everyone sharing the bottom score is `last` unless the whole board is tied.
+ */
+export function tieStandings(
+  entries: Array<{ userId: string; score: number }>,
+): Map<string, BoardStanding> {
+  const out = new Map<string, BoardStanding>();
+  if (entries.length === 0) return out;
+  let max = -Infinity;
+  let min = Infinity;
+  for (const e of entries) {
+    if (e.score > max) max = e.score;
+    if (e.score < min) min = e.score;
+  }
+  const allTied = max - min <= SCORE_EPS;
+  for (const e of entries) {
+    out.set(e.userId, {
+      first: max - e.score <= SCORE_EPS,
+      last: !allTied && e.score - min <= SCORE_EPS,
+    });
+  }
+  return out;
+}
+
+/** A week's full slate (every game in the week, graded or not). */
+export type SeasonSlate = { seasonType: number; weekNumber: number; games: GameData[] };
+
+export type BadgeEngineUser = { userId: string; username: string; displayName?: string | null };
+
+/** One badge row the engine wants to exist. season_once rows use weekNumber 0. */
+export type DesiredBadgeRow = {
+  userId: string;
+  badgeId: string;
+  seasonType: number;
+  weekNumber: number;
+  /** Week whose final results produced this row (for per-week reporting). */
+  source: { seasonType: number; weekNumber: number };
+};
+
+/** Week-scoped badges need the whole slate final and at least one graded game. */
+export function isSlateComplete(games: GameData[]): boolean {
+  return (
+    games.length > 0 &&
+    games.every((g) => g.status === "final") &&
+    games.some((g) => isGradedForStandings(g))
+  );
+}
+
+export function compareSlates(
+  a: { seasonType: number; weekNumber: number },
+  b: { seasonType: number; weekNumber: number },
+): number {
+  return a.seasonType - b.seasonType || a.weekNumber - b.weekNumber;
+}
+
+/**
+ * Identity of a badge row. season_once rows (week 0) are unique per user+badge
+ * (matches the `user_badges_season_once_idx` partial unique index), so their
+ * seasonType is not part of the key.
+ */
+export function badgeRowKey(r: {
+  userId: string;
+  badgeId: string;
+  seasonType: number | null;
+  weekNumber: number | null;
+}): string {
+  const wk = r.weekNumber ?? SEASON_BADGE_WEEK;
+  if (wk === SEASON_BADGE_WEEK) return `${r.userId}|${r.badgeId}|0`;
+  return `${r.userId}|${r.badgeId}|${r.seasonType ?? "null"}|${wk}`;
+}
+
+function streakEndingAt(pctsOldestFirst: number[]): number {
+  let streak = 0;
+  for (let i = pctsOldestFirst.length - 1; i >= 0; i--) {
+    if (pctsOldestFirst[i]! > 50) streak++;
+    else break;
+  }
+  return streak;
+}
+
+/**
+ * Compute every badge row the active season's final results justify.
+ *
+ * Rules (kept from the original per-week evaluator unless marked [fix]):
+ * - Only complete slates (every game final, ≥1 graded) are evaluated, oldest → newest
+ *   by (seasonType, week), so regular season precedes playoffs.
+ * - Weekly boards rank only *participants* (≥1 pick on a graded game that week). The ★ P/L
+ *   board ranks only P/L-eligible participants (eligible week with ≥1 ★ bet). [fix: players
+ *   with no picks, and ineligible weeks' 0.00 P/L, no longer occupy first/last]
+ * - Ties for first make co-champions: week_champion (top win %) and bankroll_king (top ★ P/L)
+ *   go to everyone sharing the top score. [fix: was whoever happened to sort first]
+ * - From the Dead / Fall From Grace use the same tie-aware standings vs. the previous week of
+ *   the same season type.
+ * - Streaks (hot_hand/tide_rider, golden_run/money_printer) reset when the season type changes;
+ *   ★ streaks skip ineligible weeks (unchanged).
+ * - high_roller / throne_room ("first time #1 overall"): after each completed week, the overall
+ *   standings through that week (same metrics as the overall leaderboard: win % over all graded
+ *   games; ★ P/L over eligible weeks) are checked and every co-leader earns it. Only completed
+ *   weeks count, so a mid-week (transient) leader is never awarded. Overall standings span the
+ *   whole season (regular + playoffs) like the leaderboard.
+ * - season_once rows keep the first week that earned them; lifetime-threshold rows are stamped
+ *   with the last completed slate's season type.
+ * - Games where `isGradedForStandings` is false never count (every helper checks it).
+ */
+export function computeDesiredBadges(input: {
+  users: BadgeEngineUser[];
+  slates: SeasonSlate[];
+  /** userId → public game id → pick, across the season. */
+  picksByUser: Map<string, Record<string, UserPick>>;
+}): { rows: DesiredBadgeRow[]; completedWeeks: Array<{ seasonType: number; weekNumber: number }> } {
+  const { users } = input;
+  const completed = input.slates.filter((s) => isSlateComplete(s.games)).sort(compareSlates);
+
+  const desired = new Map<string, DesiredBadgeRow>();
+  const add = (row: DesiredBadgeRow) => {
+    const key = badgeRowKey(row);
+    if (!desired.has(key)) desired.set(key, row);
+  };
+
+  const streaks = new Map<string, { ats: number[]; conf: number[] }>();
+  const lifetime = new Map<string, LifetimeBadgeCounts>();
+  const cumulative = new Map<
+    string,
+    { correct: number; total: number; pl: number; plWeeks: number; picked: boolean }
+  >();
+  for (const u of users) {
+    streaks.set(u.userId, { ats: [], conf: [] });
+    lifetime.set(u.userId, emptyLifetimeBadgeCounts());
+    cumulative.set(u.userId, { correct: 0, total: 0, pl: 0, plWeeks: 0, picked: false });
+  }
+
+  let prior: {
+    seasonType: number;
+    weekNumber: number;
+    ats: Map<string, BoardStanding>;
+    pl: Map<string, BoardStanding>;
+  } | null = null;
+  let lastSeasonType: number | null = null;
+
+  for (const slate of completed) {
+    const { seasonType, weekNumber, games } = slate;
+    const source = { seasonType, weekNumber };
+    const gameIds = new Set(games.map((g) => g.id));
+    const graded = games.filter((g) => isGradedForStandings(g));
+
+    if (lastSeasonType !== seasonType) {
+      for (const s of streaks.values()) {
+        s.ats = [];
+        s.conf = [];
+      }
+      lastSeasonType = seasonType;
+    }
+
+    const weekPicks = new Map<string, Record<string, UserPick>>();
+    const players: WeekComparePlayer[] = [];
+    const stats = new Map<
+      string,
+      {
+        correct: number;
+        total: number;
+        winPct: number;
+        pl: number;
+        eligible: boolean;
+        plEligible: boolean;
+        participant: boolean;
+      }
+    >();
+    for (const u of users) {
+      const all = input.picksByUser.get(u.userId) ?? {};
+      const picks: Record<string, UserPick> = {};
+      const comparePicks: WeekComparePlayer["picks"] = {};
+      for (const [gid, p] of Object.entries(all)) {
+        if (!gameIds.has(gid)) continue;
+        picks[gid] = p;
+        if (p.pick) comparePicks[gid] = { pick: p.pick, isConfidenceBet: p.isConfidenceBet };
+      }
+      weekPicks.set(u.userId, picks);
+      players.push({
+        userId: u.userId,
+        username: u.username,
+        displayName: u.displayName ?? u.username,
+        picks: comparePicks,
+      });
+      const rec = weekAtsRecord(games, picks);
+      const conf = confidencePlForWeek(games, picks);
+      stats.set(u.userId, {
+        ...rec,
+        pl: conf.pl,
+        eligible: conf.eligible,
+        plEligible: conf.eligible && conf.confCount > 0,
+        participant: graded.some((g) => picks[g.id]?.pick),
+      });
+    }
+
+    const atsBoard = tieStandings(
+      users
+        .filter((u) => stats.get(u.userId)!.participant)
+        .map((u) => ({ userId: u.userId, score: stats.get(u.userId)!.winPct })),
+    );
+    const plBoard = tieStandings(
+      users
+        .filter((u) => stats.get(u.userId)!.participant && stats.get(u.userId)!.plEligible)
+        .map((u) => ({ userId: u.userId, score: stats.get(u.userId)!.pl })),
+    );
+    const priorBoards =
+      prior != null && prior.seasonType === seasonType && prior.weekNumber === weekNumber - 1
+        ? prior
+        : null;
+
+    for (const u of users) {
+      const st = stats.get(u.userId)!;
+      const picks = weekPicks.get(u.userId)!;
+      const streak = streaks.get(u.userId)!;
+      if (st.total > 0) streak.ats.push(st.winPct);
+      if (st.eligible) streak.conf.push(weekConfWinPct(games, picks));
+
+      const awards = evaluateWeekBadges({
+        games,
+        seasonType,
+        weekNumber,
+        player: { userId: u.userId, username: u.username, picks },
+        allPlayers: players,
+        atsStreak: streakEndingAt(streak.ats),
+        confStreak: streakEndingAt(streak.conf),
+        ats: atsBoard.get(u.userId) ?? NO_STANDING,
+        pl: plBoard.get(u.userId) ?? NO_STANDING,
+        priorAts: priorBoards?.ats.get(u.userId) ?? NO_STANDING,
+        priorPl: priorBoards?.pl.get(u.userId) ?? NO_STANDING,
+      });
+      for (const a of awards) {
+        add({
+          userId: u.userId,
+          badgeId: a.badgeId,
+          seasonType: a.seasonType ?? seasonType,
+          weekNumber: a.weekNumber ?? SEASON_BADGE_WEEK,
+          source,
+        });
+      }
+
+      const ev = countLifetimeBadgeEvents(games, picks);
+      const counts = lifetime.get(u.userId)!;
+      for (const id of LIFETIME_THRESHOLD_BADGE_IDS) counts[id] += ev[id];
+
+      const cum = cumulative.get(u.userId)!;
+      cum.correct += st.correct;
+      cum.total += st.total;
+      if (st.plEligible) {
+        cum.pl += st.pl;
+        cum.plWeeks++;
+      }
+      if (st.participant) cum.picked = true;
+    }
+
+    // Overall leaders through this completed week → High Roller / Throne Room (co-leaders too)
+    const overallWin = tieStandings(
+      users
+        .filter((u) => cumulative.get(u.userId)!.picked && cumulative.get(u.userId)!.total > 0)
+        .map((u) => {
+          const c = cumulative.get(u.userId)!;
+          return { userId: u.userId, score: computeWinPct(c.correct, c.total) };
+        }),
+    );
+    const overallPl = tieStandings(
+      users
+        .filter((u) => cumulative.get(u.userId)!.plWeeks > 0)
+        .map((u) => ({ userId: u.userId, score: cumulative.get(u.userId)!.pl })),
+    );
+    for (const [userId, s] of overallWin) {
+      if (s.first) {
+        add({ userId, badgeId: "high_roller", seasonType, weekNumber: SEASON_BADGE_WEEK, source });
+      }
+    }
+    for (const [userId, s] of overallPl) {
+      if (s.first) {
+        add({ userId, badgeId: "throne_room", seasonType, weekNumber: SEASON_BADGE_WEEK, source });
+      }
+    }
+
+    prior = { seasonType, weekNumber, ats: atsBoard, pl: plBoard };
+  }
+
+  const last = completed[completed.length - 1];
+  if (last) {
+    const source = { seasonType: last.seasonType, weekNumber: last.weekNumber };
+    for (const u of users) {
+      for (const a of lifetimeBadgeAwards(lifetime.get(u.userId)!, last.seasonType)) {
+        add({
+          userId: u.userId,
+          badgeId: a.badgeId,
+          seasonType: last.seasonType,
+          weekNumber: SEASON_BADGE_WEEK,
+          source,
+        });
+      }
+    }
+  }
+
+  return {
+    rows: [...desired.values()],
+    completedWeeks: completed.map((s) => ({ seasonType: s.seasonType, weekNumber: s.weekNumber })),
+  };
+}
+
+/** Badge ids whose season_once (week 0) rows are fully recomputed by `computeDesiredBadges`. */
+export const ENGINE_SEASON_BADGE_IDS: ReadonlySet<string> = new Set([
+  "howl",
+  "no_show",
+  "week_champion",
+  "bankroll_king",
+  "high_roller",
+  "throne_room",
+  ...LIFETIME_THRESHOLD_BADGE_IDS,
+]);
+
+export type ExistingBadgeRow = {
+  id: string;
+  userId: string;
+  badgeId: string;
+  seasonType: number | null;
+  weekNumber: number;
+  earnedAt: Date;
+};
+
+/**
+ * What the diff may delete. `user_badges` has no season column, so ownership is inferred:
+ * - only rows of `userIds` (active, non-banned users — banned users' rows are left alone);
+ * - only rows earned at/after `seasonStartedAt` (the active season row's createdAt); anything
+ *   older must come from an earlier season and is never deleted;
+ * - week rows (week > 0) only when their (seasonType, week) is a week of the active season;
+ * - season_once rows (week 0) only for badge ids the engine recomputes (ENGINE_SEASON_BADGE_IDS);
+ * - legacy lifetime-threshold rows stored with week > 0 are always stale (never displayable).
+ * Out-of-scope rows still satisfy a desired row with the same key (never duplicated) but are
+ * never deleted.
+ */
+export type BadgeDiffScope = {
+  userIds: ReadonlySet<string>;
+  /** `${seasonType}-${weekNumber}` for every week of the active season. */
+  weekKeys: ReadonlySet<string>;
+  seasonStartedAt: Date | null;
+  /** Restrict the whole diff (inserts and deletes) to these badge ids, e.g. lifetime reconcile. */
+  onlyBadgeIds?: ReadonlySet<string>;
+};
+
+export function isRowInDiffScope(row: ExistingBadgeRow, scope: BadgeDiffScope): boolean {
+  if (!scope.userIds.has(row.userId)) return false;
+  if (scope.onlyBadgeIds && !scope.onlyBadgeIds.has(row.badgeId)) return false;
+  if (scope.seasonStartedAt && row.earnedAt.getTime() < scope.seasonStartedAt.getTime()) {
+    return false;
+  }
+  if (row.weekNumber === SEASON_BADGE_WEEK) return ENGINE_SEASON_BADGE_IDS.has(row.badgeId);
+  if (isLifetimeThresholdBadge(row.badgeId)) return true;
+  return scope.weekKeys.has(`${row.seasonType}-${row.weekNumber}`);
+}
+
+/**
+ * Diff desired rows against existing rows. Matching existing rows are kept untouched
+ * (earnedAt preserved); missing rows are inserted; in-scope rows that aren't desired, and
+ * in-scope duplicates of a key, are deleted.
+ */
+export function diffBadgeRows(
+  existing: ExistingBadgeRow[],
+  desired: DesiredBadgeRow[],
+  scope: BadgeDiffScope,
+): { toInsert: DesiredBadgeRow[]; toDelete: ExistingBadgeRow[]; kept: ExistingBadgeRow[] } {
+  const only = scope.onlyBadgeIds;
+  const wanted = only ? desired.filter((d) => only.has(d.badgeId)) : desired;
+  const desiredKeys = new Set(wanted.map(badgeRowKey));
+
+  // Oldest first so the original grant survives when duplicates exist.
+  const sorted = [...existing].sort(
+    (a, b) => a.earnedAt.getTime() - b.earnedAt.getTime() || a.id.localeCompare(b.id),
+  );
+  const seen = new Set<string>();
+  const kept: ExistingBadgeRow[] = [];
+  const toDelete: ExistingBadgeRow[] = [];
+  for (const row of sorted) {
+    const key = badgeRowKey(row);
+    const inScope = isRowInDiffScope(row, scope);
+    const duplicate = seen.has(key);
+    seen.add(key);
+    if (inScope && (duplicate || !desiredKeys.has(key))) toDelete.push(row);
+    else kept.push(row);
+  }
+
+  const keptKeys = new Set(kept.map(badgeRowKey));
+  const toInsert = wanted.filter((d) => !keptKeys.has(badgeRowKey(d)));
+  return { toInsert, toDelete, kept };
 }

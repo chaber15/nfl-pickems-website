@@ -31,7 +31,7 @@ export function buildHistoryRows(
 
       if (!up?.pick && locked) {
         outcome = "no_pick";
-      } else if (up?.pick && g.status === "final" && g.atsResult && g.spread != null && g.favoriteSide) {
+      } else if (up?.pick && isGradedForStandings(g) && g.atsResult && g.spread != null && g.favoriteSide) {
         const c = pickCorrectness(up.pick, g.atsResult);
         outcome = c === 1 ? "win" : c === 0.5 ? "push" : "loss";
         units = unitsDelta(up.pick, g.atsResult, g.favoriteSide, g.oddsAway, g.oddsHome);
@@ -87,11 +87,34 @@ function streakFromWeekWinPcts(weekWinPctsNewestFirst: number[]): number {
   return streak;
 }
 
+/** Weekly row plus its season type (2 = regular, 3 = playoffs) so playoff weeks sort last. */
+export type WeeklyStatRowWithSeason = WeeklyStatRow & { seasonType: number };
+
+type WeekRef = { week: number; pl: number; seasonType: number };
+
+/** `UserStats` with additive `seasonType` fields on weekly rows and best/worst weeks. */
+export type ComputedUserStats = Omit<
+  UserStats,
+  "weeklyRows" | "bestWeekConfidence" | "worstWeekConfidence"
+> & {
+  weeklyRows: WeeklyStatRowWithSeason[];
+  bestWeekConfidence: WeekRef | null;
+  worstWeekConfidence: WeekRef | null;
+};
+
+/** Chronological week order: (seasonType, week) so playoffs follow the regular season. */
+export function compareSeasonWeeks(
+  a: { seasonType: number; weekNumber: number },
+  b: { seasonType: number; weekNumber: number },
+): number {
+  return a.seasonType - b.seasonType || a.weekNumber - b.weekNumber;
+}
+
 export function computeUserStats(
   games: GameData[],
   picks: Record<string, UserPick>,
   _now = new Date(),
-): UserStats {
+): ComputedUserStats {
   let correctAll = 0;
   let totalAll = 0;
   let correctConf = 0;
@@ -109,6 +132,7 @@ export function computeUserStats(
     string,
     {
       weekNumber: number;
+      seasonType: number;
       phase: GameData["phase"];
       picksMade: number;
       totalGames: number;
@@ -140,6 +164,7 @@ export function computeUserStats(
     if (!weekBuckets.has(key)) {
       weekBuckets.set(key, {
         weekNumber: g.weekNumber,
+        seasonType: g.seasonType,
         phase: g.phase,
         picksMade: 0,
         totalGames: 0,
@@ -187,13 +212,14 @@ export function computeUserStats(
     }
   }
 
-  const weeklyRows: WeeklyStatRow[] = Array.from(weekBuckets.values())
+  const weeklyRows: WeeklyStatRowWithSeason[] = Array.from(weekBuckets.values())
     .map((b) => {
       const eligible = weekPlEligible(b.phase, b.confidenceBets);
       const weekConfPl = eligible ? b.confidencePlRaw : 0;
       if (eligible) confidencePl += b.confidencePlRaw;
-      return {
+      const row: WeeklyStatRowWithSeason = {
         weekNumber: b.weekNumber,
+        seasonType: b.seasonType,
         phase: b.phase,
         picksMade: b.picksMade,
         totalGames: b.totalGames,
@@ -203,8 +229,9 @@ export function computeUserStats(
         hypotheticalPl: b.hypotheticalPl,
         plEligible: eligible,
       };
+      return row;
     })
-    .sort((a, b) => a.weekNumber - b.weekNumber);
+    .sort(compareSeasonWeeks);
 
   // Recalculate confidencePl from weekly rows (already accumulated above correctly)
   confidencePl = weeklyRows.reduce((sum, r) => sum + r.confidencePl, 0);
@@ -244,28 +271,26 @@ export function computeUserStats(
     totalConf = totalConfEligible;
   }
 
-  let bestWeekConfidence: UserStats["bestWeekConfidence"] = null;
-  let worstWeekConfidence: UserStats["worstWeekConfidence"] = null;
+  let bestWeekConfidence: WeekRef | null = null;
+  let worstWeekConfidence: WeekRef | null = null;
   for (const row of weeklyRows) {
     if (!row.plEligible) continue;
-    if (!bestWeekConfidence || row.confidencePl > bestWeekConfidence.pl) {
-      bestWeekConfidence = { week: row.weekNumber, pl: row.confidencePl };
-    }
-    if (!worstWeekConfidence || row.confidencePl < worstWeekConfidence.pl) {
-      worstWeekConfidence = { week: row.weekNumber, pl: row.confidencePl };
-    }
+    const ref = { week: row.weekNumber, pl: row.confidencePl, seasonType: row.seasonType };
+    if (!bestWeekConfidence || row.confidencePl > bestWeekConfidence.pl) bestWeekConfidence = ref;
+    if (!worstWeekConfidence || row.confidencePl < worstWeekConfidence.pl) worstWeekConfidence = ref;
   }
 
   const pickedCount = favPicks + dogPicks;
 
-  const weekPctNewestFirst = [...weeklyRows]
+  // Newest first = reverse chronological (seasonType, week), so playoff weeks are newest.
+  const weekPctNewestFirst = weeklyRows
     .filter((r) => r.totalGames > 0)
-    .sort((a, b) => b.weekNumber - a.weekNumber)
+    .reverse()
     .map((r) => r.winPct);
 
   const confWeekPctNewestFirst = [...confWeekPctByKey.values()]
     .filter((w) => w.total > 0)
-    .sort((a, b) => b.weekNumber - a.weekNumber || b.seasonType - a.seasonType)
+    .sort((a, b) => compareSeasonWeeks(b, a))
     .map((w) => computeWinPct(w.correct, w.total));
 
   return {

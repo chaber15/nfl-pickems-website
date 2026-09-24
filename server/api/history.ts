@@ -1,8 +1,8 @@
 import type { HandlerEvent } from "@netlify/functions";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { getDb, schema } from "../db";
-import { dbGameToGameData, getActiveSeasonGameRows } from "../espn/sync";
-import type { UserPick } from "../../shared/types";
+import { dbGameToGameData, resolveActiveSeasonId } from "../espn/sync";
+import type { GameData, UserPick } from "../../shared/types";
 import { buildHistoryRows, computeUserStats } from "../../shared/statsCompute";
 import { publicDisplayName } from "../../shared/userDisplay";
 import {
@@ -25,9 +25,52 @@ async function findUserByUsername(username: string) {
   return found;
 }
 
+/**
+ * The active season's games (optionally one week) and one user's picks on them,
+ * both filtered in SQL (never loads other seasons' picks).
+ */
+async function loadSeasonGamesAndPicks(
+  userId: string,
+  weekFilter?: { seasonType: number; week: number },
+): Promise<{ games: GameData[]; picks: Record<string, UserPick> }> {
+  const db = getDb();
+  const seasonId = await resolveActiveSeasonId();
+  if (!seasonId) return { games: [], picks: {} };
+
+  const weekConds: SQL[] = [eq(schema.weeks.seasonId, seasonId)];
+  if (weekFilter) {
+    weekConds.push(eq(schema.weeks.seasonType, weekFilter.seasonType));
+    weekConds.push(eq(schema.weeks.weekNumber, weekFilter.week));
+  }
+
+  const [gameRows, pickRows] = await Promise.all([
+    db
+      .select({ game: schema.games, week: schema.weeks })
+      .from(schema.games)
+      .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
+      .where(and(...weekConds)),
+    db
+      .select({
+        gameId: schema.games.espnEventId,
+        pick: schema.picks.pick,
+        isConfidenceBet: schema.picks.isConfidenceBet,
+      })
+      .from(schema.picks)
+      .innerJoin(schema.games, eq(schema.picks.gameId, schema.games.id))
+      .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
+      .where(and(eq(schema.picks.userId, userId), ...weekConds)),
+  ]);
+
+  const games = gameRows.map(({ game, week }) => dbGameToGameData(game, week));
+  const picks: Record<string, UserPick> = {};
+  for (const p of pickRows) {
+    picks[p.gameId] = { gameId: p.gameId, pick: p.pick, isConfidenceBet: p.isConfidenceBet };
+  }
+  return { games, picks };
+}
+
 export async function handleHistory(event: HandlerEvent) {
   const { user: sessionUser } = await requireUser(event);
-  const db = getDb();
   const params = event.queryStringParameters ?? {};
   const seasonType = params.seasonType != null ? Number(params.seasonType) : null;
   const week = params.week != null ? Number(params.week) : null;
@@ -40,28 +83,11 @@ export async function handleHistory(event: HandlerEvent) {
     targetUser = found;
   }
 
-  let gameRows = await getActiveSeasonGameRows();
-
-  if (seasonType != null && week != null) {
-    gameRows = gameRows.filter(
-      (r) => r.week.seasonType === seasonType && r.week.weekNumber === week,
-    );
-  }
-
-  const userPicks = await db.select().from(schema.picks).where(eq(schema.picks.userId, targetUser.id));
-
-  const games = gameRows.map(({ game, week: w }) => dbGameToGameData(game, w));
-  const espnByDbId = new Map(gameRows.map(({ game }) => [game.id, game.espnEventId]));
-  const picks: Record<string, UserPick> = {};
-  for (const p of userPicks) {
-    const publicId = espnByDbId.get(p.gameId);
-    if (!publicId) continue;
-    picks[publicId] = {
-      gameId: publicId,
-      pick: p.pick,
-      isConfidenceBet: p.isConfidenceBet,
-    };
-  }
+  const weekFilter =
+    seasonType != null && week != null && Number.isFinite(seasonType) && Number.isFinite(week)
+      ? { seasonType, week }
+      : undefined;
+  const { games, picks } = await loadSeasonGamesAndPicks(targetUser.id, weekFilter);
 
   return json(200, {
     history: buildHistoryRows(games, picks),
@@ -72,7 +98,6 @@ export async function handleHistory(event: HandlerEvent) {
 
 export async function handleStats(event: HandlerEvent) {
   const { user: sessionUser } = await requireUser(event);
-  const db = getDb();
   const params = event.queryStringParameters ?? {};
   const usernameParam = params.username?.trim();
 
@@ -83,24 +108,10 @@ export async function handleStats(event: HandlerEvent) {
     targetUser = found;
   }
 
-  const allGames = await getActiveSeasonGameRows();
-
-  const userPicks = await db.select().from(schema.picks).where(eq(schema.picks.userId, targetUser.id));
-
-  const games = allGames.map(({ game, week }) => dbGameToGameData(game, week));
-  const espnByDbId = new Map(allGames.map(({ game }) => [game.id, game.espnEventId]));
-  const picks: Record<string, UserPick> = {};
-  for (const p of userPicks) {
-    const publicId = espnByDbId.get(p.gameId);
-    if (!publicId) continue;
-    picks[publicId] = {
-      gameId: publicId,
-      pick: p.pick,
-      isConfidenceBet: p.isConfidenceBet,
-    };
-  }
-
-  const badgeRowsFresh = await badgesForUser(targetUser.id);
+  const [{ games, picks }, badgeRowsFresh] = await Promise.all([
+    loadSeasonGamesAndPicks(targetUser.id),
+    badgesForUser(targetUser.id),
+  ]);
 
   return json(200, {
     stats: computeUserStats(games, picks),
