@@ -57,9 +57,7 @@ export function TeamPanel({
             {name}
           </p>
           <p className="font-mono text-xs text-[var(--text-muted)]">
-            {(game.status === "in_progress" || game.status === "final") && record
-              ? record
-              : `${abbrev} · ${venue}`}
+            {record ?? `${abbrev} · ${venue}`}
           </p>
         </div>
       </div>

@@ -23,7 +23,6 @@ export function PickButton({
   const pickSide = pickSideForVenue(game, venue);
   const abbrev = venue === "away" ? game.awayAbbrev : game.homeAbbrev;
   const location = teamLocationName(abbrev, venue === "away" ? game.awayTeam : game.homeTeam);
-  const record = venue === "away" ? game.awayRecord : game.homeRecord;
   const venueLabel = venue === "away" ? "AWAY" : "HOME";
   const spread =
     game.spread != null && pickSide && game.favoriteSide
@@ -58,11 +57,6 @@ export function PickButton({
       </span>
       <span className="w-full truncate text-sm font-semibold leading-tight">
         {location}
-        {record ? (
-          <span className={`ml-1 font-mono text-xs font-medium ${selected ? "opacity-80" : "text-[var(--text-muted)]"}`}>
-            ({record})
-          </span>
-        ) : null}
       </span>
       {spread && <span className="font-mono text-base font-bold">{spread}</span>}
       {juice && (
