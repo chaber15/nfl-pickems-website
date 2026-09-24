@@ -112,7 +112,8 @@ export function CrowdLean({
 
       {crowd.openCount > 0 && (
         <p className="text-center text-[10px] font-medium text-[var(--text-muted)]">
-          {crowd.openCount} still open
+          {crowd.openCount}{" "}
+          {new Date() >= new Date(game.kickoffAt) ? "didn't pick" : "still deciding"}
         </p>
       )}
     </div>

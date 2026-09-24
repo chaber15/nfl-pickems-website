@@ -4,67 +4,71 @@ Family NFL spread pick'em pool with Retro Bowl arcade styling, ESPN sync, dual l
 
 ## Quick start
 
-Requires a Postgres database (Neon or Netlify DB) and Netlify Dev for the API.
+Requires Node 22+, a Postgres database (Neon), and the Netlify CLI.
 
 ```bash
-cp .env.example .env   # set DATABASE_URL, SESSION_SECRET, ADMIN_USERNAMES
+cp .env.example .env   # DATABASE_URL = your Neon **dev branch**, plus test ADMIN_PIN / SUPER_ADMIN_PIN
 npm install
-npm run db:push
+npm run db:push        # applies schema to whatever DATABASE_URL points at — keep it the dev branch
 npx netlify dev
 ```
 
-Open http://localhost:8888 (or the URL Netlify prints), enter a username, and make picks.
+Open http://localhost:8888, enter a username, and make picks.
 
-> **Local tip:** SPA fallback is in `public/_redirects` (not a catch-all in `netlify.toml`) so Vite module URLs keep working under `netlify dev`.
+> **Never point local `.env` at production.** `drizzle-kit` and `netlify dev` read `.env`, so local commands would write to live data. The production `DATABASE_URL` lives only in Netlify env vars. Test against a Neon branch (Neon console → Branches → New branch from `main`).
 
 ## Environment variables
 
-Copy `.env.example` to `.env`:
-
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | Yes | Neon/Netlify DB Postgres connection string |
-| `SESSION_SECRET` | Recommended | Secret for sessions |
-| `ADMIN_USERNAMES` | Optional | Comma-separated usernames bootstrapped as admin |
+| `DATABASE_URL` | Yes | Neon Postgres connection string (dev branch locally, production only in Netlify) |
+| `ADMIN_PIN` | For admin | Passphrase (≥10 chars) that unlocks the Admin page for admins |
+| `SUPER_ADMIN_PIN` | For super admin | Separate passphrase (≥10 chars) known only to the owner; unlocks super-admin powers |
+| `ALLOW_FACTORY_RESET` | No | Set to `true` only while you intend to run a factory reset; leave unset otherwise |
 
-After pulling schema changes (badges, live-clock columns, team records, etc.), run `npm run db:push` against the target database **before** (or with) shipping code that reads those columns. Netlify build does **not** auto-push schema.
+## Accounts & admin
+
+- Players log in with **just a username** (intentional — family-friendly). Typing an unknown name asks before creating a new player. Names like `admin`/`root` can't be registered.
+- Once everyone has joined, close registration in **Admin** so strangers can't create accounts. The leaderboard API requires login.
+- **Admin** (`users.is_admin`): unlock with `ADMIN_PIN` once per device → ESPN sync, badge recalculation, edit names, ban/unban, open/close registration.
+- **Super admin** (`users.is_super_admin`, set directly in the database): unlock with `SUPER_ADMIN_PIN` → also grant/revoke admin, delete players, factory reset (only if `ALLOW_FACTORY_RESET=true`). Regular admins can't act on a super admin.
+- Passphrases are needed because anyone can type any username; changing a PIN in Netlify re-locks every device.
 
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm run build` | Production build to `dist/` |
-| `npm run preview` | Preview production build |
-| `npm test` | Scoring / line-lock unit tests |
-| `npm run db:push` | Apply Drizzle schema to database |
+| `npm run build` | Typecheck (`tsc -b`) + production build to `dist/` |
+| `npm test` | All unit tests (`*.test.ts` in `shared/` and `server/`, via tsx + node:test) |
+| `npm run db:push` | Apply Drizzle schema to `DATABASE_URL` (dev branch!) |
 | `npx netlify dev` | Local dev with Vite + Netlify Functions |
-| `npx netlify deploy --prod --build` | Build and publish production from this machine |
 
-## Deploy to Netlify
+CI (`.github/workflows/ci.yml`) runs build + tests on every push.
+
+## Deploying
+
+Schema changes are **not** applied by the build. For a release that changes `server/db/schema.ts`:
+
+1. Create a fresh Neon branch from `main` as a backup/snapshot.
+2. Apply the (additive) schema change to production — review the SQL first.
+3. Deploy:
 
 ```bash
-npx netlify deploy --prod --build
+npx netlify deploy --build            # draft URL to smoke-test
+npx netlify deploy --build --prod     # production
 ```
 
-One-time / dashboard setup:
-
-1. Link the project (`npx netlify link`) and enable **Netlify DB** (or a Neon database).
-2. Set `DATABASE_URL` and `ADMIN_USERNAMES` in Netlify env vars.
-3. Apply schema once: `DATABASE_URL=... npm run db:push`
-4. Build / publish / functions are already set in `netlify.toml` (`npm run build`, `dist`, `netlify/functions`).
-
-**Deploy blockers if missing:** `DATABASE_URL` (auth/picks/leaderboards), `ADMIN_USERNAMES` (first admin), and a successful `db:push`.
+Redirects (`/api/*` → function, then SPA fallback) live **only** in `public/_redirects`; order matters because Netlify reads that file before `netlify.toml`.
 
 ### Scheduled ESPN sync
 
-Handlers skip work outside their windows to stay within free-tier limits:
+One hourly function (`netlify/functions/sync-espn.ts`, logic in `server/espn/scheduled.ts`):
 
-| Function | When |
-|----------|------|
-| `sync-espn` | Tue/Wed/Fri/Sat 06:00 & 18:00 UTC (lines / catch-up) |
-| `sync-espn-sun` | Every 15m on Sundays (skips before ~9am ET) |
-| `sync-espn-primetime` | Every 15m Mon/Thu 22–23 UTC |
-| `sync-espn-late` | Every 15m 00–04 UTC Mon/Tue/Fri (SNF / MNF / TNF wrap-up) |
+- Skips without touching the database from March–July and 2:00–8:59am ET.
+- Otherwise one query decides whether ESPN work is due: a game has kicked off and isn't final, a game kicks off within the hour, or lines need refreshing before the Wednesday 8am ET lock.
+- Awards badges idempotently when a week becomes fully final.
+
+Pages also trigger a sync on read (throttled to once per 5 minutes) while games are live, so anyone watching gets near-live scores on any day.
 
 ## Features
 
@@ -74,24 +78,23 @@ Handlers skip work outside their windows to stay within free-tier limits:
 - **Leaderboard**: Win % and Confidence P/L, overall or by week; badge chips with hover tooltips
 - **Stats**: Confidence P/L vs Hypothetical P/L, streaks, weekly table, earned badges
 - **Badges**: Week awards and career-threshold badges (rarity-colored chips). Cumulative badges (`By a Nose`, `Juice Box`, `Road Dog`, `Steamroller`, `Bite Back`) need career totals — definitions in `shared/badges.ts` (`LIFETIME_BADGE_THRESHOLDS`)
-- **Admin**: Ban/unban/delete, display names, lock registration, ESPN sync, badge reset & recalculate, factory **Reset**
+- **Admin**: passphrase-unlocked; two tiers (see *Accounts & admin*)
 - **Themes**: Light / dark / system
 
 ## Scoring
 
 See `shared/scoring.ts` (run `npm test`):
 
-- **Win %**: all locked games count; unpicked = wrong; pushes = 0.5
+- **Win %**: every final game with a line counts; unpicked = wrong; pushes = 0.5. Postponed/canceled games are never graded
 - **Confidence P/L**: 5 bets/week (regular season); all playoff games auto-count
 - **Hypothetical P/L**: all picks at odds + -1 unit per unpicked game
-- **ATS**: favorite covers when `(favoriteScore - underdogScore) - spread > 0`
+- **ATS**: favorite covers when `(favoriteScore - underdogScore) - spread > 0`; graded against the line frozen at Wednesday 8:00 AM ET. If the favorite flips before the lock, existing picks are swapped so everyone keeps the team they tapped
 
 ## Badges
 
 Catalog and evaluation: `shared/badges.ts`. Server award / wipe / reconcile: `server/badges.ts`.
 
-- Week-scoped badges award when a slate is fully final (also on Admin recalculate).
-- Career-threshold badges are wiped and re-granted from season totals during week award / Admin **Reset & recalculate badges** — not on every leaderboard or stats read.
+- Badges are computed in memory for the active season and diffed against stored rows (insert missing / delete stale in one transaction), so existing badges keep their earned date. Runs when a week becomes fully final and on Admin **Recalculate badges**.
 - To change a threshold: edit `LIFETIME_BADGE_THRESHOLDS` **and** the matching catalog description, then ship + run recalculate if old rows were granted under the previous rule.
 
 ## Project structure
@@ -101,5 +104,5 @@ src/           React frontend
 shared/        Scoring, badges, ESPN client, types, game order (frontend + functions)
 server/        Drizzle schema, API handlers, auth, badge awards, ESPN sync
 netlify/       Netlify Functions (API + scheduled sync)
-public/        PWA assets + `_redirects` (SPA fallback)
+public/        PWA assets + `_redirects` (API route + SPA fallback)
 ```
