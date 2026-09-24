@@ -3,7 +3,7 @@ import { getDb, hasDatabase, schema } from "../db";
 import { resolveCurrentPickemsWeek } from "../../shared/espnClient";
 import { computeLineLockAt, isPastLineLock, LINE_LOCK_TIMEZONE } from "../../shared/lineLock";
 import { clampToAvailableWeek, isValidPickemsWeek } from "../../shared/weekUtils";
-import { getGamesForWeek, STALE_UNFINISHED_MS, syncEspnWeek } from "./sync";
+import { STALE_UNFINISHED_MS, syncEspnWeek } from "./sync";
 
 /** Sync ahead of a kickoff so the hourly run before a game catches its final pre-game state. */
 export const KICKOFF_SOON_MS = 60 * 60 * 1000;
@@ -199,15 +199,9 @@ export async function runScheduledEspnSync(now = new Date()): Promise<ScheduledS
       summary.upserted = result.upserted;
       summary.picksSwapped = result.picksSwapped;
 
-      // A week that had live / unfinished games may have just become fully final.
-      if (target.reasons.includes("live")) {
-        const games = await getGamesForWeek(target.seasonType, target.week);
-        if (games.length > 0 && games.every((g) => g.status === "final")) {
-          // TODO(merge): use awardBadgesIfWeekComplete
-          const { awardBadgesForWeek } = await import("../badges");
-          summary.badges = await awardBadgesForWeek(target.seasonType, target.week);
-        }
-      }
+      // Idempotent: a no-op (2 cheap queries) unless the week is fully final with badges to award.
+      const { awardBadgesIfWeekComplete } = await import("../badges");
+      summary.badges = await awardBadgesIfWeekComplete(target.seasonType, target.week);
     } catch (err) {
       console.error(`Scheduled ESPN sync failed for ${target.seasonType}/${target.week}:`, err);
       summary.error = err instanceof Error ? err.message : String(err);

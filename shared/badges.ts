@@ -828,10 +828,16 @@ export type DesiredBadgeRow = {
 };
 
 /** Week-scoped badges need the whole slate final and at least one graded game. */
-export function isSlateComplete(games: GameData[]): boolean {
+/** Games still "scheduled" this long after kickoff (canceled / never rescheduled) don't block a week. */
+const ABANDONED_GAME_MS = 3 * 24 * 60 * 60 * 1000;
+
+export function isSlateComplete(games: GameData[], now = new Date()): boolean {
+  const settled = (g: GameData) =>
+    g.status === "final" ||
+    (g.status === "scheduled" && now.getTime() - new Date(g.kickoffAt).getTime() > ABANDONED_GAME_MS);
   return (
     games.length > 0 &&
-    games.every((g) => g.status === "final") &&
+    games.every(settled) &&
     games.some((g) => isGradedForStandings(g))
   );
 }
