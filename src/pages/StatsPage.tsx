@@ -1,10 +1,12 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Question } from "../components/icons";
-import type { EarnedBadge, UserStats } from "@shared/types";
-import { AppShell } from "../components/AppShell";
+import { CONFIDENCE_BETS_PER_WEEK, type EarnedBadge, type UserStats } from "@shared/types";
+import { isPlayoffPhase } from "@shared/scoring";
 import { BadgeChipRow } from "../components/BadgeChip";
-import { apiLeaderboard, apiStats } from "../lib/api";
+import { ErrorState } from "../components/ErrorState";
+import { apiLeaderboard, apiStats, errorMessage } from "../lib/api";
+import { fetchCached, leaderboardCacheKey } from "../lib/cache";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
 import { getVisibleCrowdUsernames } from "../lib/crowdVisibility";
@@ -79,7 +81,7 @@ const STAT_HELP = {
   winPctConfidence:
     "ATS win rate on your ★ confidence bets only (eligible weeks / playoffs).",
   confidencePl:
-    "Units won or lost on ★ confidence bets using the posted juice. Only weeks with exactly 5 ★ bets count (playoffs: all games).",
+    `Profit & loss: units won or lost on ★ confidence bets using the posted juice (the price of the bet, e.g. −110 risks 1.10 to win 1). Only weeks with exactly ${CONFIDENCE_BETS_PER_WEEK} ★ bets count (playoffs: all games).`,
   hypotheticalPl:
     "What your P/L would be if every pick counted at the posted odds. Each missed game costs 1 unit.",
   confidenceRoi:
@@ -105,53 +107,73 @@ export function StatsPage() {
   const { ready } = useWeek();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [badges, setBadges] = useState<EarnedBadge[]>([]);
   const [viewLabel, setViewLabel] = useState<string | null>(null);
-  const [starredUsers, setStarredUsers] = useState<string[]>([]);
+  const [otherPlayers, setOtherPlayers] = useState<Array<{ username: string; label: string }>>([]);
+  const statsReq = useRef(0);
 
   const targetUsername = routeUser ?? username ?? undefined;
   const viewingOther =
     routeUser != null && username != null && routeUser.toLowerCase() !== username.toLowerCase();
   const isOwnStats = !viewingOther;
 
+  // Player list for the "see another player" picker. The overall leaderboard rarely changes
+  // mid-visit, so reuse it for 5 minutes instead of refetching on every Stats visit.
   useEffect(() => {
     if (!ready) return;
+    let cancelled = false;
     (async () => {
       try {
-        const res = await apiLeaderboard();
-        const names = res.entries.map((e) => e.username);
-        setStarredUsers(
-          getVisibleCrowdUsernames(names).filter(
-            (n) => !username || n.toLowerCase() !== username.toLowerCase(),
-          ),
+        const res = await fetchCached(leaderboardCacheKey(), () => apiLeaderboard(), 5 * 60_000);
+        if (cancelled) return;
+        const visible = new Set(getVisibleCrowdUsernames(res.entries.map((e) => e.username)));
+        setOtherPlayers(
+          res.entries
+            .filter(
+              (e) =>
+                visible.has(e.username) &&
+                (!username || e.username.toLowerCase() !== username.toLowerCase()),
+            )
+            .map((e) => ({ username: e.username, label: e.displayName || e.username }))
+            .sort((a, b) => a.label.localeCompare(b.label)),
         );
       } catch {
-        setStarredUsers([]);
+        if (!cancelled) setOtherPlayers([]);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [ready, username]);
 
-  useEffect(() => {
+  const loadStats = useCallback(async () => {
     if (!ready) return;
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await apiStats(viewingOther ? routeUser : undefined);
-        setStats(res.stats);
-        setBadges(res.badges ?? []);
-        setViewLabel(res.displayName ?? res.username ?? routeUser ?? null);
-      } catch {
-        setStats(null);
-        setBadges([]);
-        setViewLabel(routeUser ?? null);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    const id = ++statsReq.current;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiStats(viewingOther ? routeUser : undefined);
+      if (id !== statsReq.current) return;
+      setStats(res.stats);
+      setBadges(res.badges ?? []);
+      setViewLabel(res.displayName ?? res.username ?? routeUser ?? null);
+    } catch (err) {
+      if (id !== statsReq.current) return;
+      setStats(null);
+      setBadges([]);
+      setViewLabel(routeUser ?? null);
+      setError(errorMessage(err, "Couldn't load stats"));
+    } finally {
+      if (id === statsReq.current) setLoading(false);
+    }
   }, [ready, routeUser, viewingOther]);
 
+  useEffect(() => {
+    void loadStats();
+  }, [loadStats]);
+
   return (
-    <AppShell>
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -166,9 +188,9 @@ export function StatsPage() {
               </p>
             )}
           </div>
-          {isOwnStats && starredUsers.length > 0 && (
+          {isOwnStats && otherPlayers.length > 0 && (
             <label className="flex flex-col gap-1 text-sm font-semibold">
-              <span className="text-[var(--text-muted)]">View starred player</span>
+              <span className="text-[var(--text-muted)]">See another player&apos;s stats</span>
               <select
                 className="min-h-11 rounded-xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] px-3"
                 value=""
@@ -178,9 +200,9 @@ export function StatsPage() {
                 }}
               >
                 <option value="">Choose…</option>
-                {starredUsers.map((u) => (
-                  <option key={u} value={u}>
-                    {u}
+                {otherPlayers.map((p) => (
+                  <option key={p.username} value={p.username}>
+                    {p.label}
                   </option>
                 ))}
               </select>
@@ -194,6 +216,8 @@ export function StatsPage() {
               <div key={i} className="h-24 animate-pulse rounded-2xl bg-[var(--border-card)]" />
             ))}
           </div>
+        ) : error ? (
+          <ErrorState title="Couldn't load stats" message={error} onRetry={loadStats} />
         ) : !stats ? (
           <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-8 text-center text-sm text-[var(--text-muted)]">
             No stats yet. Make picks to see your numbers.
@@ -305,7 +329,7 @@ export function StatsPage() {
                   <p className="text-sm font-semibold text-[var(--text-muted)]">Confidence P/L</p>
                   <p className="font-mono text-xl font-bold">{stats.confidencePl.toFixed(2)} units</p>
                   <p className="mt-2 text-sm text-[var(--text-muted)]">
-                    From eligible weeks only: exactly 5 ★ bets (regular season), or all playoff games.
+                    From eligible weeks only: exactly {CONFIDENCE_BETS_PER_WEEK} ★ bets (regular season), or all playoff games.
                   </p>
                 </div>
                 <div>
@@ -360,13 +384,7 @@ export function StatsPage() {
                       <p className="font-bold">Week {row.weekNumber}</p>
                       <p className="mt-1 font-mono text-sm text-[var(--text-muted)]">
                         {row.picksMade}/{row.totalGames} picks · {row.confidenceBets} bets
-                        {!row.plEligible &&
-                        row.phase !== "wildcard" &&
-                        row.phase !== "divisional" &&
-                        row.phase !== "conf" &&
-                        row.phase !== "superbowl"
-                          ? " · P/L incomplete"
-                          : ""}
+                        {!row.plEligible && !isPlayoffPhase(row.phase) ? " · P/L incomplete" : ""}
                       </p>
                       <p className="mt-2 font-mono text-sm">
                         Win {row.winPct.toFixed(1)}% · Conf{" "}
@@ -381,6 +399,5 @@ export function StatsPage() {
           </>
         )}
       </div>
-    </AppShell>
   );
 }

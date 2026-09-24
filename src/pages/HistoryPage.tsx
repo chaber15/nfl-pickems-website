@@ -1,12 +1,22 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Star } from "../components/icons";
 import type { HistoryRow } from "@shared/types";
-import { AppShell } from "../components/AppShell";
+import { ErrorState } from "../components/ErrorState";
 import { useAuth } from "../lib/authContext";
-import { useWeek } from "../lib/weekContext";
-import { apiHistory } from "../lib/api";
+import { useWeek, useWeekSearch } from "../lib/weekContext";
+import { apiHistory, errorMessage } from "../lib/api";
 import { teamColor } from "../lib/teamLogos";
+import { toneBorder, toneText } from "../lib/tone";
+import type { ResultTone } from "../lib/gameStatus";
+import { useTabReturn } from "../lib/visibility";
+
+function outcomeTone(outcome: HistoryRow["outcome"]): ResultTone {
+  if (outcome === "win") return "win";
+  if (outcome === "loss" || outcome === "no_pick") return "loss";
+  if (outcome === "push") return "push";
+  return null;
+}
 
 function outcomeLabel(row: HistoryRow): string {
   if (row.outcome === "no_pick") return "No pick";
@@ -18,10 +28,7 @@ function outcomeLabel(row: HistoryRow): string {
 }
 
 function outcomeClass(outcome: HistoryRow["outcome"]): string {
-  if (outcome === "win") return "text-[var(--accent-green)]";
-  if (outcome === "loss" || outcome === "no_pick") return "text-[var(--accent-red)]";
-  if (outcome === "push") return "text-[var(--accent-gold)]";
-  return "text-[var(--text-muted)]";
+  return toneText(outcomeTone(outcome));
 }
 
 function unitsClass(units: number): string {
@@ -31,10 +38,7 @@ function unitsClass(units: number): string {
 }
 
 function rowBorderClass(row: HistoryRow): string {
-  if (row.outcome === "win") return "border-[var(--accent-green)]";
-  if (row.outcome === "loss" || row.outcome === "no_pick") return "border-[var(--accent-red)]";
-  if (row.outcome === "push") return "border-[var(--accent-gold)]";
-  return "border-[var(--border-card)]";
+  return toneBorder(outcomeTone(row.outcome));
 }
 
 function pickAccentStyle(row: HistoryRow): CSSProperties | undefined {
@@ -52,50 +56,53 @@ export function HistoryPage() {
   const { username: routeUser } = useParams<{ username?: string }>();
   const { username } = useAuth();
   const { seasonType, week, ready } = useWeek();
+  const weekSearch = useWeekSearch();
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [viewLabel, setViewLabel] = useState<string | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
+  const reqRef = useRef(0);
 
   const targetUsername = routeUser ?? username;
   const viewingOther =
     routeUser != null && username != null && routeUser.toLowerCase() !== username.toLowerCase();
 
-  useEffect(() => {
-    const bump = () => {
-      if (document.visibilityState === "visible") setRefreshTick((n) => n + 1);
-    };
-    document.addEventListener("visibilitychange", bump);
-    window.addEventListener("focus", bump);
-    return () => {
-      document.removeEventListener("visibilitychange", bump);
-      window.removeEventListener("focus", bump);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
+  const load = useCallback(
+    async (background = false) => {
+      if (!ready) return;
+      const id = ++reqRef.current;
+      if (!background) {
+        setLoading(true);
+        setError(null);
+      }
       try {
         const res = await apiHistory(seasonType, week, routeUser);
-        if (cancelled) return;
+        if (id !== reqRef.current) return;
         setRows(res.history);
+        setError(null);
         setViewLabel(res.displayName ?? res.username ?? routeUser ?? null);
-      } catch {
-        if (!cancelled) setRows([]);
+      } catch (err) {
+        if (id !== reqRef.current) return;
+        // A failed background refresh keeps the rows already on screen.
+        if (!background) setRows([]);
+        setError(errorMessage(err, "Couldn't load picks"));
       } finally {
-        if (!cancelled) setLoading(false);
+        if (id === reqRef.current) setLoading(false);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [seasonType, week, ready, routeUser, refreshTick]);
+    },
+    [seasonType, week, ready, routeUser],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Refresh results when the user comes back, but only while games may still change.
+  useTabReturn(() => {
+    if (rows.some((r) => r.outcome === "pending")) void load(true);
+  }, ready);
 
   return (
-    <AppShell>
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -104,7 +111,7 @@ export function HistoryPage() {
             </h2>
             {viewingOther && (
               <p className="mt-1 text-sm text-[var(--text-muted)]">
-                <Link to="/history" className="font-semibold text-[var(--accent-blue)] underline">
+                <Link to={{ pathname: "/history", search: weekSearch }} className="font-semibold text-[var(--accent-blue)] underline">
                   Back to your history
                 </Link>
               </p>
@@ -112,12 +119,15 @@ export function HistoryPage() {
           </div>
         </div>
 
+        {error && rows.length > 0 && <ErrorState compact message={error} onRetry={() => load()} />}
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="h-24 animate-pulse rounded-2xl bg-[var(--border-card)]" />
             ))}
           </div>
+        ) : error && rows.length === 0 ? (
+          <ErrorState title="Couldn't load picks" message={error} onRetry={() => load()} />
         ) : rows.length === 0 ? (
           <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-8 text-center text-sm text-[var(--text-muted)]">
             No games for this week yet.
@@ -211,6 +221,5 @@ export function HistoryPage() {
           </>
         )}
       </div>
-    </AppShell>
   );
 }

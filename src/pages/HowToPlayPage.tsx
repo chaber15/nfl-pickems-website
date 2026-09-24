@@ -1,4 +1,4 @@
-import { AppShell } from "../components/AppShell";
+import { CONFIDENCE_BETS_PER_WEEK } from "@shared/types";
 import { NFL_LOGO_SRC } from "../lib/teamLogos";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -12,7 +12,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export function HowToPlayPage() {
   return (
-    <AppShell showWeekSelector={false}>
+    <>
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-center gap-4">
           <img src={NFL_LOGO_SRC} alt="" className="h-12 w-auto object-contain" />
@@ -37,7 +37,7 @@ export function HowToPlayPage() {
         <Section title="2. Confidence bets (★)">
           <p>
             In the regular season, mark exactly{" "}
-            <strong className="text-[var(--accent-gold)]">5 games</strong> as confidence bets each week.
+            <strong className="text-[var(--accent-gold)]">{CONFIDENCE_BETS_PER_WEEK} games</strong> as confidence bets each week.
             Those are the only games that count toward the units / profit and loss (P&amp;L) board.
           </p>
           <p>
@@ -55,7 +55,7 @@ export function HowToPlayPage() {
             <li>
               <strong className="text-[var(--text-primary)]">Confidence P&amp;L</strong> — units won/lost
               on your ★ bets using the posted spread juice (vig). Example: −125 risks 1.25 to win 1; +125
-              risks 1 to win 1.25. Weeks without exactly 5 ★ bets are skipped (except playoffs).
+              risks 1 to win 1.25. Weeks without exactly {CONFIDENCE_BETS_PER_WEEK} ★ bets are skipped (except playoffs).
             </li>
             <li>
               <strong className="text-[var(--text-primary)]">Hypothetical P&amp;L</strong> (on Stats) —
@@ -92,6 +92,6 @@ export function HowToPlayPage() {
           </ul>
         </Section>
       </div>
-    </AppShell>
+    </>
   );
 }

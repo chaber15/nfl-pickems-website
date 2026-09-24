@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Crown } from "./icons";
 import type { LeaderboardEntry } from "@shared/types";
 import { shortWeekLabel } from "@shared/weekUtils";
-import { apiLeaderboard } from "../lib/api";
-import { useWeek } from "../lib/weekContext";
+import { apiLeaderboard, errorMessage } from "../lib/api";
+import { fetchCached, leaderboardCacheKey } from "../lib/cache";
+import { useWeek, useWeekSearch } from "../lib/weekContext";
+import { ErrorState } from "./ErrorState";
+import { PL_HELP } from "./HelpTip";
+
+/** Reuse a recent weekly leaderboard (e.g. just loaded by the Leaderboard page). */
+const MAX_AGE_MS = 60_000;
 
 const TOP_N = 5;
 
@@ -13,28 +19,37 @@ type SortMode = "winPct" | "pl";
 /** Compact current-week standings for the desktop sidebar. */
 export function MiniWeeklyLeaderboard() {
   const { seasonType, week, ready } = useWeek();
+  const weekSearch = useWeekSearch();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortMode>("winPct");
+  const reqRef = useRef(0);
+
+  const load = useCallback(async () => {
+    if (!ready) return;
+    const id = ++reqRef.current;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetchCached(
+        leaderboardCacheKey(seasonType, week),
+        () => apiLeaderboard(seasonType, week),
+        MAX_AGE_MS,
+      );
+      if (id === reqRef.current) setEntries(res.entries);
+    } catch (err) {
+      if (id !== reqRef.current) return;
+      setEntries([]);
+      setError(errorMessage(err, "Couldn't load standings"));
+    } finally {
+      if (id === reqRef.current) setLoading(false);
+    }
+  }, [ready, seasonType, week]);
 
   useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await apiLeaderboard(seasonType, week);
-        if (!cancelled) setEntries(res.entries);
-      } catch {
-        if (!cancelled) setEntries([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, seasonType, week]);
+    void load();
+  }, [load]);
 
   const top = useMemo(
     () =>
@@ -76,6 +91,8 @@ export function MiniWeeklyLeaderboard() {
 
       {loading ? (
         <div className="h-24 animate-pulse rounded-xl bg-[var(--border-card)]" />
+      ) : error ? (
+        <ErrorState compact message={error} onRetry={load} />
       ) : top.length === 0 ? (
         <p className="text-xs text-[var(--text-muted)]">No results yet.</p>
       ) : (
@@ -86,7 +103,7 @@ export function MiniWeeklyLeaderboard() {
               Player
             </span>
             {sortBtn("winPct", "Win %")}
-            {sortBtn("pl", "P/L")}
+            <span title={PL_HELP}>{sortBtn("pl", "P/L")}</span>
           </div>
           <ol className="space-y-1.5">
             {top.map((e, i) => (
@@ -122,7 +139,7 @@ export function MiniWeeklyLeaderboard() {
       )}
 
       <Link
-        to="/leaderboard"
+        to={{ pathname: "/leaderboard", search: weekSearch }}
         className="mt-3 block text-center text-[10px] font-bold uppercase tracking-wide text-[var(--accent-blue)] hover:underline"
       >
         Full leaders

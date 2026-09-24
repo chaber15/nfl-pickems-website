@@ -1,5 +1,6 @@
-import type { GameData, PickSide, WeekComparePlayer } from "@shared/types";
+import type { GameData, WeekComparePlayer } from "@shared/types";
 import { isCrowdNameVisible } from "./crowdVisibility";
+import { venueForPick } from "./gameStatus";
 
 export type CrowdName = { username: string; star: boolean; isYou?: boolean };
 
@@ -12,12 +13,6 @@ export type GameCrowdLean = {
   homeCount: number;
   openCount: number;
 };
-
-export function venueForPick(game: GameData, pick: PickSide): "away" | "home" | null {
-  if (!game.favoriteSide) return null;
-  if (pick === "favorite") return game.favoriteSide;
-  return game.favoriteSide === "home" ? "away" : "home";
-}
 
 /**
  * Build Away/Home lean for a game.

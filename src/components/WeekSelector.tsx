@@ -49,16 +49,16 @@ export function WeekSelector() {
 
   useEffect(() => {
     if (!open) return;
-    const onPointer = (e: MouseEvent) => {
+    const onPointer = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
-    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("pointerdown", onPointer);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
@@ -72,7 +72,7 @@ export function WeekSelector() {
         aria-label="Previous week"
         disabled={!prev}
         onClick={() => prev && setWeekSelection(prev.seasonType, prev.week)}
-        className="hidden h-11 w-11 items-center justify-center rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-card-elevated)] disabled:cursor-not-allowed disabled:opacity-35 sm:flex"
+        className="flex h-11 w-11 items-center justify-center rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-card-elevated)] disabled:cursor-not-allowed disabled:opacity-35"
       >
         <CaretLeft size={20} weight="bold" />
       </button>
@@ -93,7 +93,7 @@ export function WeekSelector() {
         aria-label="Next week"
         disabled={!next}
         onClick={() => next && setWeekSelection(next.seasonType, next.week)}
-        className="hidden h-11 w-11 items-center justify-center rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-card-elevated)] disabled:cursor-not-allowed disabled:opacity-35 sm:flex"
+        className="flex h-11 w-11 items-center justify-center rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-card-elevated)] disabled:cursor-not-allowed disabled:opacity-35"
       >
         <CaretRight size={20} weight="bold" />
       </button>
@@ -121,7 +121,7 @@ export function WeekSelector() {
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
-                className={`min-h-9 rounded-lg text-xs font-bold tracking-wide ${
+                className={`min-h-11 rounded-lg text-xs font-bold tracking-wide ${
                   tab === id
                     ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]"
                     : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
@@ -154,7 +154,7 @@ export function WeekSelector() {
                     setWeekSelection(opt.seasonType, opt.week);
                     setOpen(false);
                   }}
-                  className={`min-h-10 rounded-xl text-xs font-bold ${
+                  className={`min-h-11 rounded-xl text-xs font-bold ${
                     active
                       ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]"
                       : "bg-[var(--bg-page)] text-[var(--text-primary)] hover:bg-[var(--bg-card-elevated)]"

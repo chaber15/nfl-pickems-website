@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Crown, X } from "../components/icons";
-import type { EarnedBadge, LeaderboardEntry } from "@shared/types";
+import { CONFIDENCE_BETS_PER_WEEK, type EarnedBadge, type LeaderboardEntry } from "@shared/types";
 import { shortWeekLabel } from "@shared/weekUtils";
 import { isDisplayableBadgeAward, isSeasonScopedBadge } from "@shared/badges";
-import { AppShell } from "../components/AppShell";
 import { LeaderboardBadgeTrail } from "../components/BadgeChip";
-import { apiLeaderboard } from "../lib/api";
+import { ErrorState } from "../components/ErrorState";
+import { HelpTip, PL_HELP } from "../components/HelpTip";
+import { apiLeaderboard, errorMessage } from "../lib/api";
+import { fetchCached, leaderboardCacheKey } from "../lib/cache";
 import { useWeek } from "../lib/weekContext";
 import {
   isCrowdNameVisible,
@@ -32,30 +34,46 @@ export function LeaderboardPage() {
   const [mode, setMode] = useState<"winPct" | "pl">("winPct");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [visibilityTick, setVisibilityTick] = useState(0);
   const [showTutorial, setShowTutorial] = useState(false);
+  const reqRef = useRef(0);
 
   useEffect(() => {
     setShowTutorial(!readTutorialDone());
   }, []);
 
-  useEffect(() => {
-    if (!ready) return;
-    (async () => {
+  const load = useCallback(
+    async (maxAgeMs = 30_000) => {
+      if (!ready) return;
+      const id = ++reqRef.current;
       setLoading(true);
+      setError(null);
       try {
         const res =
           scope === "overall"
-            ? await apiLeaderboard()
-            : await apiLeaderboard(seasonType, week);
+            ? await fetchCached(leaderboardCacheKey(), () => apiLeaderboard(), maxAgeMs)
+            : await fetchCached(
+                leaderboardCacheKey(seasonType, week),
+                () => apiLeaderboard(seasonType, week),
+                maxAgeMs,
+              );
+        if (id !== reqRef.current) return;
         setEntries(res.entries);
-      } catch {
+      } catch (err) {
+        if (id !== reqRef.current) return;
         setEntries([]);
+        setError(errorMessage(err, "Couldn't load the leaderboard"));
       } finally {
-        setLoading(false);
+        if (id === reqRef.current) setLoading(false);
       }
-    })();
-  }, [ready, scope, seasonType, week]);
+    },
+    [ready, scope, seasonType, week],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const sorted = useMemo(() => {
     void visibilityTick;
@@ -81,7 +99,11 @@ export function LeaderboardPage() {
       isDisplayableBadgeAward(b.badgeId, b.weekNumber ?? 0),
     );
     if (scope === "week") {
-      return all.filter((b) => b.weekNumber === week || isSeasonScopedBadge(b.weekNumber));
+      return all.filter(
+        (b) =>
+          (b.weekNumber === week && (b.seasonType == null || b.seasonType === seasonType)) ||
+          isSeasonScopedBadge(b.weekNumber),
+      );
     }
     return all;
   };
@@ -90,7 +112,6 @@ export function LeaderboardPage() {
   const badgeTrailMode = scope === "week" ? "week" : "overall";
 
   return (
-    <AppShell>
       <div className="mx-auto max-w-5xl space-y-6">
         {showTutorial && (
           <div className="relative rounded-2xl border-2 border-[var(--accent-blue)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-card)]">
@@ -176,17 +197,25 @@ export function LeaderboardPage() {
             {scope === "overall"
               ? mode === "winPct"
                 ? "Overall win % across every final game. Missing a pick counts as wrong."
-                : "Overall confidence P/L from eligible weeks only. Record is ★ bets (5 per eligible week)."
+                : `Overall confidence P/L (profit & loss in units) from eligible weeks only. Record is ★ bets (${CONFIDENCE_BETS_PER_WEEK} per eligible week).`
               : mode === "winPct"
                 ? `Win % for ${shortWeekLabel(seasonType, week)} only.`
-                : `Confidence P/L for ${shortWeekLabel(seasonType, week)} only. Record is out of 5 ★ bets.`}{" "}
+                : `Confidence P/L for ${shortWeekLabel(seasonType, week)} only. Record is out of ${CONFIDENCE_BETS_PER_WEEK} ★ bets.`}{" "}
             Uncheck a player to hide their name on the pick lean — they still count in the bar. Tap a
             name to view their history.
+            {mode === "pl" && (
+              <>
+                {" "}
+                <HelpTip label="What is P/L?">{PL_HELP}</HelpTip>
+              </>
+            )}
           </p>
         </div>
 
         {loading ? (
           <div className="h-48 animate-pulse rounded-2xl bg-[var(--border-card)]" />
+        ) : error ? (
+          <ErrorState title="Couldn't load the leaderboard" message={error} onRetry={() => load(0)} />
         ) : sorted.length === 0 ? (
           <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-8 text-center text-sm text-[var(--text-muted)]">
             No leaderboard data yet
@@ -318,6 +347,5 @@ export function LeaderboardPage() {
           </>
         )}
       </div>
-    </AppShell>
   );
 }

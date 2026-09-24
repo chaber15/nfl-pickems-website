@@ -12,6 +12,9 @@ import { useAuth } from "../lib/authContext";
 import { NFL_LOGO_SRC } from "../lib/teamLogos";
 import { MiniWeeklyLeaderboard } from "./MiniWeeklyLeaderboard";
 import { ChangeUsernamePanel } from "./ChangeUsernamePanel";
+import { confirmSwitchUser } from "../lib/confirm";
+import { useIsDesktop } from "../lib/useMediaQuery";
+import { useWeekSearch } from "../lib/weekContext";
 
 const links = [
   { to: "/", label: "Picks", icon: Football },
@@ -23,6 +26,8 @@ const links = [
 
 export function Sidebar() {
   const { user, logout } = useAuth();
+  const isDesktop = useIsDesktop();
+  const weekSearch = useWeekSearch();
 
   return (
     <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r-2 lg:border-[var(--border-card)] lg:bg-[var(--sidebar-bg)] lg:px-4 lg:py-6">
@@ -40,7 +45,8 @@ export function Sidebar() {
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
-            to={to}
+            to={{ pathname: to, search: to === "/how-to-play" ? "" : weekSearch }}
+            end={to === "/"}
             className={({ isActive }) =>
               `flex min-h-12 items-center gap-3 rounded-2xl px-4 text-sm font-semibold transition-colors ${
                 isActive
@@ -55,7 +61,7 @@ export function Sidebar() {
         ))}
         {user?.isAdmin && (
           <NavLink
-            to="/admin"
+            to={{ pathname: "/admin", search: weekSearch }}
             className={({ isActive }) =>
               `flex min-h-12 items-center gap-3 rounded-2xl px-4 text-sm font-semibold ${
                 isActive ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]" : "text-[var(--text-primary)]"
@@ -68,13 +74,16 @@ export function Sidebar() {
         )}
       </nav>
 
-      <MiniWeeklyLeaderboard />
+      {/* Only mount (and fetch) on desktop, where the sidebar is actually visible. */}
+      {isDesktop && <MiniWeeklyLeaderboard />}
 
       <div className="mt-auto space-y-2 pt-4">
         <ChangeUsernamePanel />
         <button
           type="button"
-          onClick={() => logout()}
+          onClick={() => {
+            if (confirmSwitchUser()) void logout();
+          }}
           className="flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-card-elevated)]"
         >
           <SignOut size={22} weight="bold" />
@@ -87,6 +96,7 @@ export function Sidebar() {
 
 export function BottomNav() {
   const { user } = useAuth();
+  const weekSearch = useWeekSearch();
   const allLinks = user?.isAdmin ? [...links, { to: "/admin", label: "Admin", icon: ShieldCheck }] : links;
 
   const cols =
@@ -104,7 +114,8 @@ export function BottomNav() {
         {allLinks.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
-            to={to}
+            to={{ pathname: to, search: to === "/how-to-play" ? "" : weekSearch }}
+            end={to === "/"}
             className={({ isActive }) =>
               `flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-bold ${
                 isActive ? "text-[var(--accent-green)]" : "text-[var(--text-muted)]"
