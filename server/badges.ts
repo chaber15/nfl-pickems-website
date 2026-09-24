@@ -1,140 +1,244 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { neon } from "@neondatabase/serverless";
+import type { BatchItem } from "drizzle-orm/batch";
 import { getDb, schema } from "./db";
 import {
-  evaluateWeekBadges,
-  countLifetimeBadgeEvents,
-  emptyLifetimeBadgeCounts,
-  lifetimeBadgeAwards,
+  compareSlates,
+  computeDesiredBadges,
+  diffBadgeRows,
+  isSlateComplete,
   LIFETIME_THRESHOLD_BADGE_IDS,
-  SEASON_BADGE_WEEK,
-  weekAtsRecord,
-  weekConfWinPct,
-  type BadgeAward,
-  type LifetimeBadgeCounts,
+  type DesiredBadgeRow,
+  type ExistingBadgeRow,
+  type SeasonSlate,
 } from "../shared/badges";
-import { confidencePlForWeek } from "../shared/statsCompute";
-import type { GameData, UserPick, WeekComparePlayer } from "../shared/types";
-import { getActiveSeasonGameRows, getGamesForWeek } from "./espn/sync";
-import { isGradedForStandings } from "../shared/scoring";
+import type { UserPick } from "../shared/types";
+import { dbGameToGameData, resolveActiveSeasonId } from "./espn/sync";
 
-/** True when every game on the slate is final (week-scoped badges need the full week). */
-function isWeekFullyComplete(games: GameData[]): boolean {
-  return games.length > 0 && games.every((g) => g.status === "final");
-}
+/*
+ * Badge engine: load the active season in a handful of queries, compute the complete desired
+ * set of badge rows in memory (shared/badges.ts `computeDesiredBadges`), diff it against the
+ * existing rows (`diffBadgeRows`) and apply inserts + deletes in ONE `db.batch` (neon-http runs
+ * a batch as a single transaction). Existing rows that stay keep their original earnedAt.
+ *
+ * Deletion scope (see `BadgeDiffScope`): only non-banned users' rows, only rows earned since the
+ * active season row was created, only week rows for weeks of the active season, and only
+ * season_once badges the engine recomputes. Rows from earlier seasons are never deleted.
+ */
 
-async function loadUserPicksMap(
-  userId: string,
-  gameRows: Array<{ game: typeof schema.games.$inferSelect }>,
-): Promise<Record<string, UserPick>> {
+type SeasonData = {
+  seasonStartedAt: Date | null;
+  users: Array<{ userId: string; username: string; displayName: string | null }>;
+  slates: SeasonSlate[];
+  picksByUser: Map<string, Record<string, UserPick>>;
+  existing: ExistingBadgeRow[];
+};
+
+async function loadSeasonData(): Promise<SeasonData | null> {
   const db = getDb();
-  const gameIds = gameRows.map(({ game }) => game.id);
-  if (gameIds.length === 0) return {};
-  const userPicks = await db
-    .select()
-    .from(schema.picks)
-    .where(and(eq(schema.picks.userId, userId), inArray(schema.picks.gameId, gameIds)));
-  const espnByDbId = new Map(gameRows.map(({ game }) => [game.id, game.espnEventId]));
-  const picks: Record<string, UserPick> = {};
-  for (const p of userPicks) {
-    const publicId = espnByDbId.get(p.gameId);
-    if (!publicId) continue;
-    picks[publicId] = {
-      gameId: publicId,
-      pick: p.pick,
-      isConfidenceBet: p.isConfidenceBet,
-    };
+  const seasonId = await resolveActiveSeasonId();
+  if (!seasonId) return null;
+
+  const [seasonRows, users, gameRows, pickRows, existing] = await Promise.all([
+    db
+      .select({ createdAt: schema.seasons.createdAt })
+      .from(schema.seasons)
+      .where(eq(schema.seasons.id, seasonId))
+      .limit(1),
+    db
+      .select({
+        userId: schema.users.id,
+        username: schema.users.username,
+        displayName: schema.users.displayName,
+      })
+      .from(schema.users)
+      .where(eq(schema.users.isBanned, false)),
+    db
+      .select({ game: schema.games, week: schema.weeks })
+      .from(schema.games)
+      .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
+      .where(eq(schema.weeks.seasonId, seasonId)),
+    db
+      .select({
+        userId: schema.picks.userId,
+        espnEventId: schema.games.espnEventId,
+        pick: schema.picks.pick,
+        isConfidenceBet: schema.picks.isConfidenceBet,
+      })
+      .from(schema.picks)
+      .innerJoin(schema.games, eq(schema.picks.gameId, schema.games.id))
+      .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
+      .where(eq(schema.weeks.seasonId, seasonId)),
+    db.select().from(schema.userBadges),
+  ]);
+
+  const slateByKey = new Map<string, SeasonSlate>();
+  for (const { game, week } of gameRows) {
+    const key = `${week.seasonType}-${week.weekNumber}`;
+    let slate = slateByKey.get(key);
+    if (!slate) {
+      slate = { seasonType: week.seasonType, weekNumber: week.weekNumber, games: [] };
+      slateByKey.set(key, slate);
+    }
+    slate.games.push(dbGameToGameData(game, week));
   }
-  return picks;
+  for (const s of slateByKey.values()) {
+    s.games.sort((a, b) => a.kickoffAt.localeCompare(b.kickoffAt) || a.id.localeCompare(b.id));
+  }
+
+  const picksByUser = new Map<string, Record<string, UserPick>>();
+  for (const p of pickRows) {
+    let m = picksByUser.get(p.userId);
+    if (!m) {
+      m = {};
+      picksByUser.set(p.userId, m);
+    }
+    m[p.espnEventId] = { gameId: p.espnEventId, pick: p.pick, isConfidenceBet: p.isConfidenceBet };
+  }
+
+  return {
+    seasonStartedAt: seasonRows[0]?.createdAt ?? null,
+    users,
+    slates: [...slateByKey.values()].sort(compareSlates),
+    picksByUser,
+    existing,
+  };
 }
 
-function streakEndingAt(weekWinPctsOldestFirst: number[]): number {
-  let streak = 0;
-  for (let i = weekWinPctsOldestFirst.length - 1; i >= 0; i--) {
-    if (weekWinPctsOldestFirst[i]! > 50) streak++;
-    else break;
-  }
-  return streak;
-}
+export type BadgeSyncResult = {
+  inserted: DesiredBadgeRow[];
+  deleted: ExistingBadgeRow[];
+  kept: ExistingBadgeRow[];
+  desiredCount: number;
+  slates: Array<{ seasonType: number; weekNumber: number; status: "ok" | "skipped_incomplete" }>;
+  userCount: number;
+};
 
-async function userHasBadge(userId: string, badgeId: string): Promise<boolean> {
-  try {
+/**
+ * Recompute and apply the full badge diff for the active season.
+ * `dryRun` computes the diff without writing. `onlyBadgeIds` restricts the diff.
+ */
+export async function syncSeasonBadges(opts?: {
+  dryRun?: boolean;
+  onlyBadgeIds?: ReadonlySet<string>;
+}): Promise<BadgeSyncResult> {
+  const data = await loadSeasonData();
+  if (!data) {
+    return { inserted: [], deleted: [], kept: [], desiredCount: 0, slates: [], userCount: 0 };
+  }
+
+  const { rows: desired } = computeDesiredBadges({
+    users: data.users,
+    slates: data.slates,
+    picksByUser: data.picksByUser,
+  });
+
+  const diff = diffBadgeRows(data.existing, desired, {
+    userIds: new Set(data.users.map((u) => u.userId)),
+    weekKeys: new Set(data.slates.map((s) => `${s.seasonType}-${s.weekNumber}`)),
+    seasonStartedAt: data.seasonStartedAt,
+    onlyBadgeIds: opts?.onlyBadgeIds,
+  });
+
+  let inserted = diff.toInsert;
+  if (!opts?.dryRun && (diff.toInsert.length > 0 || diff.toDelete.length > 0)) {
     const db = getDb();
-    const [row] = await db
-      .select()
-      .from(schema.userBadges)
-      .where(and(eq(schema.userBadges.userId, userId), eq(schema.userBadges.badgeId, badgeId)))
-      .limit(1);
-    return !!row;
-  } catch {
-    /* table missing until db:push */
-    return false;
-  }
-}
-
-async function insertAwards(userId: string, awards: BadgeAward[]) {
-  const db = getDb();
-  for (const a of awards) {
-    try {
-      await db.insert(schema.userBadges).values({
-        userId,
-        badgeId: a.badgeId,
-        seasonType: a.seasonType,
-        weekNumber: a.weekNumber ?? SEASON_BADGE_WEEK,
-      });
-    } catch {
-      /* already awarded, or table missing until db:push */
+    const ops: BatchItem<"pg">[] = [];
+    if (diff.toDelete.length > 0) {
+      ops.push(
+        db.delete(schema.userBadges).where(
+          inArray(
+            schema.userBadges.id,
+            diff.toDelete.map((r) => r.id),
+          ),
+        ),
+      );
+    }
+    const insertIndex = ops.length;
+    if (diff.toInsert.length > 0) {
+      ops.push(
+        db
+          .insert(schema.userBadges)
+          .values(
+            diff.toInsert.map((r) => ({
+              userId: r.userId,
+              badgeId: r.badgeId,
+              seasonType: r.seasonType,
+              weekNumber: r.weekNumber,
+            })),
+          )
+          // A concurrent run may have inserted the same row; the unique indexes make that a no-op.
+          .onConflictDoNothing()
+          .returning({ userId: schema.userBadges.userId, badgeId: schema.userBadges.badgeId }),
+      );
+    }
+    const results = await db.batch(ops as [BatchItem<"pg">, ...BatchItem<"pg">[]]);
+    if (diff.toInsert.length > 0) {
+      const written = results[insertIndex] as Array<{ userId: string; badgeId: string }>;
+      if (written.length !== diff.toInsert.length) {
+        const got = new Set(written.map((w) => `${w.userId}|${w.badgeId}`));
+        inserted = diff.toInsert.filter((r) => got.has(`${r.userId}|${r.badgeId}`));
+      }
     }
   }
+
+  return {
+    inserted,
+    deleted: diff.toDelete,
+    kept: diff.kept,
+    desiredCount: desired.length,
+    slates: data.slates.map((s) => ({
+      seasonType: s.seasonType,
+      weekNumber: s.weekNumber,
+      status: isSlateComplete(s.games) ? "ok" : "skipped_incomplete",
+    })),
+    userCount: data.users.length,
+  };
+}
+
+async function loadWeekGames(seasonType: number, weekNumber: number) {
+  const db = getDb();
+  const seasonId = await resolveActiveSeasonId();
+  if (!seasonId) return [];
+  const rows = await db
+    .select({ game: schema.games, week: schema.weeks })
+    .from(schema.games)
+    .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
+    .where(
+      and(
+        eq(schema.weeks.seasonId, seasonId),
+        eq(schema.weeks.seasonType, seasonType),
+        eq(schema.weeks.weekNumber, weekNumber),
+      ),
+    );
+  return rows.map(({ game, week }) => dbGameToGameData(game, week));
 }
 
 /**
- * Hard-delete cumulative badge rows via raw SQL (neon-http), then verify wipe.
- * Drizzle delete alone has been unreliable for this path in production.
+ * Cron entry point. Idempotent: skips unless every game in the week is final (and ≥1 graded);
+ * otherwise runs the full season diff, which is a no-op when badges are already in place.
  */
-async function wipeLifetimeThresholdBadgeRows(): Promise<{ before: number; after: number }> {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL is not configured");
-  const sql = neon(url);
-  const ids: string[] = [...LIFETIME_THRESHOLD_BADGE_IDS];
-  const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
-  const countQuery = `SELECT count(*)::int AS n FROM user_badges WHERE badge_id IN (${placeholders})`;
-
-  const beforeRows = (await sql(countQuery, ids)) as Array<{ n: number }>;
-  const before = Number(beforeRows[0]?.n ?? 0);
-
-  await sql(`DELETE FROM user_badges WHERE badge_id IN (${placeholders})`, ids);
-
-  const afterRows = (await sql(countQuery, ids)) as Array<{ n: number }>;
-  const after = Number(afterRows[0]?.n ?? 0);
-  if (after !== 0) {
-    throw new Error(`Failed to wipe cumulative badges (still ${after} row(s) left)`);
-  }
-  return { before, after };
+export async function awardBadgesIfWeekComplete(
+  seasonType: number,
+  week: number,
+): Promise<{ awarded: number; removed?: number; skipped?: string }> {
+  const games = await loadWeekGames(seasonType, week);
+  if (games.length === 0) return { awarded: 0, skipped: "empty" };
+  if (!isSlateComplete(games)) return { awarded: 0, skipped: "incomplete" };
+  const result = await syncSeasonBadges();
+  return { awarded: result.inserted.length, removed: result.deleted.length };
 }
 
-/** Delete every user_badges row, then verify the table is empty. */
-async function wipeAllBadgeRows(): Promise<{ before: number; after: number }> {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL is not configured");
-  const sql = neon(url);
+const LIFETIME_IDS: ReadonlySet<string> = new Set(LIFETIME_THRESHOLD_BADGE_IDS);
 
-  const beforeRows = await sql`SELECT count(*)::int AS n FROM user_badges`;
-  const before = Number(beforeRows[0]?.n ?? 0);
-
-  await sql`DELETE FROM user_badges`;
-
-  const afterRows = await sql`SELECT count(*)::int AS n FROM user_badges`;
-  const after = Number(afterRows[0]?.n ?? 0);
-  if (after !== 0) {
-    throw new Error(`Failed to wipe all badges (still ${after} row(s) left)`);
-  }
-  return { before, after };
+function lifetimeSummary(result: BadgeSyncResult) {
+  const removed = result.deleted.filter((r) => LIFETIME_IDS.has(r.badgeId)).length;
+  const granted = result.inserted.filter((r) => LIFETIME_IDS.has(r.badgeId)).length;
+  return { removed, granted, countsByUser: result.userCount };
 }
 
 /**
- * Drop every grant of cumulative badges, then re-award from career totals
- * across all fully final weeks in the active season.
+ * Reconcile cumulative (lifetime-threshold) badges only: insert missing, delete unearned.
+ * Same signature as before; no longer wipes-then-reinserts (earnedAt is preserved).
  */
 export async function reconcileLifetimeThresholdBadges(): Promise<{
   removed: number;
@@ -142,254 +246,37 @@ export async function reconcileLifetimeThresholdBadges(): Promise<{
   countsByUser: number;
   remainingAfterWipe: number;
 }> {
-  const wipe = await wipeLifetimeThresholdBadgeRows();
-  const db = getDb();
-
-  const users = await db.select().from(schema.users).where(eq(schema.users.isBanned, false));
-  const allGameRows = await getActiveSeasonGameRows();
-  const seen = new Set<string>();
-  const completed: Array<{ seasonType: number; week: number; games: GameData[] }> = [];
-  const gameCache = new Map<string, GameData[]>();
-
-  for (const r of allGameRows) {
-    const key = `${r.week.seasonType}-${r.week.weekNumber}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    let games = gameCache.get(key);
-    if (!games) {
-      games = await getGamesForWeek(r.week.seasonType, r.week.weekNumber);
-      gameCache.set(key, games);
-    }
-    if (!isWeekFullyComplete(games) || !games.some((g) => isGradedForStandings(g))) continue;
-    completed.push({ seasonType: r.week.seasonType, week: r.week.weekNumber, games });
-  }
-  completed.sort((a, b) => a.seasonType - b.seasonType || a.week - b.week);
-
-  let granted = 0;
-  for (const u of users) {
-    const lifetime: LifetimeBadgeCounts = emptyLifetimeBadgeCounts();
-    for (const slate of completed) {
-      const rows = allGameRows.filter(
-        (r) => r.week.seasonType === slate.seasonType && r.week.weekNumber === slate.week,
-      );
-      const picks = await loadUserPicksMap(u.id, rows);
-      const ev = countLifetimeBadgeEvents(slate.games, picks);
-      for (const id of LIFETIME_THRESHOLD_BADGE_IDS) lifetime[id] += ev[id];
-    }
-
-    const seasonType = completed[completed.length - 1]?.seasonType ?? 2;
-    const awards: BadgeAward[] = lifetimeBadgeAwards(lifetime, seasonType);
-    if (awards.length > 0) {
-      await insertAwards(u.id, awards);
-      granted += awards.length;
-    }
-  }
-
+  const result = await syncSeasonBadges({ onlyBadgeIds: LIFETIME_IDS });
   return {
-    removed: wipe.before,
-    granted,
-    countsByUser: users.length,
-    remainingAfterWipe: wipe.after,
+    ...lifetimeSummary(result),
+    // Kept for API compatibility: rows of these badges that were kept untouched.
+    remainingAfterWipe: result.kept.filter((r) => LIFETIME_IDS.has(r.badgeId)).length,
   };
 }
 
 /**
- * Award badges for a week only after the full slate is final.
- * Week-dependent badges (clean sweep, streaks, ranks, etc.) must not fire mid-week.
+ * Award badges once the week's full slate is final. Thin wrapper over the season diff
+ * (which also covers earlier weeks, so it self-heals any missed runs).
  */
 export async function awardBadgesForWeek(
   seasonType: number,
   weekNumber: number,
-  opts?: { skipLifetimeReconcile?: boolean },
+  _opts?: { skipLifetimeReconcile?: boolean },
 ): Promise<{
   awarded: number;
+  removed?: number;
   skipped?: "empty" | "incomplete";
   lifetime?: { removed: number; granted: number; countsByUser: number };
 }> {
-  const games = await getGamesForWeek(seasonType, weekNumber);
-  if (games.length === 0) {
-    return { awarded: 0, skipped: "empty" };
-  }
-  if (!isWeekFullyComplete(games) || !games.some((g) => isGradedForStandings(g))) {
-    return { awarded: 0, skipped: "incomplete" };
-  }
-
-  const db = getDb();
-  const users = await db.select().from(schema.users).where(eq(schema.users.isBanned, false));
-  const allGameRows = await getActiveSeasonGameRows();
-  const weekRows = allGameRows.filter(
-    (r) => r.week.seasonType === seasonType && r.week.weekNumber === weekNumber,
-  );
-
-  const players: WeekComparePlayer[] = [];
-  const pickMaps = new Map<string, Record<string, UserPick>>();
-
-  for (const u of users) {
-    const picks = await loadUserPicksMap(u.id, weekRows);
-    pickMaps.set(u.id, picks);
-    const comparePicks: WeekComparePlayer["picks"] = {};
-    for (const [id, p] of Object.entries(picks)) {
-      if (p.pick) comparePicks[id] = { pick: p.pick, isConfidenceBet: p.isConfidenceBet };
-    }
-    players.push({
-      userId: u.id,
-      username: u.username,
-      displayName: u.displayName ?? u.username,
-      picks: comparePicks,
-    });
-  }
-
-  const atsSorted = [...users]
-    .map((u) => ({
-      id: u.id,
-      ...weekAtsRecord(games, pickMaps.get(u.id) ?? {}),
-      pl: confidencePlForWeek(games, pickMaps.get(u.id) ?? {}).pl,
-    }))
-    .filter((r) => r.total > 0 || r.pl !== 0)
-    .sort((a, b) => b.winPct - a.winPct || b.pl - a.pl);
-
-  const plSorted = [...atsSorted].sort((a, b) => b.pl - a.pl || b.winPct - a.winPct);
-  const atsRank = new Map(atsSorted.map((r, i) => [r.id, i]));
-  const plRank = new Map(plSorted.map((r, i) => [r.id, i]));
-
-  const priorWeek = weekNumber > 1 ? weekNumber - 1 : null;
-  let priorAtsRank: Map<string, number> | null = null;
-  let priorPlRank: Map<string, number> | null = null;
-  let priorCount: number | null = null;
-  const gameCache = new Map<number, GameData[]>();
-  gameCache.set(weekNumber, games);
-
-  if (priorWeek != null) {
-    const priorGames = await getGamesForWeek(seasonType, priorWeek);
-    gameCache.set(priorWeek, priorGames);
-    if (priorGames.some((g) => isGradedForStandings(g))) {
-      const priorRows = allGameRows.filter(
-        (r) => r.week.seasonType === seasonType && r.week.weekNumber === priorWeek,
-      );
-      const priorStats = [];
-      for (const u of users) {
-        const picks = await loadUserPicksMap(u.id, priorRows);
-        priorStats.push({
-          id: u.id,
-          ...weekAtsRecord(priorGames, picks),
-          pl: confidencePlForWeek(priorGames, picks).pl,
-        });
-      }
-      const pAts = priorStats
-        .filter((r) => r.total > 0 || r.pl !== 0)
-        .sort((a, b) => b.winPct - a.winPct || b.pl - a.pl);
-      const pPl = [...pAts].sort((a, b) => b.pl - a.pl || b.winPct - a.winPct);
-      priorAtsRank = new Map(pAts.map((r, i) => [r.id, i]));
-      priorPlRank = new Map(pPl.map((r, i) => [r.id, i]));
-      priorCount = pAts.length;
-    }
-  }
-
-  const seasonWeeks = [
-    ...new Set(
-      allGameRows
-        .filter((r) => r.week.seasonType === seasonType)
-        .map((r) => r.week.weekNumber),
-    ),
-  ].sort((a, b) => a - b);
-
-  let awarded = 0;
-  for (const u of users) {
-    const picks = pickMaps.get(u.id) ?? {};
-    const atsPcts: number[] = [];
-    const confPcts: number[] = [];
-    for (const w of seasonWeeks) {
-      if (w > weekNumber) break;
-      let wg = gameCache.get(w);
-      if (!wg) {
-        wg = await getGamesForWeek(seasonType, w);
-        gameCache.set(w, wg);
-      }
-      const wr = allGameRows.filter((r) => r.week.seasonType === seasonType && r.week.weekNumber === w);
-      const wp = w === weekNumber ? picks : await loadUserPicksMap(u.id, wr);
-      const rec = weekAtsRecord(wg, wp);
-      if (rec.total > 0) atsPcts.push(rec.winPct);
-      if (confidencePlForWeek(wg, wp).eligible && wg.some((g) => isGradedForStandings(g))) {
-        confPcts.push(weekConfWinPct(wg, wp));
-      }
-    }
-
-    const awards = evaluateWeekBadges({
-      games,
-      seasonType,
-      weekNumber,
-      player: { userId: u.id, username: u.username, picks },
-      allPlayers: players,
-      atsStreak: streakEndingAt(atsPcts),
-      confStreak: streakEndingAt(confPcts),
-      weekRankAts: atsRank.get(u.id) ?? atsSorted.length,
-      weekRankPl: plRank.get(u.id) ?? plSorted.length,
-      playerCount: Math.max(atsSorted.length, 1),
-      priorWeekRankAts: priorAtsRank?.get(u.id) ?? null,
-      priorWeekRankPl: priorPlRank?.get(u.id) ?? null,
-      priorPlayerCount: priorCount,
-      alreadyHasHowl: await userHasBadge(u.id, "howl"),
-      alreadyHasNoShow: await userHasBadge(u.id, "no_show"),
-      alreadyHasWeekChampion: await userHasBadge(u.id, "week_champion"),
-      alreadyHasBankrollKing: await userHasBadge(u.id, "bankroll_king"),
-    });
-
-    await insertAwards(u.id, awards);
-    awarded += awards.length;
-  }
-
-  // Overall season leaders → High Roller / Throne Room
-  type Agg = { id: string; correct: number; total: number; pl: number };
-  const aggs: Agg[] = [];
-  for (const u of users) {
-    let correct = 0;
-    let total = 0;
-    let pl = 0;
-    for (const w of seasonWeeks) {
-      if (w > weekNumber) break;
-      let wg = gameCache.get(w);
-      if (!wg) {
-        wg = await getGamesForWeek(seasonType, w);
-        gameCache.set(w, wg);
-      }
-      const wr = allGameRows.filter((r) => r.week.seasonType === seasonType && r.week.weekNumber === w);
-      const picks = await loadUserPicksMap(u.id, wr);
-      const rec = weekAtsRecord(wg, picks);
-      correct += rec.correct;
-      total += rec.total;
-      pl += confidencePlForWeek(wg, picks).pl;
-    }
-    aggs.push({ id: u.id, correct, total, pl });
-  }
-
-  const byWin = [...aggs]
-    .filter((a) => a.total > 0)
-    .sort((a, b) => b.correct / b.total - a.correct / a.total || b.pl - a.pl);
-  const byPl = [...aggs].sort(
-    (a, b) => b.pl - a.pl || (b.total ? b.correct / b.total : 0) - (a.total ? a.correct / a.total : 0),
-  );
-
-  if (byWin[0] && !(await userHasBadge(byWin[0].id, "high_roller"))) {
-    await insertAwards(byWin[0].id, [
-      { badgeId: "high_roller", seasonType, weekNumber: SEASON_BADGE_WEEK },
-    ]);
-    awarded++;
-  }
-  if (byPl[0] && !(await userHasBadge(byPl[0].id, "throne_room"))) {
-    await insertAwards(byPl[0].id, [
-      { badgeId: "throne_room", seasonType, weekNumber: SEASON_BADGE_WEEK },
-    ]);
-    awarded++;
-  }
-
-  // Cumulative badges are reconciled separately (wipe + re-award from career totals).
-  if (opts?.skipLifetimeReconcile) {
-    return { awarded };
-  }
-  const lifetime = await reconcileLifetimeThresholdBadges();
-  awarded += lifetime.granted;
-
-  return { awarded, lifetime };
+  const games = await loadWeekGames(seasonType, weekNumber);
+  if (games.length === 0) return { awarded: 0, skipped: "empty" };
+  if (!isSlateComplete(games)) return { awarded: 0, skipped: "incomplete" };
+  const result = await syncSeasonBadges();
+  return {
+    awarded: result.inserted.length,
+    removed: result.deleted.length,
+    lifetime: lifetimeSummary(result),
+  };
 }
 
 export type BadgeRefreshWeekResult = {
@@ -400,9 +287,9 @@ export type BadgeRefreshWeekResult = {
 };
 
 /**
- * Admin / backfill: award badges for one week, or every completed week in the
- * active season (oldest → newest so season_once "first" badges land correctly).
- * Full backfill (`allCompleted`) wipes every badge row first, then recalculates.
+ * Admin / backfill. Both modes run the same full-season diff (no wipe): `allCompleted` reports
+ * every week of the active season; `{seasonType, week}` reports just that week.
+ * `awarded` per week = rows inserted whose source is that week.
  */
 export async function refreshBadges(opts: {
   seasonType?: number;
@@ -411,6 +298,7 @@ export async function refreshBadges(opts: {
 }): Promise<{
   weeks: BadgeRefreshWeekResult[];
   totalAwarded: number;
+  totalRemoved: number;
   wiped?: number;
   lifetime: {
     removed: number;
@@ -419,66 +307,38 @@ export async function refreshBadges(opts: {
     remainingAfterWipe?: number;
   };
 }> {
-  const weeks: BadgeRefreshWeekResult[] = [];
-  let wiped: number | undefined;
-
-  if (opts.allCompleted) {
-    const fullWipe = await wipeAllBadgeRows();
-    wiped = fullWipe.before;
-
-    const allGameRows = await getActiveSeasonGameRows();
-    const seen = new Set<string>();
-    const slate: Array<{ seasonType: number; week: number }> = [];
-    for (const r of allGameRows) {
-      const key = `${r.week.seasonType}-${r.week.weekNumber}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      slate.push({ seasonType: r.week.seasonType, week: r.week.weekNumber });
-    }
-    slate.sort((a, b) => a.seasonType - b.seasonType || a.week - b.week);
-
-    for (const s of slate) {
-      // Skip lifetime reconcile inside each week — run once at the end.
-      const result = await awardBadgesForWeek(s.seasonType, s.week, { skipLifetimeReconcile: true });
-      weeks.push({
-        seasonType: s.seasonType,
-        week: s.week,
-        awarded: result.awarded,
-        status:
-          result.skipped === "empty"
-            ? "skipped_empty"
-            : result.skipped === "incomplete"
-              ? "skipped_incomplete"
-              : "ok",
-      });
-    }
-  } else {
-    const seasonType = opts.seasonType;
-    const week = opts.week;
+  if (!opts.allCompleted) {
+    const { seasonType, week } = opts;
     if (seasonType == null || week == null || !Number.isFinite(seasonType) || !Number.isFinite(week)) {
       throw new Error("seasonType and week are required (or pass allCompleted: true)");
     }
-    const result = await awardBadgesForWeek(seasonType, week, { skipLifetimeReconcile: true });
-    weeks.push({
-      seasonType,
-      week,
-      awarded: result.awarded,
-      status:
-        result.skipped === "empty"
-          ? "skipped_empty"
-          : result.skipped === "incomplete"
-            ? "skipped_incomplete"
-            : "ok",
-    });
   }
 
-  const lifetime = await reconcileLifetimeThresholdBadges();
+  const result = await syncSeasonBadges();
+  const awardedBySlate = new Map<string, number>();
+  for (const r of result.inserted) {
+    const key = `${r.source.seasonType}-${r.source.weekNumber}`;
+    awardedBySlate.set(key, (awardedBySlate.get(key) ?? 0) + 1);
+  }
+
+  let weeks: BadgeRefreshWeekResult[] = result.slates.map((s) => ({
+    seasonType: s.seasonType,
+    week: s.weekNumber,
+    awarded: awardedBySlate.get(`${s.seasonType}-${s.weekNumber}`) ?? 0,
+    status: s.status,
+  }));
+  if (!opts.allCompleted) {
+    const match = weeks.find((w) => w.seasonType === opts.seasonType && w.week === opts.week);
+    weeks = [
+      match ?? { seasonType: opts.seasonType!, week: opts.week!, awarded: 0, status: "skipped_empty" },
+    ];
+  }
 
   return {
     weeks,
-    totalAwarded: weeks.reduce((sum, w) => sum + w.awarded, 0) + lifetime.granted,
-    wiped,
-    lifetime,
+    totalAwarded: result.inserted.length,
+    totalRemoved: result.deleted.length,
+    lifetime: lifetimeSummary(result),
   };
 }
 
