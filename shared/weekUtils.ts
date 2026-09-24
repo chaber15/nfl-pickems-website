@@ -43,7 +43,8 @@ export function buildWeekOptions(): WeekOption[] {
     { week: 1, label: "Wild Card", phase: "wildcard" },
     { week: 2, label: "Divisional", phase: "divisional" },
     { week: 3, label: "Conference", phase: "conf" },
-    { week: 4, label: "Super Bowl", phase: "superbowl" },
+    // ESPN postseason numbering: 4 = Pro Bowl (not offered), 5 = Super Bowl (verified 2025 + 2026).
+    { week: 5, label: "Super Bowl", phase: "superbowl" },
   ];
   for (const p of playoff) {
     options.push({ seasonType: 3, week: p.week, label: p.label, phase: p.phase });
@@ -72,11 +73,32 @@ export function weekOptionIndex(seasonType: number, week: number): number {
   return buildWeekOptions().findIndex((o) => o.seasonType === seasonType && o.week === week);
 }
 
+/** True only for weeks the site offers (regular 1–18, playoffs WC/DIV/CONF/SB). */
+export function isValidPickemsWeek(seasonType: number, week: number): boolean {
+  if (!Number.isInteger(seasonType) || !Number.isInteger(week)) return false;
+  return weekOptionIndex(seasonType, week) >= 0;
+}
+
+/** Previous offered week (e.g. Super Bowl → Conference, Wild Card → Week 18), or null. */
+export function previousAvailableWeek(
+  seasonType: number,
+  week: number,
+): { seasonType: number; week: number } | null {
+  const idx = weekOptionIndex(seasonType, week);
+  if (idx <= 0) return null;
+  const prev = buildWeekOptions()[idx - 1]!;
+  return { seasonType: prev.seasonType, week: prev.week };
+}
+
 /** Clamp ESPN calendar into the weeks we still offer. */
 export function clampToAvailableWeek(seasonType: number, week: number): { seasonType: number; week: number } {
   // Preseason no longer offered — jump to regular Week 1
   if (seasonType === 1) {
     return { seasonType: 2, week: 1 };
+  }
+  // ESPN's Pro Bowl week (postseason 4) → show the Super Bowl slate
+  if (seasonType === 3 && week === 4) {
+    return { seasonType: 3, week: 5 };
   }
   const idx = weekOptionIndex(seasonType, week);
   if (idx >= 0) return { seasonType, week };

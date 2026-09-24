@@ -127,7 +127,23 @@ export function isPastLineLock(lockAt: Date | null, now = new Date()): boolean {
 }
 
 /**
- * Before Wed 8am ET: always take incoming ESPN lines.
+ * Pick'em (0) line: ESPN flags no favorite. Treat home as the nominal favorite with
+ * spread 0 so picks are allowed; computeAtsResult(…, 0, "home") grades straight-up
+ * and a tie is a push.
+ */
+export function normalizePickemLine(line: LineSnapshot): LineSnapshot {
+  if (line.spread != null && Math.abs(line.spread) < 0.001 && line.favoriteSide == null) {
+    return { ...line, spread: 0, favoriteSide: "home" };
+  }
+  return line;
+}
+
+function hasSpreadPair(line: LineSnapshot | null | undefined): boolean {
+  return line != null && line.spread != null && line.favoriteSide != null;
+}
+
+/**
+ * Before Wed 8am ET: take incoming ESPN lines (but never wipe stored values with nulls).
  * After lock: keep a complete stored line forever; if still incomplete, accept updates until complete.
  */
 export function shouldRefreshLine(
@@ -140,23 +156,56 @@ export function shouldRefreshLine(
   return true;
 }
 
+/**
+ * Merge the stored line with ESPN's incoming line.
+ * - spread + favoriteSide move together as a pair (never mix an old favorite with a new number).
+ * - Before lock: a complete incoming pair wins, otherwise the stored pair is kept. Juice is
+ *   taken field-by-field from incoming, falling back to stored (incoming nulls never wipe).
+ * - After lock: a complete stored line is frozen; an incomplete one only fills gaps.
+ */
 export function resolveLineFields(
   existing: LineSnapshot | null | undefined,
-  incoming: LineSnapshot,
+  incomingRaw: LineSnapshot,
   pastLock: boolean,
 ): LineSnapshot {
-  if (!shouldRefreshLine(existing, incoming, pastLock)) {
-    return existing!;
+  const incoming = normalizePickemLine(incomingRaw);
+  const stored = existing ? normalizePickemLine(existing) : null;
+  if (!shouldRefreshLine(stored, incoming, pastLock)) {
+    return stored!;
   }
-  if (!pastLock) return incoming;
-  // After lock but incomplete: fill gaps from incoming, prefer existing non-nulls once set
-  if (!existing) return incoming;
+  if (!stored) return incoming;
+
+  if (!pastLock) {
+    const pair = hasSpreadPair(incoming) ? incoming : hasSpreadPair(stored) ? stored : incoming;
+    return {
+      spread: pair.spread,
+      favoriteSide: pair.favoriteSide,
+      oddsAway: incoming.oddsAway ?? stored.oddsAway,
+      oddsHome: incoming.oddsHome ?? stored.oddsHome,
+    };
+  }
+
+  // After lock but incomplete: fill gaps from incoming, prefer stored non-nulls once set.
+  const pair = hasSpreadPair(stored) ? stored : hasSpreadPair(incoming) ? incoming : stored;
   return {
-    spread: existing.spread ?? incoming.spread,
-    favoriteSide: existing.favoriteSide ?? incoming.favoriteSide,
-    oddsAway: existing.oddsAway ?? incoming.oddsAway,
-    oddsHome: existing.oddsHome ?? incoming.oddsHome,
+    spread: pair.spread,
+    favoriteSide: pair.favoriteSide,
+    oddsAway: stored.oddsAway ?? incoming.oddsAway,
+    oddsHome: stored.oddsHome ?? incoming.oddsHome,
   };
+}
+
+/**
+ * Picks store "favorite"/"underdog", not a team. When the favorite flips home↔away
+ * (in practice only before line lock — a complete line is frozen after), stored picks must be
+ * swapped so each user keeps the team they tapped.
+ */
+export function shouldSwapPicksForFavoriteFlip(
+  storedFavorite: FavoriteSide | null | undefined,
+  resolvedFavorite: FavoriteSide | null | undefined,
+): boolean {
+  if (storedFavorite == null || resolvedFavorite == null) return false;
+  return storedFavorite !== resolvedFavorite;
 }
 
 export function mergeGamesWithLineLock(

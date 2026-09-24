@@ -1,11 +1,23 @@
 import type { AtsResult, FavoriteSide, GameData, PickSide } from "./types";
 
+const EVEN_ODDS_TOKENS = new Set(["EVEN", "EV", "EVS", "EVENS", "PK", "PICK", "PICKEM", "PICK'EM"]);
+
+/**
+ * Parse American odds ("-110", "+120", -115, "EVEN") into a number.
+ * "EVEN"/"EV"/"PK" → +100. Empty, garbage, or impossible values (|odds| < 100) → null,
+ * never 0 — a 0 would make a losing ★ bet cost nothing.
+ */
 export function parseAmericanOdds(value: string | number | null | undefined): number | null {
   if (value == null) return null;
-  if (typeof value === "number") return value;
-  const cleaned = value.replace(/[^0-9+\-.]/g, "");
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) && Math.abs(value) >= 100 ? value : null;
+  }
+  const s = value.trim().toUpperCase();
+  if (!s) return null;
+  if (EVEN_ODDS_TOKENS.has(s)) return 100;
+  if (!/^[+-]?\d+(\.\d+)?$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) && Math.abs(n) >= 100 ? n : null;
 }
 
 export function unitsDelta(
@@ -87,9 +99,12 @@ export function weekPlEligible(
   return confidenceCount === required;
 }
 
-/** Only finished games count for win % / P/L. Locked-in-progress games stay pending. */
+/**
+ * Only finished games with an ATS grade count for win % / P/L. Locked in-progress games
+ * stay pending; final games with no line (atsResult null) are excluded, not losses.
+ */
 export function isGradedForStandings(
   game: { status: string; atsResult?: unknown },
 ): boolean {
-  return game.status === "final";
+  return game.status === "final" && game.atsResult != null;
 }
