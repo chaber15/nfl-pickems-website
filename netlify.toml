@@ -14,12 +14,7 @@
   node_bundler = "esbuild"
   included_files = ["shared/**", "server/**"]
 
-# API only in netlify.toml — SPA fallback lives in public/_redirects so
-# `netlify dev` does not rewrite Vite module URLs (/src/*, /@vite/*) to index.html.
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/api/:splat"
-  status = 200
+# Redirects (API + SPA fallback) live in public/_redirects — keep them in one place.
 
 # Midweek: twice daily Tue/Wed/Fri/Sat (UTC) for lines / catch-up. Quiet on pure game days.
 [functions."sync-espn"]

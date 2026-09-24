@@ -1,1 +1,3 @@
-/*    /index.html   200
+# Order matters: Netlify uses the first match, and this file is read before netlify.toml.
+/api/*   /.netlify/functions/api/:splat   200
+/*       /index.html                      200
