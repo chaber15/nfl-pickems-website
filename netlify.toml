@@ -6,6 +6,7 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# Local dev: use `npm run dev:full` (scripts/dev.mjs), not `netlify dev` — see README.
 [dev]
   command = "vite"
   targetPort = 5173

@@ -10,12 +10,16 @@ Requires Node 22+, a Postgres database (Neon), and the Netlify CLI.
 cp .env.example .env   # DATABASE_URL = your Neon **dev branch**, plus test ADMIN_PIN / SUPER_ADMIN_PIN
 npm install
 npm run db:push        # applies schema to whatever DATABASE_URL points at — keep it the dev branch
-npx netlify dev
+npm run dev:full       # website + API
 ```
 
-Open http://localhost:8888, enter a username, and make picks.
+Open http://localhost:5173, enter a username, and make picks. `npm run dev:full -- --host` also serves it to a phone on the same Wi-Fi (use the "Network" address it prints).
 
-> **Never point local `.env` at production.** `drizzle-kit` and `netlify dev` read `.env`, so local commands would write to live data. The production `DATABASE_URL` lives only in Netlify env vars. Test against a Neon branch (Neon console → Branches → New branch from `main`).
+`dev:full` runs Vite for the website and the Netlify functions (`--offline`) for the API, and Vite forwards `/api/*` to them. It prints the database host it's using on start: check that it's the dev branch.
+
+> **Never point local `.env` at production.** `drizzle-kit` and the local API read `DATABASE_URL` from `.env`, so local commands would write to live data. The production `DATABASE_URL` lives only in Netlify env vars. Test against a Neon branch (Neon console → Branches → New branch from `main`).
+>
+> Don't use `netlify dev` for this project: it shows a blank page (the SPA fallback in `public/_redirects` catches Vite's module requests), and without `--offline` it loads the site's Netlify env vars — including the **production** database.
 
 ## Environment variables
 
@@ -41,7 +45,9 @@ Open http://localhost:8888, enter a username, and make picks.
 | `npm run build` | Typecheck (`tsc -b`) + production build to `dist/` |
 | `npm test` | All unit tests (`*.test.ts` in `shared/` and `server/`, via tsx + node:test) |
 | `npm run db:push` | Apply Drizzle schema to `DATABASE_URL` (dev branch!) |
-| `npx netlify dev` | Local dev with Vite + Netlify Functions |
+| `npm run dev:full` | Local dev: website (http://localhost:5173) + API, database from `.env` |
+| `npm run dev` | Website only (API calls fail without `dev:api`) |
+| `npm run dev:api` | API only (Netlify functions, offline, port 9999) |
 
 CI (`.github/workflows/ci.yml`) runs build + tests on every push.
 
