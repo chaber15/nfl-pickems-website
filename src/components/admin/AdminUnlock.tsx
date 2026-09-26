@@ -83,7 +83,7 @@ export function AdminUnlock({
         <button
           type="submit"
           disabled={busy || !pin.trim()}
-          className="min-h-11 rounded-2xl bg-[var(--accent-green)] px-4 font-bold text-[var(--accent-on-green)] disabled:opacity-60"
+          className="min-h-11 rounded-2xl bg-[var(--accent-fill)] px-4 font-bold text-[var(--on-fill)] disabled:opacity-60"
         >
           {busy ? "Checking..." : submitLabel}
         </button>

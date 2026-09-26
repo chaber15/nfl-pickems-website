@@ -41,10 +41,10 @@ function rowBorderClass(row: HistoryRow): string {
   return toneBorder(outcomeTone(row.outcome));
 }
 
+/** Team color for the picked side; pair with the `team-ink` class (readable in both themes). */
 function pickAccentStyle(row: HistoryRow): CSSProperties | undefined {
   if (!row.pickTeamAbbrev) return undefined;
-  const color = teamColor(row.pickTeamAbbrev);
-  return color ? { color } : undefined;
+  return { "--team": teamColor(row.pickTeamAbbrev) } as CSSProperties;
 }
 
 function resultText(row: HistoryRow): string {
@@ -155,7 +155,7 @@ export function HistoryPage() {
                         {row.outcome === "no_pick" ? (
                           <span className="font-bold text-[var(--accent-red)]">No pick</span>
                         ) : (
-                          <span className="font-semibold" style={pickAccentStyle(row)}>
+                          <span className={`font-semibold ${row.pickTeamAbbrev ? "team-ink" : ""}`} style={pickAccentStyle(row)}>
                             {row.pickDisplay ?? "—"}
                           </span>
                         )}
@@ -195,7 +195,7 @@ export function HistoryPage() {
                   </div>
                   <h3 className="mt-1 font-bold">{row.matchup}</h3>
                   <p
-                    className={`mt-2 text-base font-bold ${row.pickTeamAbbrev ? "" : outcomeClass(row.outcome)}`}
+                    className={`mt-2 text-base font-bold ${row.pickTeamAbbrev ? "team-ink" : outcomeClass(row.outcome)}`}
                     style={pickAccentStyle(row)}
                   >
                     {row.outcome === "no_pick" ? "No pick" : (row.pickDisplay ?? "No pick yet")}

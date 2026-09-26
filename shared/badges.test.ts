@@ -5,9 +5,11 @@ import {
   computeDesiredBadges,
   diffBadgeRows,
   tieStandings,
+  type BadgeRule,
   type DesiredBadgeRow,
   type ExistingBadgeRow,
   type SeasonSlate,
+  type WeekView,
 } from "./badges";
 import { isGradedForStandings } from "./scoring";
 import type { UserPick } from "./types";
@@ -17,6 +19,36 @@ import { makeGame, picksOf } from "./testFixtures";
 const noLineFinalsUngraded = !isGradedForStandings({ status: "final", atsResult: null });
 
 const users = ["A", "B", "C", "D"].map((u) => ({ userId: u, username: u }));
+
+/**
+ * Fixed rules for the engine tests, so they test the engine (standings, ties, streak/"first"
+ * bookkeeping, incomplete weeks) and never break when the real badge list changes.
+ */
+const rule = (id: string, kind: "weekly" | "first", earned: (w: WeekView) => boolean): BadgeRule => ({
+  id,
+  name: id,
+  description: id,
+  icon: "🏅",
+  rarity: "common",
+  kind,
+  earned,
+});
+const TEST_RULES: BadgeRule[] = [
+  rule("perfect", "weekly", (w) => w.missed === 0 && w.picks.every((p) => p.result === "win")),
+  rule("wipeout", "weekly", (w) => w.picks.length > 0 && w.picks.every((p) => p.result === "loss")),
+  rule("unstarred", "weekly", (w) => w.picks.length > 0 && !w.plEligible),
+  rule("missed_one", "first", (w) => w.missed > 0 && w.picks.length > 0),
+  rule("lone", "weekly", (w) => w.picks.some((p) => p.result === "win" && p.crowd[p.side] === 1)),
+  rule("first_lone", "first", (w) => w.picks.some((p) => p.result === "win" && p.crowd[p.side] === 1)),
+  rule("top_week", "first", (w) => w.standing.ats.first),
+  rule("top_pl_week", "first", (w) => w.standing.pl.first),
+  rule("top_overall", "first", (w) => w.overall.ats.first),
+  rule("top_pl_overall", "first", (w) => w.overall.pl.first),
+  rule("last_to_first", "weekly", (w) => w.lastWeek.ats.last && w.standing.ats.first),
+  rule("first_to_last", "weekly", (w) => w.lastWeek.ats.first && w.standing.ats.last),
+  rule("five_stars_win", "weekly", (w) => w.starred.length === 5 && w.starred.every((p) => p.result === "win")),
+  rule("five_stars_lose", "weekly", (w) => w.starred.length === 5 && w.starred.every((p) => p.result === "loss")),
+];
 
 function rowsFor(rows: DesiredBadgeRow[], userId: string): string[] {
   return rows
@@ -65,16 +97,17 @@ test("computeDesiredBadges: tie for first → co-champions; push; no-pick user g
     users,
     slates: [{ seasonType: 2, weekNumber: 1, games }],
     picksByUser,
+    rules: TEST_RULES,
   });
   assert.deepEqual(completedWeeks, [{ seasonType: 2, weekNumber: 1 }]);
 
-  // Co-champions and co-leaders overall; push blocks Clean Sweep; nobody P/L eligible → no Bankroll King
-  assert.deepEqual(rowsFor(rows, "A"), ["high_roller@0", "unstarred@1", "week_champion@0"]);
-  assert.deepEqual(rowsFor(rows, "B"), ["high_roller@0", "unstarred@1", "week_champion@0"]);
-  assert.deepEqual(rowsFor(rows, "C"), ["no_show@0", "total_wipeout@1", "unstarred@1"]);
-  // Sat the week out: no Total Wipeout, not ranked
+  // Co-champions and co-leaders overall; a push blocks "perfect"; nobody P/L eligible → no P/L leader
+  assert.deepEqual(rowsFor(rows, "A"), ["top_overall@0", "top_week@0", "unstarred@1"]);
+  assert.deepEqual(rowsFor(rows, "B"), ["top_overall@0", "top_week@0", "unstarred@1"]);
+  assert.deepEqual(rowsFor(rows, "C"), ["missed_one@0", "unstarred@1", "wipeout@1"]);
+  // Sat the week out: no wipeout, not ranked
   assert.deepEqual(rowsFor(rows, "D"), []);
-  assert.ok(!rows.some((r) => r.badgeId === "bankroll_king"));
+  assert.ok(!rows.some((r) => r.badgeId === "top_pl_week"));
 });
 
 test("computeDesiredBadges: incomplete week is never evaluated (no transient leaders)", () => {
@@ -105,45 +138,40 @@ test("computeDesiredBadges: incomplete week is never evaluated (no transient lea
     users: users.slice(0, 2),
     slates,
     picksByUser,
+    rules: TEST_RULES,
   });
   assert.deepEqual(completedWeeks.map((w) => w.weekNumber), [1, 2]);
   assert.ok(!rows.some((r) => r.weekNumber === 3), "week 3 is in progress");
 
   // Week 1: A first, B last. Week 2: B first, A last.
   assert.deepEqual(rowsFor(rows, "A"), [
-    "chalk_city@1",
-    "chalk_city@2",
-    "clean_sweep@1",
-    "fall_from_grace_ats@2",
-    "high_roller@0",
-    "howl@0",
-    "lone_wolf@1",
-    "total_wipeout@2",
+    "first_lone@0",
+    "first_to_last@2",
+    "lone@1",
+    "perfect@1",
+    "top_overall@0",
+    "top_week@0",
     "unstarred@1",
     "unstarred@2",
-    "week_champion@0",
+    "wipeout@2",
   ]);
-  // Through week 2 B (2/3) passes A (1/3) overall → High Roller from week 2 standings
+  // Through week 2 B (2/3) passes A (1/3) overall → top_overall from week 2 standings
   assert.deepEqual(rowsFor(rows, "B"), [
-    "clean_sweep@2",
-    "contrarian@2",
-    "dog_day_afternoon@1",
-    "dog_day_afternoon@2",
-    "from_the_dead_ats@2",
-    "high_roller@0",
-    "howl@0",
-    "kennel_club@2",
-    "lone_wolf@2",
-    "total_wipeout@1",
+    "first_lone@0",
+    "last_to_first@2",
+    "lone@2",
+    "perfect@2",
+    "top_overall@0",
+    "top_week@0",
     "unstarred@1",
     "unstarred@2",
-    "week_champion@0",
+    "wipeout@1",
   ]);
-  const hr = rows.find((r) => r.userId === "B" && r.badgeId === "high_roller")!;
+  const hr = rows.find((r) => r.userId === "B" && r.badgeId === "top_overall")!;
   assert.deepEqual(hr.source, { seasonType: 2, weekNumber: 2 });
 });
 
-test("computeDesiredBadges: ★ P/L board ranks only eligible players; ties share Bankroll King", () => {
+test("computeDesiredBadges: ★ P/L board ranks only eligible players; ties share first", () => {
   const ids = ["p1", "p2", "p3", "p4", "p5", "p6"];
   const games = ids.map((id) => makeGame(id, { atsResult: "favorite" }));
   const five = (side: "favorite" | "underdog") =>
@@ -159,13 +187,14 @@ test("computeDesiredBadges: ★ P/L board ranks only eligible players; ties shar
     users,
     slates: [{ seasonType: 2, weekNumber: 1, games }],
     picksByUser,
+    rules: TEST_RULES,
   });
-  const kings = rows.filter((r) => r.badgeId === "bankroll_king").map((r) => r.userId).sort();
-  assert.deepEqual(kings, ["A", "B"]);
-  const throne = rows.filter((r) => r.badgeId === "throne_room").map((r) => r.userId).sort();
-  assert.deepEqual(throne, ["A", "B"]);
-  assert.ok(rows.some((r) => r.userId === "A" && r.badgeId === "five_star_general"));
-  assert.ok(rows.some((r) => r.userId === "D" && r.badgeId === "busted_five"));
+  const weekTop = rows.filter((r) => r.badgeId === "top_pl_week").map((r) => r.userId).sort();
+  assert.deepEqual(weekTop, ["A", "B"]);
+  const overallTop = rows.filter((r) => r.badgeId === "top_pl_overall").map((r) => r.userId).sort();
+  assert.deepEqual(overallTop, ["A", "B"]);
+  assert.ok(rows.some((r) => r.userId === "A" && r.badgeId === "five_stars_win"));
+  assert.ok(rows.some((r) => r.userId === "D" && r.badgeId === "five_stars_lose"));
 });
 
 test(
@@ -180,10 +209,11 @@ test(
       users: users.slice(0, 1),
       slates: [{ seasonType: 2, weekNumber: 1, games }],
       picksByUser: new Map([["A", picksOf({ x1: "favorite" })]]),
+      rules: TEST_RULES,
     });
-    // Missing the ungraded game is neither a miss (no_show) nor a loss (clean sweep stands)
-    assert.ok(rows.some((r) => r.badgeId === "clean_sweep"));
-    assert.ok(!rows.some((r) => r.badgeId === "no_show"));
+    // Missing the ungraded game is neither a miss nor a loss ("perfect" stands)
+    assert.ok(rows.some((r) => r.badgeId === "perfect"));
+    assert.ok(!rows.some((r) => r.badgeId === "missed_one"));
   },
 );
 
@@ -225,17 +255,17 @@ function want(userId: string, badgeId: string, seasonType: number, weekNumber: n
 test("diffBadgeRows: insert missing, delete stale, keep matches with earnedAt untouched", () => {
   const rows = [
     existing("keep1", "A", "lone_wolf", 2, 1, "2026-09-16T03:54:21.959Z"),
-    existing("keep2", "A", "howl", 2, 0, "2026-09-16T03:54:22.005Z"),
-    existing("stale", "B", "total_wipeout", 2, 2),
+    existing("keep2", "A", "no_show", 2, 0, "2026-09-16T03:54:22.005Z"),
+    existing("stale", "B", "busted_five", 2, 2),
   ];
   const desired = [
     want("A", "lone_wolf", 2, 1),
     // season_once key ignores seasonType (unique per user+badge)
-    want("A", "howl", 3, 0),
-    want("B", "split_decision", 2, 2),
+    want("A", "no_show", 3, 0),
+    want("B", "sniper", 2, 2),
   ];
   const d = diffBadgeRows(rows, desired, scope);
-  assert.deepEqual(d.toInsert.map(badgeRowKey), ["B|split_decision|2|2"]);
+  assert.deepEqual(d.toInsert.map(badgeRowKey), ["B|sniper|2|2"]);
   assert.deepEqual(d.toDelete.map((r) => r.id), ["stale"]);
   assert.deepEqual(d.kept.map((r) => r.id).sort(), ["keep1", "keep2"]);
   const kept1 = d.kept.find((r) => r.id === "keep1")!;
@@ -244,11 +274,11 @@ test("diffBadgeRows: insert missing, delete stale, keep matches with earnedAt un
 
 test("diffBadgeRows: never deletes out-of-scope rows", () => {
   const rows = [
-    existing("banned", "Z", "clean_sweep", 2, 1), // user not in scope (banned)
+    existing("banned", "Z", "hot_hand", 2, 1), // user not in scope (banned)
     existing("old", "A", "week_champion", 2, 0, "2025-10-01T00:00:00Z"), // earlier season
-    existing("oldweek", "A", "clean_sweep", 2, 1, "2025-09-15T00:00:00Z"), // earlier season
-    existing("custom", "A", "some_future_badge", 2, 0), // season badge the engine doesn't compute
-    existing("otherweek", "A", "clean_sweep", 3, 1), // week not in active season
+    existing("oldweek", "A", "hot_hand", 2, 1, "2025-09-15T00:00:00Z"), // earlier season
+    existing("oldretired", "A", "some_retired_badge", 2, 0, "2025-10-01T00:00:00Z"), // earlier season
+    existing("otherweek", "A", "hot_hand", 3, 1), // week not in active season
   ];
   const d = diffBadgeRows(rows, [], scope);
   assert.deepEqual(d.toDelete, []);
@@ -258,25 +288,24 @@ test("diffBadgeRows: never deletes out-of-scope rows", () => {
   assert.deepEqual(d2.toInsert, []);
 });
 
+test("diffBadgeRows: this season's rows of a badge no longer in the list are removed", () => {
+  const rows = [
+    existing("retiredSeason", "A", "some_retired_badge", 2, 0),
+    existing("retiredWeek", "A", "some_retired_badge", 2, 1),
+  ];
+  const d = diffBadgeRows(rows, [], scope);
+  assert.deepEqual(d.toDelete.map((r) => r.id).sort(), ["retiredSeason", "retiredWeek"]);
+});
+
 test("diffBadgeRows: duplicates collapse to the oldest; legacy lifetime week rows removed", () => {
   const rows = [
-    existing("dupNew", "A", "clean_sweep", 2, 1, "2026-09-20T00:00:00Z"),
-    existing("dupOld", "A", "clean_sweep", 2, 1, "2026-09-16T00:00:00Z"),
+    existing("dupNew", "A", "hot_hand", 2, 1, "2026-09-20T00:00:00Z"),
+    existing("dupOld", "A", "hot_hand", 2, 1, "2026-09-16T00:00:00Z"),
     existing("legacy", "A", "steamroller", 2, 2),
     existing("life", "B", "steamroller", 2, 0),
   ];
-  const d = diffBadgeRows(rows, [want("A", "clean_sweep", 2, 1), want("A", "steamroller", 2, 0)], scope);
+  const d = diffBadgeRows(rows, [want("A", "hot_hand", 2, 1), want("A", "steamroller", 2, 0)], scope);
   assert.deepEqual(d.toDelete.map((r) => r.id).sort(), ["dupNew", "legacy", "life"]);
   assert.deepEqual(d.kept.map((r) => r.id), ["dupOld"]);
   assert.deepEqual(d.toInsert.map(badgeRowKey), ["A|steamroller|0"]);
-});
-
-test("diffBadgeRows: onlyBadgeIds restricts inserts and deletes", () => {
-  const rows = [existing("cs", "A", "clean_sweep", 2, 1), existing("life", "B", "steamroller", 2, 0)];
-  const d = diffBadgeRows(rows, [want("A", "bite_back", 2, 0), want("A", "hot_hand", 2, 2)], {
-    ...scope,
-    onlyBadgeIds: new Set(["steamroller", "bite_back"]),
-  });
-  assert.deepEqual(d.toInsert.map(badgeRowKey), ["A|bite_back|0"]);
-  assert.deepEqual(d.toDelete.map((r) => r.id), ["life"]);
 });

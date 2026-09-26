@@ -97,7 +97,7 @@ export function UsernameGate({ children }: { children: ReactNode }) {
                   type="button"
                   disabled={submitting}
                   onClick={() => void attempt(confirmName, true)}
-                  className="min-h-12 rounded-2xl bg-[var(--accent-green)] text-base font-bold text-[var(--accent-on-green)] disabled:opacity-60"
+                  className="min-h-12 rounded-2xl bg-[var(--accent-fill)] text-base font-bold text-[var(--on-fill)] disabled:opacity-60"
                 >
                   {submitting ? "Creating..." : "Create"}
                 </button>
@@ -127,7 +127,7 @@ export function UsernameGate({ children }: { children: ReactNode }) {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="min-h-12 w-full rounded-2xl bg-[var(--accent-green)] text-base font-bold text-[var(--accent-on-green)] disabled:opacity-60"
+                  className="min-h-12 w-full rounded-2xl bg-[var(--accent-fill)] text-base font-bold text-[var(--on-fill)] disabled:opacity-60"
                 >
                   {submitting ? "Starting..." : "Start Picking"}
                 </button>

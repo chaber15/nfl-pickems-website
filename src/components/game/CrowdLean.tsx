@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { useState } from "react";
 import { Star } from "../icons";
 import type { GameData } from "@shared/types";
@@ -81,15 +82,15 @@ export function CrowdLean({
           {picked > 0 && (
             <span className="absolute inset-0 flex">
               <span
-                className="h-full min-w-0"
-                style={{ width: `${awayPct}%`, backgroundColor: teamColor(game.awayAbbrev) }}
+                className="team-fill h-full min-w-0"
+                style={{ width: `${awayPct}%`, "--team": teamColor(game.awayAbbrev) } as CSSProperties}
               />
               {crowd.awayCount > 0 && crowd.homeCount > 0 && (
                 <span className="h-full w-0.5 shrink-0 bg-white" aria-hidden />
               )}
               <span
-                className="h-full min-w-0"
-                style={{ width: `${homePct}%`, backgroundColor: teamColor(game.homeAbbrev) }}
+                className="team-fill h-full min-w-0"
+                style={{ width: `${homePct}%`, "--team": teamColor(game.homeAbbrev) } as CSSProperties}
               />
             </span>
           )}

@@ -86,7 +86,7 @@ export function ChangeUsernamePanel({ compact = false }: { compact?: boolean }) 
           type="button"
           disabled={saving}
           onClick={() => void save()}
-          className="min-h-11 rounded-xl bg-[var(--accent-green)] px-3 text-sm font-bold text-[var(--accent-on-green)] disabled:opacity-60"
+          className="min-h-11 rounded-xl bg-[var(--accent-fill)] px-3 text-sm font-bold text-[var(--on-fill)] disabled:opacity-60"
         >
           {saving ? "Saving..." : "Save"}
         </button>

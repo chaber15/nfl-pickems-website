@@ -7,7 +7,7 @@ import type {
   HistoryRow,
   WeekCompareResponse,
 } from "@shared/types";
-import type { BadgeRarity } from "@shared/badges";
+import type { BadgeChange, BadgeKind, BadgeRarity } from "@shared/badges";
 
 const API_BASE = "/api";
 const TIMEOUT_MS = 10_000;
@@ -256,7 +256,7 @@ export interface BadgeCatalogRow {
   id: string;
   name: string;
   description: string;
-  scope: string;
+  kind: BadgeKind;
   rarity?: BadgeRarity;
   timesEarned: number;
 }
@@ -289,33 +289,18 @@ export async function apiSyncEspn(seasonType?: number, week?: number): Promise<{
   });
 }
 
-export interface BadgeRefreshResult {
-  weeks: Array<{
-    seasonType: number;
-    week: number;
-    awarded: number;
-    status: "ok" | "skipped_empty" | "skipped_incomplete";
-  }>;
-  totalAwarded: number;
-  wiped?: number;
-  lifetime?: {
-    removed: number;
-    granted: number;
-    countsByUser: number;
-    remainingAfterWipe?: number;
-  };
+export interface BadgePreview {
+  changes: BadgeChange[];
+  fingerprint: string;
+  weeks: Array<{ seasonType: number; weekNumber: number; status: "ok" | "skipped_incomplete" }>;
 }
 
-export async function apiAdminRefreshBadges(opts: {
-  seasonType?: number;
-  week?: number;
-  allCompleted?: boolean;
-  reconcileOnly?: boolean;
-}): Promise<BadgeRefreshResult> {
-  return request("/admin/badges", {
-    method: "POST",
-    body: JSON.stringify(opts),
-  });
+export async function apiAdminPreviewBadges(): Promise<BadgePreview> {
+  return request("/admin/badges", { method: "POST", body: JSON.stringify({ mode: "preview" }) });
+}
+
+export async function apiAdminApplyBadges(fingerprint: string): Promise<{ added: number; removed: number }> {
+  return request("/admin/badges", { method: "POST", body: JSON.stringify({ mode: "apply", fingerprint }) });
 }
 
 async function adminAction<T = unknown>(body: Record<string, unknown>): Promise<T> {

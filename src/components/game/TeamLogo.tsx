@@ -21,7 +21,7 @@ export function TeamLogo({ abbrev, name, size = 40 }: { abbrev: string; name: st
       height={size}
       loading="lazy"
       decoding="async"
-      className="shrink-0 object-contain"
+      className="team-logo shrink-0 object-contain"
       style={{ width: size, height: size }}
       title={name}
     />

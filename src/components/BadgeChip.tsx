@@ -1,44 +1,73 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { EarnedBadge } from "@shared/types";
 import {
   BADGE_RARITY_LABEL,
-  badgeChipClass,
+  badgeIcon,
   badgeRarity,
-  compareBadgeRarity,
-  isSeasonScopedBadge,
+  badgeRarityClass,
+  groupEarnedBadges,
+  type BadgeGroup,
 } from "@shared/badges";
+import { weekLabel } from "@shared/weekUtils";
 
-type Props = {
-  badge: EarnedBadge;
-  showWeek?: boolean;
-  className?: string;
-  dense?: boolean;
-};
+/** Medals shown in a leaderboard row before collapsing the rest into "+N". */
+const TRAIL_MAX = 5;
 
-export function BadgeChip({ badge, showWeek = false, className = "", dense = false }: Props) {
-  const chipRef = useRef<HTMLButtonElement>(null);
+function earnedLine(g: BadgeGroup): string {
+  if (g.weeks.length === 0) {
+    const d = new Date(g.earnedAt);
+    return Number.isNaN(d.getTime())
+      ? "Earned this season"
+      : `Earned ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+  }
+  const labels = g.weeks.map((w) => weekLabel(w.seasonType ?? 2, w.weekNumber));
+  return g.count > 1 ? `Earned ${g.count}× · ${labels.join(", ")}` : `Earned ${labels[0]}`;
+}
+
+function accessibleName(g: BadgeGroup): string {
+  const rarity = BADGE_RARITY_LABEL[badgeRarity(g.badgeId)];
+  return `${g.name}, ${rarity}${g.count > 1 ? `, earned ${g.count} times` : ""}`;
+}
+
+function BadgeTipCard({ group, id }: { group: BadgeGroup; id: string }) {
+  const rarity = badgeRarityClass(group.badgeId);
+  return (
+    <div id={id} role="tooltip" className={`badge-tip ${rarity}`}>
+      <div className="badge-tip__head">
+        <span className={`badge-medal badge-medal--lg badge-emoji ${rarity}`} aria-hidden>
+          {badgeIcon(group.badgeId)}
+        </span>
+        <div>
+          <div className="badge-tip__name">{group.name}</div>
+          <div className="badge-tip__rarity">{BADGE_RARITY_LABEL[badgeRarity(group.badgeId)]}</div>
+        </div>
+      </div>
+      <p className="badge-tip__desc">{group.description?.trim() || "Earned badge"}</p>
+      <p className="badge-tip__meta">{earnedLine(group)}</p>
+    </div>
+  );
+}
+
+/**
+ * A badge you can hover (mouse), focus (keyboard) or tap (touch) to see its card.
+ * A tap pins the card open until you tap elsewhere or press Escape.
+ */
+function BadgeTrigger({ group, children }: { group: BadgeGroup; children: ReactNode }) {
+  const ref = useRef<HTMLButtonElement>(null);
   const tipId = useId();
-  /** Mouse hover or keyboard focus. */
   const [hover, setHover] = useState(false);
-  /** Tapped / clicked open — stays until tapped again, tapped elsewhere, or Escape. */
   const [pinned, setPinned] = useState(false);
   const open = hover || pinned;
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  const chipClass = badgeChipClass(badge.badgeId);
-  const description = badge.description?.trim() || "Earned badge";
-  const tip = `${badge.name} · ${BADGE_RARITY_LABEL[badgeRarity(badge.badgeId)]} — ${description}`;
-  const label = `${badge.name}${
-    showWeek && !isSeasonScopedBadge(badge.weekNumber) ? ` · W${badge.weekNumber}` : ""
-  }`;
 
   useLayoutEffect(() => {
-    if (!open || !chipRef.current) {
+    if (!open || !ref.current) {
       setPos(null);
       return;
     }
     const place = () => {
-      const r = chipRef.current?.getBoundingClientRect();
+      const r = ref.current?.getBoundingClientRect();
       if (!r) return;
       const pad = 8;
       const maxW = Math.min(288, window.innerWidth - pad * 2);
@@ -59,7 +88,7 @@ export function BadgeChip({ badge, showWeek = false, className = "", dense = fal
   useEffect(() => {
     if (!pinned) return;
     const onPointer = (e: PointerEvent) => {
-      if (!chipRef.current?.contains(e.target as Node)) setPinned(false);
+      if (!ref.current?.contains(e.target as Node)) setPinned(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -78,8 +107,10 @@ export function BadgeChip({ badge, showWeek = false, className = "", dense = fal
   return (
     <>
       <button
-        ref={chipRef}
+        ref={ref}
         type="button"
+        className="badge-trigger"
+        aria-label={accessibleName(group)}
         aria-describedby={open ? tipId : undefined}
         aria-expanded={pinned}
         onPointerEnter={(e) => {
@@ -100,24 +131,17 @@ export function BadgeChip({ badge, showWeek = false, className = "", dense = fal
           setPinned((v) => !v);
           setHover(false);
         }}
-        className={`inline-flex shrink-0 cursor-help rounded-full border font-bold outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] ${
-          dense
-            ? "border px-1.5 py-0 text-[9px] leading-4 sm:text-[10px]"
-            : "border-2 px-2.5 py-0.5 text-[10px] shadow-sm sm:text-[11px]"
-        } ${chipClass} ${className}`}
       >
-        {label}
+        {children}
       </button>
       {open &&
         pos &&
         createPortal(
           <div
-            id={tipId}
-            role="tooltip"
-            className="pointer-events-none fixed z-[200] w-[min(18rem,calc(100vw-1rem))] -translate-x-1/2 rounded-xl border-2 border-[var(--border-card)] bg-[var(--bg-card-elevated)] px-3 py-2 text-left text-xs font-semibold leading-snug text-[var(--text-primary)] shadow-[var(--shadow-card)]"
+            className="pointer-events-none fixed z-[200] w-[min(18rem,calc(100vw-1rem))] -translate-x-1/2"
             style={{ top: pos.top, left: pos.left }}
           >
-            {tip}
+            <BadgeTipCard group={group} id={tipId} />
           </div>,
           document.body,
         )}
@@ -125,62 +149,65 @@ export function BadgeChip({ badge, showWeek = false, className = "", dense = fal
   );
 }
 
-function sortByRarity(badges: EarnedBadge[]): EarnedBadge[] {
-  return [...badges].sort((a, b) => compareBadgeRarity(a.badgeId, b.badgeId));
+function BadgeMedal({ group }: { group: BadgeGroup }) {
+  return (
+    <BadgeTrigger group={group}>
+      <span className={`badge-medal badge-medal--sm badge-emoji ${badgeRarityClass(group.badgeId)}`} aria-hidden>
+        {badgeIcon(group.badgeId)}
+      </span>
+    </BadgeTrigger>
+  );
 }
 
-function uniqueByBadgeId(badges: EarnedBadge[]): EarnedBadge[] {
-  const seen = new Set<string>();
-  const out: EarnedBadge[] = [];
-  for (const b of badges) {
-    if (seen.has(b.badgeId)) continue;
-    seen.add(b.badgeId);
-    out.push(b);
-  }
-  return out;
+function BadgeEmblem({ group }: { group: BadgeGroup }) {
+  return (
+    <BadgeTrigger group={group}>
+      <span className={`badge-emblem ${badgeRarityClass(group.badgeId)}`} aria-hidden>
+        <span className="badge-emblem__icon badge-emoji">{badgeIcon(group.badgeId)}</span>
+        {group.name}
+        {group.count > 1 && <span className="badge-count">×{group.count}</span>}
+      </span>
+    </BadgeTrigger>
+  );
 }
 
-/** Single-line badge trail for leaderboard rows — CSS truncates overflow. */
+/**
+ * Leaderboard row: round medals, rarest first, one per badge (repeats show ×N in the card).
+ * `mode` is kept for callers; both modes group repeats the same way.
+ */
 export function LeaderboardBadgeTrail({
   badges,
-  mode,
 }: {
   badges: EarnedBadge[];
   mode: "week" | "overall";
 }) {
-  const ordered = sortByRarity(badges);
-  const pool = mode === "overall" ? uniqueByBadgeId(ordered).slice(0, 5) : ordered;
-  if (pool.length === 0) return null;
-
+  const groups = groupEarnedBadges(badges);
+  if (groups.length === 0) return null;
+  const shown = groups.slice(0, TRAIL_MAX);
+  const hidden = groups.slice(TRAIL_MAX);
   return (
-    <div className="flex min-w-0 max-w-full flex-nowrap items-center gap-1 overflow-hidden py-0.5">
-      {pool.map((b) => (
-        <BadgeChip
-          key={`${b.badgeId}-${b.seasonType}-${b.weekNumber}-${b.earnedAt}`}
-          badge={b}
-          dense
-        />
+    <div className="flex min-w-0 max-w-full flex-nowrap items-center gap-1.5 py-0.5">
+      {shown.map((g) => (
+        <BadgeMedal key={g.badgeId} group={g} />
       ))}
+      {hidden.length > 0 && (
+        <span className="badge-more" title={hidden.map((g) => g.name).join(", ")}>
+          +{hidden.length}
+          <span className="sr-only"> more: {hidden.map((g) => g.name).join(", ")}</span>
+        </span>
+      )}
     </div>
   );
 }
 
-export function BadgeChipRow({
-  badges,
-  showWeek = false,
-}: {
-  badges: EarnedBadge[];
-  showWeek?: boolean;
-}) {
-  if (badges.length === 0) return null;
+/** Stats page: emblem chips with names, rarest first, repeats shown as ×N. */
+export function BadgeChipRow({ badges }: { badges: EarnedBadge[] }) {
+  const groups = groupEarnedBadges(badges);
+  if (groups.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {sortByRarity(badges).map((b) => (
-        <BadgeChip
-          key={`${b.badgeId}-${b.seasonType}-${b.weekNumber}-${b.earnedAt}`}
-          badge={b}
-          showWeek={showWeek}
-        />
+    <div className="flex flex-wrap gap-2">
+      {groups.map((g) => (
+        <BadgeEmblem key={g.badgeId} group={g} />
       ))}
     </div>
   );

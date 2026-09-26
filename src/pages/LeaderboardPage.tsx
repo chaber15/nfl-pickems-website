@@ -131,7 +131,7 @@ export function LeaderboardPage() {
             <button
               type="button"
               onClick={dismissTutorial}
-              className="mt-3 min-h-10 rounded-xl bg-[var(--accent-blue)] px-4 text-sm font-bold text-white"
+              className="mt-3 min-h-10 rounded-xl bg-[var(--blue-fill)] px-4 text-sm font-bold text-[var(--on-fill)]"
             >
               Got it
             </button>
@@ -148,7 +148,7 @@ export function LeaderboardPage() {
                   onClick={() => setScope("overall")}
                   className={`min-h-11 rounded-xl px-4 py-2 text-sm font-bold ${
                     scope === "overall"
-                      ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]"
+                      ? "bg-[var(--accent-fill)] text-[var(--on-fill)]"
                       : "text-[var(--text-primary)]"
                   }`}
                 >
@@ -159,7 +159,7 @@ export function LeaderboardPage() {
                   onClick={() => setScope("week")}
                   className={`min-h-11 rounded-xl px-4 py-2 text-sm font-bold ${
                     scope === "week"
-                      ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]"
+                      ? "bg-[var(--accent-fill)] text-[var(--on-fill)]"
                       : "text-[var(--text-primary)]"
                   }`}
                 >
@@ -172,7 +172,7 @@ export function LeaderboardPage() {
                   onClick={() => setMode("winPct")}
                   className={`min-h-11 rounded-xl px-4 py-2 text-sm font-bold ${
                     mode === "winPct"
-                      ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]"
+                      ? "bg-[var(--accent-fill)] text-[var(--on-fill)]"
                       : "text-[var(--text-primary)]"
                   }`}
                 >
@@ -183,7 +183,7 @@ export function LeaderboardPage() {
                   onClick={() => setMode("pl")}
                   className={`min-h-11 rounded-xl px-4 py-2 text-sm font-bold ${
                     mode === "pl"
-                      ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]"
+                      ? "bg-[var(--accent-fill)] text-[var(--on-fill)]"
                       : "text-[var(--text-primary)]"
                   }`}
                 >
@@ -226,7 +226,7 @@ export function LeaderboardPage() {
             <div className="hidden overflow-visible rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] md:block">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="text-[var(--text-muted)]">
+                  <tr className="whitespace-nowrap text-[var(--text-muted)]">
                     <th className="w-12 px-4 py-3 text-center font-semibold" title="Show on pick lean">
                       <span className="sr-only">Show on lean</span>✓
                     </th>
@@ -239,7 +239,8 @@ export function LeaderboardPage() {
                     {scope === "overall" && (
                       <th className="px-4 py-3 font-semibold">Weeks</th>
                     )}
-                    {showBadgeTrail && <th className="px-4 py-3" aria-hidden="true" />}
+                    {/* Badge column takes the leftover width so medals sit right after the stats. */}
+                    {showBadgeTrail && <th className="w-full px-4 py-3" aria-hidden="true" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -267,7 +268,7 @@ export function LeaderboardPage() {
                             <Crown size={16} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
                           )}
                         </td>
-                        <td className="px-4 py-3 font-semibold">
+                        <td className="whitespace-nowrap px-4 py-3 font-semibold">
                           <Link
                             to={`/history/${encodeURIComponent(entry.username)}`}
                             className="underline-offset-2 hover:underline"
@@ -280,12 +281,12 @@ export function LeaderboardPage() {
                             ? `${entry.winPct.toFixed(1)}%`
                             : entry.confidencePl.toFixed(2)}
                         </td>
-                        <td className="px-4 py-3 font-mono">{recordLabel(entry, mode)}</td>
+                        <td className="whitespace-nowrap px-4 py-3 font-mono">{recordLabel(entry, mode)}</td>
                         {scope === "overall" && (
                           <td className="px-4 py-3 font-mono">{entry.weeksComplete}</td>
                         )}
                         {showBadgeTrail && (
-                          <td className="max-w-[min(42vw,22rem)] px-4 py-3 align-middle">
+                          <td className="w-full px-4 py-3 align-middle">
                             {rowBadges.length > 0 ? (
                               <LeaderboardBadgeTrail badges={rowBadges} mode={badgeTrailMode} />
                             ) : null}

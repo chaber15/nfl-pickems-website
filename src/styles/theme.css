@@ -9,6 +9,11 @@
   --accent-green: #0f7a4a;
   --accent-green-soft: #1a9a5c;
   --accent-on-green: #ffffff;
+  /* Solid button fills (text on them is --on-fill) */
+  --accent-fill: #0f7a4a;
+  --blue-fill: #2378b8;
+  --red-fill: #c23b3b;
+  --on-fill: #ffffff;
   --accent-gold: #c9971a;
   --accent-gold-bright: #e0b03a;
   --accent-red: #d64545;
@@ -20,18 +25,29 @@
   --sidebar-bg: #ffffff;
   --nav-active: #0f7a4a;
   --shadow-card: 0 2px 0 #d8dee6;
+  /* Badge rarity (common → legendary) */
+  --rarity-common: #6b7785;
+  --rarity-uncommon: #0f7a4a;
+  --rarity-rare: #2a8fd6;
+  --rarity-epic: #7c4dcc;
+  --rarity-legendary: #c9971a;
 }
 
 [data-theme="dark"] {
-  --bg-page: #0e1116;
-  --bg-card: #171b22;
-  --bg-card-elevated: #1f2530;
-  --border-card: #2c3440;
+  color-scheme: dark;
+  --bg-page: #0d1015;
+  --bg-card: #161b23;
+  --bg-card-elevated: #202733;
+  --border-card: #2f3845;
   --text-primary: #eef1f5;
-  --text-muted: #93a0b0;
+  --text-muted: #9aa7b6;
   --accent-green: #3ecf8e;
   --accent-green-soft: #5dd9a4;
   --accent-on-green: #0e1116;
+  --accent-fill: #1e7d55;
+  --blue-fill: #2b6fa8;
+  --red-fill: #b83b3b;
+  --on-fill: #ffffff;
   --accent-gold: #e8b84a;
   --accent-gold-bright: #f0c85c;
   --accent-red: #f07178;
@@ -40,29 +56,44 @@
   --ticker-amber: #f5a623;
   --ticker-green: #3ecf8e;
   --ticker-red: #f87171;
-  --sidebar-bg: #13171e;
+  --sidebar-bg: #12161d;
   --nav-active: #3ecf8e;
   --shadow-card: 0 2px 0 #080a0d;
+  --rarity-common: #9aa6b4;
+  --rarity-uncommon: #3ecf8e;
+  --rarity-rare: #5eb3f0;
+  --rarity-epic: #a88bf0;
+  --rarity-legendary: #e8b84a;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg-page: #0e1116;
-    --bg-card: #171b22;
-    --bg-card-elevated: #1f2530;
-    --border-card: #2c3440;
+    color-scheme: dark;
+    --bg-page: #0d1015;
+    --bg-card: #161b23;
+    --bg-card-elevated: #202733;
+    --border-card: #2f3845;
     --text-primary: #eef1f5;
-    --text-muted: #93a0b0;
+    --text-muted: #9aa7b6;
     --accent-green: #3ecf8e;
     --accent-green-soft: #5dd9a4;
     --accent-on-green: #0e1116;
+    --accent-fill: #1e7d55;
+    --blue-fill: #2b6fa8;
+    --red-fill: #b83b3b;
+    --on-fill: #ffffff;
     --accent-gold: #e8b84a;
     --accent-gold-bright: #f0c85c;
     --accent-red: #f07178;
     --accent-blue: #5eb3f0;
-    --sidebar-bg: #13171e;
+    --sidebar-bg: #12161d;
     --nav-active: #3ecf8e;
     --shadow-card: 0 2px 0 #080a0d;
+    --rarity-common: #9aa6b4;
+    --rarity-uncommon: #3ecf8e;
+    --rarity-rare: #5eb3f0;
+    --rarity-epic: #a88bf0;
+    --rarity-legendary: #e8b84a;
   }
 }
 

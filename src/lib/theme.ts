@@ -24,7 +24,7 @@ export function applyTheme(mode: ThemeMode) {
   const dark = resolveDark(mode);
   document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", dark ? "#0e1116" : "#f4f6f8");
+  if (meta) meta.setAttribute("content", dark ? "#0d1015" : "#f4f6f8");
 }
 
 export function setThemeMode(mode: ThemeMode) {
@@ -32,9 +32,17 @@ export function setThemeMode(mode: ThemeMode) {
   applyTheme(mode);
 }
 
-export function cycleTheme(): ThemeMode {
-  const current = getThemeMode();
-  const next: ThemeMode = current === "light" ? "dark" : current === "dark" ? "system" : "light";
-  setThemeMode(next);
-  return next;
+/** Keep "Match my device" in sync when the OS switches light/dark (e.g. at sunset). */
+export function watchSystemTheme(): () => void {
+  let mq: MediaQueryList;
+  try {
+    mq = window.matchMedia("(prefers-color-scheme: dark)");
+  } catch {
+    return () => {};
+  }
+  const onChange = () => {
+    if (getThemeMode() === "system") applyTheme("system");
+  };
+  mq.addEventListener?.("change", onChange);
+  return () => mq.removeEventListener?.("change", onChange);
 }

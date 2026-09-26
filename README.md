@@ -66,7 +66,7 @@ One hourly function (`netlify/functions/sync-espn.ts`, logic in `server/espn/sch
 
 - Skips without touching the database from March–July and 2:00–8:59am ET.
 - Otherwise one query decides whether ESPN work is due: a game has kicked off and isn't final, a game kicks off within the hour, or lines need refreshing before the Wednesday 8am ET lock.
-- Awards badges idempotently when a week becomes fully final.
+- Adds any newly earned badges when a week becomes fully final (add-only: it never removes a badge).
 
 Pages also trigger a sync on read (throttled to once per 5 minutes) while games are live, so anyone watching gets near-live scores on any day.
 
@@ -77,7 +77,7 @@ Pages also trigger a sync on read (throttled to once per 5 minutes) while games 
 - **History**: Past picks with results and units (no pick = wrong)
 - **Leaderboard**: Win % and Confidence P/L, overall or by week; badge chips with hover tooltips
 - **Stats**: Confidence P/L vs Hypothetical P/L, streaks, weekly table, earned badges
-- **Badges**: Week awards and career-threshold badges (rarity-colored chips). Cumulative badges (`By a Nose`, `Juice Box`, `Road Dog`, `Steamroller`, `Bite Back`) need career totals — definitions in `shared/badges.ts` (`LIFETIME_BADGE_THRESHOLDS`)
+- **Badges**: weekly awards, once-a-season firsts and season totals (rarity-colored chips) — see *Badges*
 - **Admin**: passphrase-unlocked; two tiers (see *Accounts & admin*)
 - **Themes**: Light / dark / system
 
@@ -92,10 +92,18 @@ See `shared/scoring.ts` (run `npm test`):
 
 ## Badges
 
-Catalog and evaluation: `shared/badges.ts`. Server award / wipe / reconcile: `server/badges.ts`.
+**Every badge is one entry in `shared/badgeDefs.ts`** — id, name, description, rarity, kind and rule, side by side. Adding, editing or removing a badge only touches that file. The engine (`shared/badges.ts`) builds a read-only summary of each player's completed week and runs every rule over the active season; `server/badges.ts` diffs the result against `user_badges`.
 
-- Badges are computed in memory for the active season and diffed against stored rows (insert missing / delete stale in one transaction), so existing badges keep their earned date. Runs when a week becomes fully final and on Admin **Recalculate badges**.
-- To change a threshold: edit `LIFETIME_BADGE_THRESHOLDS` **and** the matching catalog description, then ship + run recalculate if old rows were granted under the previous rule.
+- **Kinds**: `weekly` (earnable every week), `first` (once a season, the first week it happens), `count` (once a season, when the running total reaches `goal`).
+- **Hourly job is add-only.** New badges appear as weeks go final; nothing is ever removed automatically, so shipping a stricter rule can't silently take badges away.
+- **Admin → Recalculate badges → Preview** lists exactly who gains or loses what (retired badges and old-format rows included). **Apply** recomputes and refuses if anything changed since the preview. Only the active season is touched; existing badges keep their earned date.
+- Badges whose id is no longer in the list are hidden immediately and removed on the next Apply.
+
+To change a badge:
+
+1. Edit its entry in `shared/badgeDefs.ts` (never change an `id` once live — that's a remove + add).
+2. `npm test` — the golden-season snapshot prints every row the change adds or removes. If intended: `UPDATE_SNAPSHOTS=1 npm test`.
+3. Deploy, then Admin → Preview → Apply.
 
 ## Project structure
 

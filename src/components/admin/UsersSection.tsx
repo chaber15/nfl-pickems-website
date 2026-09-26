@@ -275,7 +275,7 @@ export function UsersSection({ users, setUsers, tier, currentUserId, onError }: 
                         type="button"
                         disabled={busy}
                         onClick={() => void saveNames(u)}
-                        className="min-h-11 rounded-xl bg-[var(--accent-green)] px-4 text-sm font-bold text-[var(--accent-on-green)] disabled:opacity-60"
+                        className="min-h-11 rounded-xl bg-[var(--accent-fill)] px-4 text-sm font-bold text-[var(--on-fill)] disabled:opacity-60"
                       >
                         {busy ? "Saving..." : "Save"}
                       </button>

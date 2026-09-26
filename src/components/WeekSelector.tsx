@@ -123,7 +123,7 @@ export function WeekSelector() {
                 onClick={() => setTab(id)}
                 className={`min-h-11 rounded-lg text-xs font-bold tracking-wide ${
                   tab === id
-                    ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]"
+                    ? "bg-[var(--accent-fill)] text-[var(--on-fill)]"
                     : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                 }`}
               >
@@ -156,7 +156,7 @@ export function WeekSelector() {
                   }}
                   className={`min-h-11 rounded-xl text-xs font-bold ${
                     active
-                      ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]"
+                      ? "bg-[var(--accent-fill)] text-[var(--on-fill)]"
                       : "bg-[var(--bg-page)] text-[var(--text-primary)] hover:bg-[var(--bg-card-elevated)]"
                   }`}
                 >

@@ -1,0 +1,153 @@
+/*
+ * Badges: round medals (leaderboard), emblem chips (Stats page) and the hover card.
+ * Each badge element carries a `rarity-*` class (see badgeRarityClass in shared/badges.ts)
+ * that sets --rc, the rarity color from theme.css.
+ */
+.rarity-common { --rc: var(--rarity-common); }
+.rarity-uncommon { --rc: var(--rarity-uncommon); }
+.rarity-rare { --rc: var(--rarity-rare); }
+.rarity-epic { --rc: var(--rarity-epic); }
+.rarity-legendary { --rc: var(--rarity-legendary); }
+
+.badge-emoji {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  line-height: 1;
+}
+
+/* Medal: a round icon in a ring of the rarity color. */
+.badge-medal {
+  --size: 26px;
+  width: var(--size);
+  height: var(--size);
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: calc(var(--size) * 0.56);
+  background: radial-gradient(
+    circle at 38% 32%,
+    color-mix(in srgb, var(--rc) 8%, var(--bg-card)),
+    color-mix(in srgb, var(--rc) 30%, var(--bg-card)) 75%
+  );
+  box-shadow:
+    inset 0 0 0 2.5px var(--rc),
+    0 1px 0 color-mix(in srgb, var(--rc) 50%, transparent);
+}
+.badge-medal.rarity-legendary {
+  box-shadow:
+    inset 0 0 0 2.5px var(--rc),
+    0 0 0 2px color-mix(in srgb, var(--rc) 30%, transparent);
+}
+.badge-medal--sm { --size: 24px; }
+.badge-medal--lg { --size: 34px; }
+
+/* Emblem chip: icon disc + name on a quiet chip. */
+.badge-emblem {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px 0 3px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-card-elevated);
+  border: 1px solid color-mix(in srgb, var(--rc) 40%, var(--border-card));
+}
+.badge-emblem.rarity-legendary {
+  border-color: var(--rc);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rc) 30%, var(--bg-card)),
+    color-mix(in srgb, var(--rc) 10%, var(--bg-card))
+  );
+}
+.badge-emblem__icon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 16px;
+  background: color-mix(in srgb, var(--rc) 14%, var(--bg-card));
+  box-shadow: inset 0 0 0 1.5px var(--rc);
+}
+.badge-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Tap/hover target for medals and chips. */
+.badge-trigger {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: help;
+  border-radius: 999px;
+}
+.badge-trigger:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.badge-more {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding-left: 2px;
+  white-space: nowrap;
+}
+
+/* Hover card */
+.badge-tip {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg-card);
+  border: 2px solid var(--border-card);
+  box-shadow: var(--shadow-card);
+  color: var(--text-primary);
+  text-align: left;
+}
+.badge-tip__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.badge-tip__name {
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.15;
+}
+.badge-tip__rarity {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rc);
+}
+.badge-tip__desc {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.badge-tip__meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Admin catalog row tint */
+.badge-soft {
+  background: color-mix(in srgb, var(--rc) 10%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--rc) 45%, var(--bg-card));
+}

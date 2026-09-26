@@ -50,7 +50,7 @@ export function Sidebar() {
             className={({ isActive }) =>
               `flex min-h-12 items-center gap-3 rounded-2xl px-4 text-sm font-semibold transition-colors ${
                 isActive
-                  ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]"
+                  ? "bg-[var(--accent-fill)] text-[var(--on-fill)]"
                   : "text-[var(--text-primary)] hover:bg-[var(--bg-card-elevated)]"
               }`
             }
@@ -64,7 +64,7 @@ export function Sidebar() {
             to={{ pathname: "/admin", search: weekSearch }}
             className={({ isActive }) =>
               `flex min-h-12 items-center gap-3 rounded-2xl px-4 text-sm font-semibold ${
-                isActive ? "bg-[var(--accent-green)] text-[var(--accent-on-green)]" : "text-[var(--text-primary)]"
+                isActive ? "bg-[var(--accent-fill)] text-[var(--on-fill)]" : "text-[var(--text-primary)]"
               }`
             }
           >

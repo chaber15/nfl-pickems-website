@@ -23,3 +23,11 @@ graphify-out/
 
 # Claude Code agent worktrees
 .claude/
+
+# Family pick spreadsheets (private data; used locally for badge calibration)
+NFL Spread Picking*.xlsx
+NFL Spread Picking*.csv
+
+# Temporary local preview config
+vite.localtest.config.ts
+.env.localpreview

@@ -39,13 +39,16 @@ export function PickButton({
       onClick={onClick}
       className={`flex min-h-14 w-full flex-col items-center justify-center gap-0.5 rounded-2xl border-2 px-3 py-3 text-center transition-colors transition-transform ${
         selected
-          ? "border-[var(--accent-green)] bg-[var(--accent-green)] text-[var(--accent-on-green)]"
+          ? "border-[var(--accent-fill)] bg-[var(--accent-fill)] text-[var(--on-fill)]"
           : isFavorite
             ? "border-[var(--accent-blue)] bg-[var(--bg-card)] text-[var(--text-primary)]"
             : "border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-primary)]"
       } ${
         disabled
-          ? "cursor-not-allowed opacity-60"
+          ? // Locked: dim only the side you didn't take, so your pick stays readable.
+            selected
+            ? "cursor-not-allowed"
+            : "cursor-not-allowed opacity-60"
           : busy
             ? "cursor-wait"
             : "cursor-pointer active:scale-[0.98]"

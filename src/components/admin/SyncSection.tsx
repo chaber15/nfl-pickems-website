@@ -40,7 +40,7 @@ export function SyncSection({ onError }: { onError: AdminErrorHandler }) {
           type="button"
           onClick={sync}
           disabled={busy}
-          className="min-h-11 rounded-2xl bg-[var(--accent-green)] px-4 font-bold text-[var(--accent-on-green)] disabled:opacity-60"
+          className="min-h-11 rounded-2xl bg-[var(--accent-fill)] px-4 font-bold text-[var(--on-fill)] disabled:opacity-60"
         >
           {busy ? "Syncing..." : "Sync now"}
         </button>

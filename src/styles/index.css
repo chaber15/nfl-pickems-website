@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./fonts.css";
 @import "./theme.css";
+@import "./badges.css";
 
 @theme {
   --color-page: var(--bg-page);
@@ -34,4 +35,24 @@ body {
 
 .font-tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Team colors (set --team on the element). Brand colors are kept as the hue, but their lightness
+ * is clamped so text and bars stay readable: dark navies lighten in dark mode, and yellows/silvers
+ * darken on white.
+ */
+.team-ink { color: var(--team); }
+.team-fill { background-color: var(--team); }
+[data-theme="dark"] .team-ink { color: color-mix(in oklab, var(--team) 55%, #ffffff); }
+[data-theme="dark"] .team-fill { background-color: color-mix(in oklab, var(--team) 72%, #ffffff); }
+@supports (color: oklch(from red l c h)) {
+  .team-ink { color: oklch(from var(--team) min(l, 0.55) c h); }
+  [data-theme="dark"] .team-ink { color: oklch(from var(--team) max(l, 0.74) c h); }
+  [data-theme="dark"] .team-fill { background-color: oklch(from var(--team) max(l, 0.56) c h); }
+}
+
+/* Dark logos (Giants, Colts, Bears…) get a thin light edge on dark cards. */
+[data-theme="dark"] .team-logo {
+  filter: drop-shadow(0 0 0.6px rgba(255, 255, 255, 0.7)) drop-shadow(0 0 5px rgba(255, 255, 255, 0.08));
 }

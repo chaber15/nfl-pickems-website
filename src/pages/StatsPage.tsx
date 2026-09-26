@@ -227,7 +227,7 @@ export function StatsPage() {
             {badges.length > 0 && (
               <div className="rounded-2xl border-2 border-[var(--border-card)] bg-[var(--bg-card)] p-4">
                 <h3 className="mb-3 font-bold">Badges</h3>
-                <BadgeChipRow badges={badges} showWeek />
+                <BadgeChipRow badges={badges} />
               </div>
             )}
 

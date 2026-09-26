@@ -70,7 +70,7 @@ export function FactoryResetSection({
           type="button"
           onClick={reset}
           disabled={busy || confirmText !== "RESET"}
-          className="min-h-11 rounded-2xl bg-[var(--accent-red)] px-4 font-bold text-white disabled:opacity-60"
+          className="min-h-11 rounded-2xl bg-[var(--red-fill)] px-4 font-bold text-[var(--on-fill)] disabled:opacity-60"
         >
           {busy ? "Resetting..." : "Reset"}
         </button>

@@ -2,27 +2,34 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { getDb, schema } from "./db";
 import {
+  badgeDiffFingerprint,
   compareSlates,
   computeDesiredBadges,
+  describeBadgeChanges,
   diffBadgeRows,
   isSlateComplete,
-  LIFETIME_THRESHOLD_BADGE_IDS,
+  type BadgeChange,
   type DesiredBadgeRow,
   type ExistingBadgeRow,
   type SeasonSlate,
 } from "../shared/badges";
 import type { UserPick } from "../shared/types";
 import { dbGameToGameData, resolveActiveSeasonId } from "./espn/sync";
+import { HttpError } from "./api/errors";
 
 /*
- * Badge engine: load the active season in a handful of queries, compute the complete desired
- * set of badge rows in memory (shared/badges.ts `computeDesiredBadges`), diff it against the
- * existing rows (`diffBadgeRows`) and apply inserts + deletes in ONE `db.batch` (neon-http runs
- * a batch as a single transaction). Existing rows that stay keep their original earnedAt.
+ * Badge engine (DB side): load the active season in a handful of queries, compute every badge
+ * row the rules in shared/badgeDefs.ts justify (`computeDesiredBadges`), diff that against the
+ * existing rows (`diffBadgeRows`), and write the inserts + deletes in ONE `db.batch` (neon-http
+ * runs a batch as a single transaction). Existing rows that stay keep their original earnedAt.
  *
- * Deletion scope (see `BadgeDiffScope`): only non-banned users' rows, only rows earned since the
- * active season row was created, only week rows for weeks of the active season, and only
- * season_once badges the engine recomputes. Rows from earlier seasons are never deleted.
+ * Two ways in:
+ * - Hourly cron (`awardBadgesIfWeekComplete`): ADD-ONLY. It never removes a badge, so deploying a
+ *   stricter rule can't silently take badges away.
+ * - Admin (`previewBadgeChanges` → `applyBadgeChanges`): the full diff, adds and removes. Apply
+ *   recomputes and refuses unless the result still matches the previewed fingerprint.
+ *
+ * Only the active season is touched (see `BadgeDiffScope` in shared/badges.ts).
  */
 
 type SeasonData = {
@@ -104,95 +111,118 @@ async function loadSeasonData(): Promise<SeasonData | null> {
   };
 }
 
-export type BadgeSyncResult = {
-  inserted: DesiredBadgeRow[];
-  deleted: ExistingBadgeRow[];
+type BadgePlan = {
+  data: SeasonData;
+  toInsert: DesiredBadgeRow[];
+  toDelete: ExistingBadgeRow[];
   kept: ExistingBadgeRow[];
-  desiredCount: number;
-  slates: Array<{ seasonType: number; weekNumber: number; status: "ok" | "skipped_incomplete" }>;
-  userCount: number;
 };
 
-/**
- * Recompute and apply the full badge diff for the active season.
- * `dryRun` computes the diff without writing. `onlyBadgeIds` restricts the diff.
- */
-export async function syncSeasonBadges(opts?: {
-  dryRun?: boolean;
-  onlyBadgeIds?: ReadonlySet<string>;
-}): Promise<BadgeSyncResult> {
+async function planBadgeSync(): Promise<BadgePlan | null> {
   const data = await loadSeasonData();
-  if (!data) {
-    return { inserted: [], deleted: [], kept: [], desiredCount: 0, slates: [], userCount: 0 };
-  }
-
-  const { rows: desired } = computeDesiredBadges({
-    users: data.users,
-    slates: data.slates,
-    picksByUser: data.picksByUser,
-  });
-
+  if (!data) return null;
+  const { rows: desired } = computeDesiredBadges(data);
   const diff = diffBadgeRows(data.existing, desired, {
     userIds: new Set(data.users.map((u) => u.userId)),
     weekKeys: new Set(data.slates.map((s) => `${s.seasonType}-${s.weekNumber}`)),
     seasonStartedAt: data.seasonStartedAt,
-    onlyBadgeIds: opts?.onlyBadgeIds,
   });
+  return { data, ...diff };
+}
 
-  let inserted = diff.toInsert;
-  if (!opts?.dryRun && (diff.toInsert.length > 0 || diff.toDelete.length > 0)) {
-    const db = getDb();
-    const ops: BatchItem<"pg">[] = [];
-    if (diff.toDelete.length > 0) {
-      ops.push(
-        db.delete(schema.userBadges).where(
-          inArray(
-            schema.userBadges.id,
-            diff.toDelete.map((r) => r.id),
-          ),
+/** Write inserts + deletes atomically. Returns how many rows were actually inserted. */
+async function writeDiff(toInsert: DesiredBadgeRow[], toDelete: ExistingBadgeRow[]): Promise<number> {
+  if (toInsert.length === 0 && toDelete.length === 0) return 0;
+  const db = getDb();
+  const ops: BatchItem<"pg">[] = [];
+  if (toDelete.length > 0) {
+    ops.push(
+      db.delete(schema.userBadges).where(
+        inArray(
+          schema.userBadges.id,
+          toDelete.map((r) => r.id),
         ),
-      );
-    }
-    const insertIndex = ops.length;
-    if (diff.toInsert.length > 0) {
-      ops.push(
-        db
-          .insert(schema.userBadges)
-          .values(
-            diff.toInsert.map((r) => ({
-              userId: r.userId,
-              badgeId: r.badgeId,
-              seasonType: r.seasonType,
-              weekNumber: r.weekNumber,
-            })),
-          )
-          // A concurrent run may have inserted the same row; the unique indexes make that a no-op.
-          .onConflictDoNothing()
-          .returning({ userId: schema.userBadges.userId, badgeId: schema.userBadges.badgeId }),
-      );
-    }
-    const results = await db.batch(ops as [BatchItem<"pg">, ...BatchItem<"pg">[]]);
-    if (diff.toInsert.length > 0) {
-      const written = results[insertIndex] as Array<{ userId: string; badgeId: string }>;
-      if (written.length !== diff.toInsert.length) {
-        const got = new Set(written.map((w) => `${w.userId}|${w.badgeId}`));
-        inserted = diff.toInsert.filter((r) => got.has(`${r.userId}|${r.badgeId}`));
-      }
-    }
+      ),
+    );
   }
+  const insertIndex = ops.length;
+  if (toInsert.length > 0) {
+    ops.push(
+      db
+        .insert(schema.userBadges)
+        .values(
+          toInsert.map((r) => ({
+            userId: r.userId,
+            badgeId: r.badgeId,
+            seasonType: r.seasonType,
+            weekNumber: r.weekNumber,
+          })),
+        )
+        // A concurrent run may have inserted the same row; the unique indexes make that a no-op.
+        .onConflictDoNothing()
+        .returning({ id: schema.userBadges.id }),
+    );
+  }
+  const results = await db.batch(ops as [BatchItem<"pg">, ...BatchItem<"pg">[]]);
+  return toInsert.length > 0 ? (results[insertIndex] as unknown[]).length : 0;
+}
 
+export type BadgePreview = {
+  changes: BadgeChange[];
+  fingerprint: string;
+  weeks: Array<{ seasonType: number; weekNumber: number; status: "ok" | "skipped_incomplete" }>;
+};
+
+function weekStatuses(slates: SeasonSlate[]): BadgePreview["weeks"] {
+  return slates.map((s) => ({
+    seasonType: s.seasonType,
+    weekNumber: s.weekNumber,
+    status: isSlateComplete(s.games) ? "ok" : "skipped_incomplete",
+  }));
+}
+
+/** Admin: what a full recalculation would add and remove. Writes nothing. */
+export async function previewBadgeChanges(): Promise<BadgePreview> {
+  const plan = await planBadgeSync();
+  if (!plan) return { changes: [], fingerprint: badgeDiffFingerprint({ toInsert: [], toDelete: [] }), weeks: [] };
   return {
-    inserted,
-    deleted: diff.toDelete,
-    kept: diff.kept,
-    desiredCount: desired.length,
-    slates: data.slates.map((s) => ({
-      seasonType: s.seasonType,
-      weekNumber: s.weekNumber,
-      status: isSlateComplete(s.games) ? "ok" : "skipped_incomplete",
-    })),
-    userCount: data.users.length,
+    changes: describeBadgeChanges(plan, plan.data.users),
+    fingerprint: badgeDiffFingerprint(plan),
+    weeks: weekStatuses(plan.data.slates),
   };
+}
+
+/**
+ * Admin: apply the previewed recalculation. Recomputes first and refuses (409) if the result no
+ * longer matches `fingerprint` — e.g. a game went final after the preview was shown.
+ */
+export async function applyBadgeChanges(fingerprint: string): Promise<{ added: number; removed: number }> {
+  const plan = await planBadgeSync();
+  const current = badgeDiffFingerprint(plan ?? { toInsert: [], toDelete: [] });
+  if (current !== fingerprint) {
+    throw new HttpError(409, "Badges changed since the preview — preview again.", "BADGE_PREVIEW_STALE");
+  }
+  if (!plan) return { added: 0, removed: 0 };
+  const added = await writeDiff(plan.toInsert, plan.toDelete);
+  return { added, removed: plan.toDelete.length };
+}
+
+/**
+ * Cron entry point. ADD-ONLY and idempotent: skips unless every game in the week is final
+ * (and ≥1 graded); otherwise inserts any missing badges for the season. Never deletes.
+ */
+export async function awardBadgesIfWeekComplete(
+  seasonType: number,
+  week: number,
+): Promise<{ awarded: number; pendingRemovals?: number; skipped?: string }> {
+  const games = await loadWeekGames(seasonType, week);
+  if (games.length === 0) return { awarded: 0, skipped: "empty" };
+  if (!isSlateComplete(games)) return { awarded: 0, skipped: "incomplete" };
+  const plan = await planBadgeSync();
+  if (!plan) return { awarded: 0, skipped: "no_season" };
+  const awarded = await writeDiff(plan.toInsert, []);
+  // Surfaced in the cron log: rows a rule change would remove, waiting for an admin Apply.
+  return plan.toDelete.length > 0 ? { awarded, pendingRemovals: plan.toDelete.length } : { awarded };
 }
 
 async function loadWeekGames(seasonType: number, weekNumber: number) {
@@ -211,135 +241,6 @@ async function loadWeekGames(seasonType: number, weekNumber: number) {
       ),
     );
   return rows.map(({ game, week }) => dbGameToGameData(game, week));
-}
-
-/**
- * Cron entry point. Idempotent: skips unless every game in the week is final (and ≥1 graded);
- * otherwise runs the full season diff, which is a no-op when badges are already in place.
- */
-export async function awardBadgesIfWeekComplete(
-  seasonType: number,
-  week: number,
-): Promise<{ awarded: number; removed?: number; skipped?: string }> {
-  const games = await loadWeekGames(seasonType, week);
-  if (games.length === 0) return { awarded: 0, skipped: "empty" };
-  if (!isSlateComplete(games)) return { awarded: 0, skipped: "incomplete" };
-  const result = await syncSeasonBadges();
-  return { awarded: result.inserted.length, removed: result.deleted.length };
-}
-
-const LIFETIME_IDS: ReadonlySet<string> = new Set(LIFETIME_THRESHOLD_BADGE_IDS);
-
-function lifetimeSummary(result: BadgeSyncResult) {
-  const removed = result.deleted.filter((r) => LIFETIME_IDS.has(r.badgeId)).length;
-  const granted = result.inserted.filter((r) => LIFETIME_IDS.has(r.badgeId)).length;
-  return { removed, granted, countsByUser: result.userCount };
-}
-
-/**
- * Reconcile cumulative (lifetime-threshold) badges only: insert missing, delete unearned.
- * Same signature as before; no longer wipes-then-reinserts (earnedAt is preserved).
- */
-export async function reconcileLifetimeThresholdBadges(): Promise<{
-  removed: number;
-  granted: number;
-  countsByUser: number;
-  remainingAfterWipe: number;
-}> {
-  const result = await syncSeasonBadges({ onlyBadgeIds: LIFETIME_IDS });
-  return {
-    ...lifetimeSummary(result),
-    // Kept for API compatibility: rows of these badges that were kept untouched.
-    remainingAfterWipe: result.kept.filter((r) => LIFETIME_IDS.has(r.badgeId)).length,
-  };
-}
-
-/**
- * Award badges once the week's full slate is final. Thin wrapper over the season diff
- * (which also covers earlier weeks, so it self-heals any missed runs).
- */
-export async function awardBadgesForWeek(
-  seasonType: number,
-  weekNumber: number,
-  _opts?: { skipLifetimeReconcile?: boolean },
-): Promise<{
-  awarded: number;
-  removed?: number;
-  skipped?: "empty" | "incomplete";
-  lifetime?: { removed: number; granted: number; countsByUser: number };
-}> {
-  const games = await loadWeekGames(seasonType, weekNumber);
-  if (games.length === 0) return { awarded: 0, skipped: "empty" };
-  if (!isSlateComplete(games)) return { awarded: 0, skipped: "incomplete" };
-  const result = await syncSeasonBadges();
-  return {
-    awarded: result.inserted.length,
-    removed: result.deleted.length,
-    lifetime: lifetimeSummary(result),
-  };
-}
-
-export type BadgeRefreshWeekResult = {
-  seasonType: number;
-  week: number;
-  awarded: number;
-  status: "ok" | "skipped_empty" | "skipped_incomplete";
-};
-
-/**
- * Admin / backfill. Both modes run the same full-season diff (no wipe): `allCompleted` reports
- * every week of the active season; `{seasonType, week}` reports just that week.
- * `awarded` per week = rows inserted whose source is that week.
- */
-export async function refreshBadges(opts: {
-  seasonType?: number;
-  week?: number;
-  allCompleted?: boolean;
-}): Promise<{
-  weeks: BadgeRefreshWeekResult[];
-  totalAwarded: number;
-  totalRemoved: number;
-  wiped?: number;
-  lifetime: {
-    removed: number;
-    granted: number;
-    countsByUser: number;
-    remainingAfterWipe?: number;
-  };
-}> {
-  if (!opts.allCompleted) {
-    const { seasonType, week } = opts;
-    if (seasonType == null || week == null || !Number.isFinite(seasonType) || !Number.isFinite(week)) {
-      throw new Error("seasonType and week are required (or pass allCompleted: true)");
-    }
-  }
-
-  const result = await syncSeasonBadges();
-  const awardedBySlate = new Map<string, number>();
-  for (const r of result.inserted) {
-    const key = `${r.source.seasonType}-${r.source.weekNumber}`;
-    awardedBySlate.set(key, (awardedBySlate.get(key) ?? 0) + 1);
-  }
-
-  let weeks: BadgeRefreshWeekResult[] = result.slates.map((s) => ({
-    seasonType: s.seasonType,
-    week: s.weekNumber,
-    awarded: awardedBySlate.get(`${s.seasonType}-${s.weekNumber}`) ?? 0,
-    status: s.status,
-  }));
-  if (!opts.allCompleted) {
-    const match = weeks.find((w) => w.seasonType === opts.seasonType && w.week === opts.week);
-    weeks = [
-      match ?? { seasonType: opts.seasonType!, week: opts.week!, awarded: 0, status: "skipped_empty" },
-    ];
-  }
-
-  return {
-    weeks,
-    totalAwarded: result.inserted.length,
-    totalRemoved: result.deleted.length,
-    lifetime: lifetimeSummary(result),
-  };
 }
 
 export async function badgesForUser(userId: string) {

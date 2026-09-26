@@ -87,18 +87,12 @@ export async function handleAdmin(path: string, event: HandlerEvent) {
   if (path === "admin/badges" && event.httpMethod === "POST") {
     allow("badges");
     const body = parseJsonBody(event);
-    const { seasonType, week } = optionalWeek(body);
-    const { refreshBadges, reconcileLifetimeThresholdBadges } = await import("../badges");
-    if (body.reconcileOnly === true) {
-      const lifetime = await reconcileLifetimeThresholdBadges();
-      return json(200, { weeks: [], totalAwarded: lifetime.granted, lifetime });
+    const { previewBadgeChanges, applyBadgeChanges } = await import("../badges");
+    if (body.mode === "preview") return json(200, await previewBadgeChanges());
+    if (body.mode === "apply" && typeof body.fingerprint === "string") {
+      return json(200, await applyBadgeChanges(body.fingerprint));
     }
-    const result = await refreshBadges({
-      seasonType,
-      week,
-      allCompleted: body.allCompleted === true,
-    });
-    return json(200, result);
+    throw new HttpError(400, 'mode must be "preview", or "apply" with a fingerprint', "INVALID_REQUEST");
   }
 
   if (path === "admin/reset" && event.httpMethod === "POST") {

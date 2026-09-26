@@ -143,7 +143,7 @@ export const userBadges = pgTable(
   },
   (t) => [
     index("user_badges_user_id_idx").on(t.userId),
-    // One season_once badge per user (howl, week_champion, …) — week_number = 0 sentinel.
+    // One season_once badge per user (week_champion, no_show, …) — week_number = 0 sentinel.
     uniqueIndex("user_badges_season_once_idx")
       .on(t.userId, t.badgeId)
       .where(sql`${t.weekNumber} = 0`),
