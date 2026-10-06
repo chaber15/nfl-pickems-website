@@ -88,6 +88,7 @@ export const games = pgTable(
     awayRecord: text("away_record"),
     homeRecord: text("home_record"),
     kickoffAt: timestamp("kickoff_at", { withTimezone: true }).notNull(),
+    /** Tenths of a point (3.5 → 35), despite the column name. */
     spread: integer("spread_cents"),
     favoriteSide: favoriteSideEnum("favorite_side"),
     oddsAway: integer("odds_away"),

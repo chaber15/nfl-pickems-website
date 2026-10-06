@@ -17,7 +17,7 @@
  *
  * `w` is a read-only summary of one player's completed week (see `WeekView` in ./badges.ts):
  *   w.picks / w.starred   your graded picks (each: side, starred, result, crowd, coverBy, …)
- *   w.missed, w.winPct, w.correct, w.gradedGames, w.plEligible, w.primetime.{tnf,snf,mnf}
+ *   w.missed, w.winPct, w.correct, w.gradedGames, w.missedStars, w.primetime.{tnf,snf,mnf}
  *   w.standing / w.lastWeek / w.overall   { ats, pl } → { first, last } (ties share first/last)
  *   w.streak.{ats,conf}   straight weeks >50% ending this week
  *
@@ -339,6 +339,6 @@ export const BADGES: BadgeRule[] = [
     description: "Forget to place exactly 5 stars (first time this season).",
     rarity: "common",
     kind: "first",
-    earned: (w) => w.picks.length > 0 && !w.plEligible,
+    earned: (w) => w.picks.length > 0 && w.missedStars > 0,
   },
 ];

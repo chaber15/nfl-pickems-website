@@ -4,7 +4,8 @@ import {
   unitsDelta,
   pickCorrectness,
   computeWinPct,
-  weekPlEligible,
+  missedStars,
+  isWeekClosed,
   isGradedForStandings,
 } from "./scoring.ts";
 
@@ -24,11 +25,28 @@ assert.equal(pickCorrectness("favorite", "push"), 0.5);
 assert.equal(pickCorrectness(null, "favorite"), 0);
 assert.equal(computeWinPct(8.5, 16), (8.5 / 16) * 100);
 
-assert.equal(weekPlEligible("regular", 5), true);
-assert.equal(weekPlEligible("regular", 4), false);
-assert.equal(weekPlEligible("preseason", 5), true);
-assert.equal(weekPlEligible("preseason", 3), false);
-assert.equal(weekPlEligible("wildcard", 2), true);
+// Each ★ short of 5 costs 1 unit; playoffs never owe any
+assert.equal(missedStars("regular", 5), 0);
+assert.equal(missedStars("regular", 4), 1);
+assert.equal(missedStars("regular", 0), 5);
+assert.equal(missedStars("preseason", 3), 2);
+assert.equal(missedStars("wildcard", 2), 0);
+// A week is closed (no more ★ can be placed) once its last game has kicked off
+const tue = new Date("2026-09-15T12:00:00Z");
+assert.equal(isWeekClosed([{ status: "final", kickoffAt: "2026-09-13T17:00:00Z" }], tue), true);
+assert.equal(
+  isWeekClosed(
+    [
+      { status: "final", kickoffAt: "2026-09-13T17:00:00Z" },
+      { status: "scheduled", kickoffAt: "2026-09-16T00:15:00Z" },
+    ],
+    tue,
+  ),
+  false,
+);
+// Postponed game (still "scheduled" after its kickoff) doesn't keep the week open
+assert.equal(isWeekClosed([{ status: "scheduled", kickoffAt: "2026-09-13T17:00:00Z" }], tue), true);
+assert.equal(isWeekClosed([], tue), false);
 assert.equal(isGradedForStandings({ status: "final", atsResult: "favorite" }), true);
 assert.equal(isGradedForStandings({ status: "final", atsResult: "push" }), true);
 // Final with no line: excluded, not a loss

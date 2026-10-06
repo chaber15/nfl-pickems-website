@@ -36,7 +36,7 @@ const rule = (id: string, kind: "weekly" | "first", earned: (w: WeekView) => boo
 const TEST_RULES: BadgeRule[] = [
   rule("perfect", "weekly", (w) => w.missed === 0 && w.picks.every((p) => p.result === "win")),
   rule("wipeout", "weekly", (w) => w.picks.length > 0 && w.picks.every((p) => p.result === "loss")),
-  rule("unstarred", "weekly", (w) => w.picks.length > 0 && !w.plEligible),
+  rule("unstarred", "weekly", (w) => w.picks.length > 0 && w.missedStars > 0),
   rule("missed_one", "first", (w) => w.missed > 0 && w.picks.length > 0),
   rule("lone", "weekly", (w) => w.picks.some((p) => p.result === "win" && p.crowd[p.side] === 1)),
   rule("first_lone", "first", (w) => w.picks.some((p) => p.result === "win" && p.crowd[p.side] === 1)),
@@ -101,7 +101,7 @@ test("computeDesiredBadges: tie for first → co-champions; push; no-pick user g
   });
   assert.deepEqual(completedWeeks, [{ seasonType: 2, weekNumber: 1 }]);
 
-  // Co-champions and co-leaders overall; a push blocks "perfect"; nobody P/L eligible → no P/L leader
+  // Co-champions and co-leaders overall; a push blocks "perfect"; nobody placed a ★ → no P/L leader
   assert.deepEqual(rowsFor(rows, "A"), ["top_overall@0", "top_week@0", "unstarred@1"]);
   assert.deepEqual(rowsFor(rows, "B"), ["top_overall@0", "top_week@0", "unstarred@1"]);
   assert.deepEqual(rowsFor(rows, "C"), ["missed_one@0", "unstarred@1", "wipeout@1"]);
@@ -171,7 +171,7 @@ test("computeDesiredBadges: incomplete week is never evaluated (no transient lea
   assert.deepEqual(hr.source, { seasonType: 2, weekNumber: 2 });
 });
 
-test("computeDesiredBadges: ★ P/L board ranks only eligible players; ties share first", () => {
+test("computeDesiredBadges: ★ P/L board charges missed ★; ties share first", () => {
   const ids = ["p1", "p2", "p3", "p4", "p5", "p6"];
   const games = ids.map((id) => makeGame(id, { atsResult: "favorite" }));
   const five = (side: "favorite" | "underdog") =>
@@ -179,7 +179,7 @@ test("computeDesiredBadges: ★ P/L board ranks only eligible players; ties shar
   const picksByUser = new Map<string, Record<string, UserPick>>([
     ["A", five("favorite")],
     ["B", five("favorite")],
-    // Only one ★ → ineligible (0.00 P/L must not rank)
+    // One losing ★ and four missed: −1.1 − 4 = −5.1
     ["C", picksOf({ p1: ["underdog", true], p2: "underdog" })],
     ["D", five("underdog")],
   ]);
@@ -193,6 +193,7 @@ test("computeDesiredBadges: ★ P/L board ranks only eligible players; ties shar
   assert.deepEqual(weekTop, ["A", "B"]);
   const overallTop = rows.filter((r) => r.badgeId === "top_pl_overall").map((r) => r.userId).sort();
   assert.deepEqual(overallTop, ["A", "B"]);
+  assert.ok(rows.some((r) => r.userId === "C" && r.badgeId === "unstarred"));
   assert.ok(rows.some((r) => r.userId === "A" && r.badgeId === "five_stars_win"));
   assert.ok(rows.some((r) => r.userId === "D" && r.badgeId === "five_stars_lose"));
 });

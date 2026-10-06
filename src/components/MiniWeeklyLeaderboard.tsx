@@ -6,6 +6,7 @@ import { shortWeekLabel } from "@shared/weekUtils";
 import { apiLeaderboard, errorMessage } from "../lib/api";
 import { fetchCached, leaderboardCacheKey } from "../lib/cache";
 import { useWeek, useWeekSearch } from "../lib/weekContext";
+import { isPlIdle, sortBoard, type BoardMode } from "../lib/leaderboardSort";
 import { ErrorState } from "./ErrorState";
 import { PL_HELP } from "./HelpTip";
 
@@ -14,7 +15,7 @@ const MAX_AGE_MS = 60_000;
 
 const TOP_N = 5;
 
-type SortMode = "winPct" | "pl";
+type SortMode = BoardMode;
 
 /** Compact current-week standings for the desktop sidebar. */
 export function MiniWeeklyLeaderboard() {
@@ -51,17 +52,7 @@ export function MiniWeeklyLeaderboard() {
     void load();
   }, [load]);
 
-  const top = useMemo(
-    () =>
-      [...entries]
-        .sort((a, b) =>
-          sortBy === "winPct"
-            ? b.winPct - a.winPct || b.confidencePl - a.confidencePl
-            : b.confidencePl - a.confidencePl || b.winPct - a.winPct,
-        )
-        .slice(0, TOP_N),
-    [entries, sortBy],
-  );
+  const top = useMemo(() => sortBoard(entries, sortBy).slice(0, TOP_N), [entries, sortBy]);
 
   const sortBtn = (mode: SortMode, label: string) => (
     <button
@@ -106,34 +97,40 @@ export function MiniWeeklyLeaderboard() {
             <span title={PL_HELP}>{sortBtn("pl", "P/L")}</span>
           </div>
           <ol className="space-y-1.5">
-            {top.map((e, i) => (
-              <li
-                key={e.userId}
-                className="flex items-center gap-2 text-xs font-semibold text-[var(--text-primary)]"
-              >
-                <span className="w-4 shrink-0 font-mono text-[var(--text-muted)]">{i + 1}</span>
-                <span className="min-w-0 flex-1 truncate">
-                  {e.displayName || e.username}
-                  {i === 0 && (
-                    <Crown size={12} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
-                  )}
-                </span>
-                <span
-                  className={`w-9 shrink-0 text-right font-mono ${
-                    sortBy === "winPct" ? "text-[var(--accent-green)]" : "text-[var(--text-muted)]"
+            {top.map((e, i) => {
+              // No ★ this week: greyed out at the bottom of the P/L order.
+              const idle = sortBy === "pl" && isPlIdle(e);
+              return (
+                <li
+                  key={e.userId}
+                  className={`flex items-center gap-2 text-xs font-semibold ${
+                    idle ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"
                   }`}
                 >
-                  {e.winPct.toFixed(0)}%
-                </span>
-                <span
-                  className={`w-9 shrink-0 text-right font-mono ${
-                    sortBy === "pl" ? "text-[var(--accent-green)]" : "text-[var(--text-muted)]"
-                  }`}
-                >
-                  {e.confidencePl.toFixed(2)}
-                </span>
-              </li>
-            ))}
+                  <span className="w-4 shrink-0 font-mono text-[var(--text-muted)]">{idle ? "—" : i + 1}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {e.displayName || e.username}
+                    {i === 0 && !idle && (
+                      <Crown size={12} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
+                    )}
+                  </span>
+                  <span
+                    className={`w-9 shrink-0 text-right font-mono ${
+                      sortBy === "winPct" ? "text-[var(--accent-green)]" : "text-[var(--text-muted)]"
+                    }`}
+                  >
+                    {e.winPct.toFixed(0)}%
+                  </span>
+                  <span
+                    className={`w-9 shrink-0 text-right font-mono ${
+                      sortBy === "pl" && !idle ? "text-[var(--accent-green)]" : "text-[var(--text-muted)]"
+                    }`}
+                  >
+                    {e.plStatus === "off" ? "—" : e.confidencePl.toFixed(2)}
+                  </span>
+                </li>
+              );
+            })}
           </ol>
         </>
       )}

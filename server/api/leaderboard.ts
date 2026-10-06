@@ -1,5 +1,5 @@
 import type { HandlerEvent } from "@netlify/functions";
-import { and, eq, inArray, type SQL } from "drizzle-orm";
+import { and, eq, inArray, lt, or, type SQL } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { dbGameToGameData, resolveActiveSeasonId } from "../espn/sync";
 import {
@@ -7,8 +7,10 @@ import {
   unitsDelta,
   computeWinPct,
   isGradedForStandings,
-  weekPlEligible,
+  isWeekClosed,
+  missedStars,
 } from "../../shared/scoring";
+import { compareSeasonWeeks } from "../../shared/statsCompute";
 import type { GameData, LeaderboardEntry, PickSide } from "../../shared/types";
 import { publicDisplayName } from "../../shared/userDisplay";
 import {
@@ -45,27 +47,50 @@ export type LeaderboardPick = {
   isConfidenceBet: boolean;
 };
 
+/** No ★ in this many closed weeks in a row = dropped out of the season ★ P/L board. */
+const DROPOUT_WEEKS = 3;
+
 /**
  * Pure leaderboard math. `games` are the games in scope (season or one week);
  * `picks` are the picks on those games. Each game's graded data is computed once.
+ *
+ * ★ P/L: units on the ★ bets placed, minus 1 for every ★ not placed in a closed regular-season
+ * week. It counts from the player's first week with a pick — `joinedBefore` names the players
+ * who picked in a week before the ones in scope (weekly board).
  */
 export function buildLeaderboardEntries(
   users: Array<{ id: string; username: string; displayName: string | null }>,
   games: GameData[],
   picks: LeaderboardPick[],
-  opts: { weekly: boolean },
+  opts: { weekly: boolean; now?: Date; joinedBefore?: ReadonlySet<string> },
 ): LeaderboardEntry[] {
   type GameInfo = { g: GameData; graded: boolean; weekKey: string };
+  type WeekInfo = {
+    key: string;
+    seasonType: number;
+    weekNumber: number;
+    phase: GameData["phase"];
+    games: GameData[];
+    closed: boolean;
+  };
   const gameInfo = new Map<string, GameInfo>();
-  const phaseByWeek = new Map<string, GameData["phase"]>();
+  const weekByKey = new Map<string, WeekInfo>();
   let gradedTotal = 0;
   for (const g of games) {
     const weekKey = `${g.seasonType}-${g.weekNumber}`;
     const graded = isGradedForStandings(g);
     if (graded) gradedTotal++;
     gameInfo.set(g.id, { g, graded, weekKey });
-    if (!phaseByWeek.has(weekKey)) phaseByWeek.set(weekKey, g.phase);
+    let week = weekByKey.get(weekKey);
+    if (!week) {
+      week = { key: weekKey, seasonType: g.seasonType, weekNumber: g.weekNumber, phase: g.phase, games: [], closed: false };
+      weekByKey.set(weekKey, week);
+    }
+    week.games.push(g);
   }
+  const now = opts.now ?? new Date();
+  const weeks = [...weekByKey.values()].sort(compareSeasonWeeks);
+  for (const w of weeks) w.closed = isWeekClosed(w.games, now);
 
   const picksByUser = new Map<string, LeaderboardPick[]>();
   for (const p of picks) {
@@ -81,14 +106,16 @@ export function buildLeaderboardEntries(
   const entries: LeaderboardEntry[] = [];
   for (const u of users) {
     let correct = 0;
-    // Eligibility uses ALL ★ bets in a week (even before finals); P/L only sums finals.
-    const weekStats = new Map<string, { count: number; rawPl: number; confCorrect: number; confGraded: number }>();
+    // ★ bets count as placed even before the game is final; P/L only sums finals.
+    const weekStats = new Map<string, { picks: number; count: number; rawPl: number; confCorrect: number; confGraded: number }>();
 
     for (const p of picksByUser.get(u.id) ?? []) {
       const { g, graded, weekKey } = gameInfo.get(p.gameId)!;
       if (graded) correct += pickCorrectness(p.pick, g.atsResult);
+      const ws = weekStats.get(weekKey) ?? { picks: 0, count: 0, rawPl: 0, confCorrect: 0, confGraded: 0 };
+      weekStats.set(weekKey, ws);
+      ws.picks++;
       if (!p.isConfidenceBet) continue;
-      const ws = weekStats.get(weekKey) ?? { count: 0, rawPl: 0, confCorrect: 0, confGraded: 0 };
       ws.count++;
       if (graded) {
         if (g.spread != null && g.favoriteSide && g.atsResult) {
@@ -97,26 +124,47 @@ export function buildLeaderboardEntries(
         ws.confGraded++;
         ws.confCorrect += pickCorrectness(p.pick, g.atsResult);
       }
-      weekStats.set(weekKey, ws);
     }
 
+    let joined = opts.joinedBefore?.has(u.id) ?? false;
     let confidencePl = 0;
     let confCorrect = 0;
     let confTotal = 0;
     let weeksComplete = 0;
-    for (const [weekKey, ws] of weekStats) {
-      const phase = phaseByWeek.get(weekKey) ?? "regular";
-      if (ws.count > 0 && weekPlEligible(phase, ws.count)) {
-        confidencePl += ws.rawPl;
-        weeksComplete++;
-        confCorrect += ws.confCorrect;
-        confTotal += ws.confGraded;
+    let missed = 0;
+    let stars = 0;
+    let openWeekStars = 0;
+    /** Per closed week, oldest first: joined by then but placed no ★. */
+    const starless: boolean[] = [];
+    for (const w of weeks) {
+      const ws = weekStats.get(w.key);
+      if (ws && ws.picks > 0) joined = true;
+      const count = ws?.count ?? 0;
+      if (w.closed) starless.push(joined && count === 0);
+      if (!joined) continue;
+      const short = missedStars(w.phase, count);
+      stars += count;
+      if (!w.closed) openWeekStars += count;
+      confidencePl += ws?.rawPl ?? 0;
+      confCorrect += ws?.confCorrect ?? 0;
+      confTotal += ws?.confGraded ?? 0;
+      if (w.closed) {
+        confidencePl -= short;
+        missed += short;
       }
+      if (count > 0 && short === 0) weeksComplete++;
     }
 
     const total = gradedTotal;
     // Skip users with no graded games in a weekly board (keeps mini board clean)
     if (opts.weekly && total === 0 && confidencePl === 0) continue;
+
+    // Weekly: no ★ in the (closed) week. Season: no ★ in the last few closed weeks and none placed since.
+    const idle = opts.weekly
+      ? stars === 0 && weeks.every((w) => w.closed)
+      : openWeekStars === 0 &&
+        starless.length >= DROPOUT_WEEKS &&
+        starless.slice(-DROPOUT_WEEKS).every(Boolean);
 
     entries.push({
       userId: u.id,
@@ -129,6 +177,8 @@ export function buildLeaderboardEntries(
       confTotal,
       confidencePl,
       weeksComplete,
+      missedStars: missed,
+      plStatus: !joined ? "off" : idle ? "idle" : "ranked",
     });
   }
 
@@ -154,7 +204,7 @@ export async function computeLeaderboard(filter?: {
       )
     : undefined;
 
-  const [activeUsers, gameRows, pickRows, badgeRows] = await Promise.all([
+  const [activeUsers, gameRows, pickRows, earlierPickers, badgeRows] = await Promise.all([
     db.select().from(schema.users).where(eq(schema.users.isBanned, false)),
     seasonId
       ? db
@@ -176,6 +226,23 @@ export async function computeLeaderboard(filter?: {
           .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
           .where(and(...weekConds))
       : Promise.resolve([]),
+    // Weekly board: who had already picked in an earlier week (★ P/L counts from a player's first pick).
+    seasonId && filter
+      ? db
+          .selectDistinct({ userId: schema.picks.userId })
+          .from(schema.picks)
+          .innerJoin(schema.games, eq(schema.picks.gameId, schema.games.id))
+          .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
+          .where(
+            and(
+              eq(schema.weeks.seasonId, seasonId),
+              or(
+                lt(schema.weeks.seasonType, filter.seasonType),
+                and(eq(schema.weeks.seasonType, filter.seasonType), lt(schema.weeks.weekNumber, filter.week)),
+              ),
+            ),
+          )
+      : Promise.resolve([]),
     db
       .select()
       .from(schema.userBadges)
@@ -184,7 +251,10 @@ export async function computeLeaderboard(filter?: {
   ]);
 
   const games = gameRows.map(({ game, week }) => dbGameToGameData(game, week));
-  const entries = buildLeaderboardEntries(activeUsers, games, pickRows, { weekly: !!filter });
+  const entries = buildLeaderboardEntries(activeUsers, games, pickRows, {
+    weekly: !!filter,
+    joinedBefore: new Set(earlierPickers.map((p) => p.userId)),
+  });
 
   const badgesByUser = new Map<string, typeof badgeRows>();
   for (const b of badgeRows) {

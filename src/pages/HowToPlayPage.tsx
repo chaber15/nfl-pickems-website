@@ -36,9 +36,14 @@ export function HowToPlayPage() {
 
         <Section title="2. Confidence bets (★)">
           <p>
-            In the regular season, mark exactly{" "}
+            In the regular season, mark{" "}
             <strong className="text-[var(--accent-gold)]">{CONFIDENCE_BETS_PER_WEEK} games</strong> as confidence bets each week.
             Those are the only games that count toward the units / profit and loss (P&amp;L) board.
+          </p>
+          <p>
+            Every ★ you don&apos;t place costs{" "}
+            <strong className="text-[var(--accent-red)]">1 unit</strong> once the week&apos;s last game kicks off,
+            so skipping a week is −{CONFIDENCE_BETS_PER_WEEK}. Weeks before your first pick don&apos;t count against you.
           </p>
           <p>
             In the <strong className="text-[var(--text-primary)]">playoffs</strong>, every game you pick
@@ -55,7 +60,9 @@ export function HowToPlayPage() {
             <li>
               <strong className="text-[var(--text-primary)]">Confidence P&amp;L</strong> — units won/lost
               on your ★ bets using the posted spread juice (vig). Example: −125 risks 1.25 to win 1; +125
-              risks 1 to win 1.25. Weeks without exactly {CONFIDENCE_BETS_PER_WEEK} ★ bets are skipped (except playoffs).
+              risks 1 to win 1.25. Each of the {CONFIDENCE_BETS_PER_WEEK} weekly ★ you don&apos;t place is −1 unit (except playoffs).
+              A week with no ★ greys you out on that week&apos;s board; three in a row greys you out on the season
+              board until your next ★.
             </li>
             <li>
               <strong className="text-[var(--text-primary)]">Hypothetical P&amp;L</strong> (on Stats) —

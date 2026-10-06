@@ -13,9 +13,10 @@ import {
   countConfidenceBets,
   isGameLocked,
   isGradedForStandings,
+  isWeekClosed,
+  missedStars,
   pickCorrectness,
   unitsDelta,
-  weekPlEligible,
 } from "./scoring";
 
 export function buildHistoryRows(
@@ -55,17 +56,16 @@ export function buildHistoryRows(
 }
 
 /**
- * Confidence P/L for a slate of games in one week.
- * Returns 0 if the week is not P/L-eligible (regular/preseason without exactly 5 ★).
+ * ★ bets on a slate of games in one week: units won/lost on the ★ placed (`pl`), how many were
+ * placed, and how many of the required 5 are missing. The week's P/L is `pl − missed` once the
+ * week is closed.
  */
 export function confidencePlForWeek(
   games: GameData[],
   picks: Record<string, UserPick>,
-): { pl: number; confCount: number; eligible: boolean } {
+): { pl: number; confCount: number; missed: number } {
   const phase = games[0]?.phase ?? "regular";
   const confCount = countConfidenceBets(picks);
-  const eligible = weekPlEligible(phase, confCount);
-  if (!eligible) return { pl: 0, confCount, eligible: false };
 
   let pl = 0;
   for (const g of games) {
@@ -75,7 +75,7 @@ export function confidencePlForWeek(
     if (g.spread == null || !g.favoriteSide || !g.atsResult) continue;
     pl += unitsDelta(up.pick, g.atsResult, g.favoriteSide, g.oddsAway, g.oddsHome);
   }
-  return { pl, confCount, eligible: true };
+  return { pl, confCount, missed: missedStars(phase, confCount) };
 }
 
 function streakFromWeekWinPcts(weekWinPctsNewestFirst: number[]): number {
@@ -113,7 +113,7 @@ export function compareSeasonWeeks(
 export function computeUserStats(
   games: GameData[],
   picks: Record<string, UserPick>,
-  _now = new Date(),
+  now = new Date(),
 ): ComputedUserStats {
   let correctAll = 0;
   let totalAll = 0;
@@ -147,15 +147,25 @@ export function computeUserStats(
     (a, b) => new Date(b.kickoffAt).getTime() - new Date(a.kickoffAt).getTime(),
   );
 
-  // Count ★ bets for eligibility across ALL games (including not-yet-final)
+  // Across ALL games (including not-yet-final): ★ bets per week, each week's games (to tell when
+  // it's closed), and the player's first week with a pick — missed ★ aren't charged before it.
   const weekConfTotals = new Map<string, number>();
+  const gamesByWeek = new Map<string, GameData[]>();
+  let joined: { seasonType: number; weekNumber: number } | null = null;
   for (const g of games) {
     const key = `${g.seasonType}-${g.weekNumber}`;
+    const weekGames = gamesByWeek.get(key);
+    if (weekGames) weekGames.push(g);
+    else gamesByWeek.set(key, [g]);
     const up = picks[g.id];
     if (up?.isConfidenceBet) {
       weekConfTotals.set(key, (weekConfTotals.get(key) ?? 0) + 1);
     }
+    if (up?.pick && (!joined || compareSeasonWeeks(g, joined) < 0)) {
+      joined = { seasonType: g.seasonType, weekNumber: g.weekNumber };
+    }
   }
+  const joinedWeek = joined;
 
   for (const g of sorted) {
     if (!isGradedForStandings(g)) continue;
@@ -214,9 +224,12 @@ export function computeUserStats(
 
   const weeklyRows: WeeklyStatRowWithSeason[] = Array.from(weekBuckets.values())
     .map((b) => {
-      const eligible = weekPlEligible(b.phase, b.confidenceBets);
-      const weekConfPl = eligible ? b.confidencePlRaw : 0;
-      if (eligible) confidencePl += b.confidencePlRaw;
+      // The week counts from the player's first week with a pick; each missing ★ costs 1 unit
+      // once the week is closed.
+      const counted = joinedWeek != null && compareSeasonWeeks(b, joinedWeek) >= 0;
+      const closed = isWeekClosed(gamesByWeek.get(`${b.seasonType}-${b.weekNumber}`) ?? [], now);
+      const missed = counted && closed ? missedStars(b.phase, b.confidenceBets) : 0;
+      const weekConfPl = counted ? b.confidencePlRaw - missed : 0;
       const row: WeeklyStatRowWithSeason = {
         weekNumber: b.weekNumber,
         seasonType: b.seasonType,
@@ -227,18 +240,17 @@ export function computeUserStats(
         winPct: computeWinPct(b.correct, b.totalGames),
         confidencePl: weekConfPl,
         hypotheticalPl: b.hypotheticalPl,
-        plEligible: eligible,
+        missedStars: missed,
+        plEligible: counted,
       };
       return row;
     })
     .sort(compareSeasonWeeks);
 
-  // Recalculate confidencePl from weekly rows (already accumulated above correctly)
   confidencePl = weeklyRows.reduce((sum, r) => sum + r.confidencePl, 0);
+  const missedTotal = weeklyRows.reduce((sum, r) => sum + r.missedStars, 0);
 
-  // Confidence win %: only count ★ bets from eligible weeks
-  let correctConfEligible = 0;
-  let totalConfEligible = 0;
+  // Confidence win %: every graded ★ bet. The ★ streak only counts weeks with all ★ placed.
   const confWeekPctByKey = new Map<
     string,
     { correct: number; total: number; weekNumber: number; seasonType: number }
@@ -250,11 +262,12 @@ export function computeUserStats(
     if (!up?.pick || !up.isConfidenceBet) continue;
     const key = `${g.seasonType}-${g.weekNumber}`;
     const bucket = weekBuckets.get(key);
-    if (!bucket || !weekPlEligible(bucket.phase, bucket.confidenceBets)) continue;
+    if (!bucket) continue;
 
     const c = pickCorrectness(up.pick, g.atsResult);
-    totalConfEligible++;
-    correctConfEligible += c;
+    totalConf++;
+    correctConf += c;
+    if (missedStars(bucket.phase, bucket.confidenceBets) > 0) continue;
     const confWeek = confWeekPctByKey.get(key) ?? {
       correct: 0,
       total: 0,
@@ -264,11 +277,6 @@ export function computeUserStats(
     confWeek.correct += c;
     confWeek.total++;
     confWeekPctByKey.set(key, confWeek);
-  }
-
-  if (weekBuckets.size > 0) {
-    correctConf = correctConfEligible;
-    totalConf = totalConfEligible;
   }
 
   let bestWeekConfidence: WeekRef | null = null;
@@ -298,7 +306,8 @@ export function computeUserStats(
     winPctConfidence: computeWinPct(correctConf, totalConf),
     confidencePl,
     hypotheticalPl,
-    confidenceRoi: totalConf > 0 ? (confidencePl / totalConf) * 100 : 0,
+    // Each missed ★ is a 1-unit bet that lost.
+    confidenceRoi: totalConf + missedTotal > 0 ? (confidencePl / (totalConf + missedTotal)) * 100 : 0,
     hypotheticalRoi: totalAll > 0 ? (hypotheticalPl / totalAll) * 100 : 0,
     bestWeekConfidence,
     worstWeekConfidence,

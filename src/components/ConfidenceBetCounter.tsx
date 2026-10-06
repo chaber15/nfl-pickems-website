@@ -38,12 +38,12 @@ export function ConfidenceBetCounter({ count, max = CONFIDENCE_BETS_PER_WEEK, ph
           {!complete && (
             <span className="text-[var(--text-muted)]">
               {" "}
-              - pick exactly {max} for this week to count on the P/L board
-              {count > 0 && count < max ? ` (${max - count} more)` : ""}
+              - each ★ you don&apos;t place costs 1 unit on the P/L board
+              {count < max ? ` (${max - count} to go)` : ""}
               {count > max ? ` (${count - max} too many)` : ""}
             </span>
           )}
-          {complete && " - this week counts on the P/L board"}
+          {complete && " - all set for the P/L board"}
         </span>
         <HelpTip label="What is P/L?">{PL_HELP}</HelpTip>
       </span>

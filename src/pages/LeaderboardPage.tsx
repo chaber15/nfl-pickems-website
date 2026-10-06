@@ -10,6 +10,7 @@ import { HelpTip, PL_HELP } from "../components/HelpTip";
 import { apiLeaderboard, errorMessage } from "../lib/api";
 import { fetchCached, leaderboardCacheKey } from "../lib/cache";
 import { useWeek } from "../lib/weekContext";
+import { isPlIdle, sortBoard, weekStarsTag } from "../lib/leaderboardSort";
 import {
   isCrowdNameVisible,
   markTutorialDone,
@@ -18,6 +19,10 @@ import {
 } from "../lib/crowdVisibility";
 
 type Scope = "overall" | "week";
+
+/** Small pill next to a name on the ★ P/L board ("3/5 ★", "no ★"). */
+const PL_TAG_CLASS =
+  "rounded-full border border-[var(--border-card)] px-2 py-0.5 text-xs font-normal text-[var(--text-muted)]";
 
 function recordLabel(entry: LeaderboardEntry, mode: "winPct" | "pl"): string {
   if (mode === "pl") {
@@ -77,12 +82,22 @@ export function LeaderboardPage() {
 
   const sorted = useMemo(() => {
     void visibilityTick;
-    return [...entries].sort((a, b) =>
-      mode === "winPct"
-        ? b.winPct - a.winPct || b.confidencePl - a.confidencePl
-        : b.confidencePl - a.confidencePl || b.winPct - a.winPct,
-    );
+    return sortBoard(entries, mode);
   }, [entries, mode, visibilityTick]);
+
+  /** Greyed-out row on the ★ P/L board (never in win % mode). */
+  const idleRow = (entry: LeaderboardEntry) => mode === "pl" && isPlIdle(entry);
+  const scoreLabel = (entry: LeaderboardEntry) => {
+    if (mode === "winPct") return `${entry.winPct.toFixed(1)}%`;
+    // A season dropout's score stays hidden until their next ★.
+    if (scope === "overall" && isPlIdle(entry)) return "—";
+    return entry.confidencePl.toFixed(2);
+  };
+  const plTag = (entry: LeaderboardEntry) => {
+    if (mode !== "pl") return null;
+    if (scope === "week") return weekStarsTag(entry);
+    return isPlIdle(entry) ? "no recent ★" : null;
+  };
 
   const toggleLean = (name: string, checked: boolean) => {
     setCrowdNameVisible(name, checked);
@@ -197,10 +212,10 @@ export function LeaderboardPage() {
             {scope === "overall"
               ? mode === "winPct"
                 ? "Overall win % across every final game. Missing a pick counts as wrong."
-                : `Overall confidence P/L (profit & loss in units) from eligible weeks only. Record is ★ bets (${CONFIDENCE_BETS_PER_WEEK} per eligible week).`
+                : `Overall confidence P/L (profit & loss in units). Record is ★ bets; each of the ${CONFIDENCE_BETS_PER_WEEK} weekly ★ you don't place costs 1 unit. No ★ for 3 weeks greys you out until your next ★.`
               : mode === "winPct"
                 ? `Win % for ${shortWeekLabel(seasonType, week)} only.`
-                : `Confidence P/L for ${shortWeekLabel(seasonType, week)} only. Record is out of ${CONFIDENCE_BETS_PER_WEEK} ★ bets.`}{" "}
+                : `Confidence P/L for ${shortWeekLabel(seasonType, week)} only. Record is ★ bets; each of the ${CONFIDENCE_BETS_PER_WEEK} ★ you don't place costs 1 unit.`}{" "}
             Uncheck a player to hide their name on the pick lean — they still count in the bar. Tap a
             name to view their history.
             {mode === "pl" && (
@@ -237,7 +252,9 @@ export function LeaderboardPage() {
                     </th>
                     <th className="px-4 py-3 font-semibold">Record</th>
                     {scope === "overall" && (
-                      <th className="px-4 py-3 font-semibold">Weeks</th>
+                      <th className="px-4 py-3 font-semibold" title={`Weeks with all ${CONFIDENCE_BETS_PER_WEEK} ★ placed`}>
+                        Weeks
+                      </th>
                     )}
                     {/* Badge column takes the leftover width so medals sit right after the stats. */}
                     {showBadgeTrail && <th className="w-full px-4 py-3" aria-hidden="true" />}
@@ -246,11 +263,13 @@ export function LeaderboardPage() {
                 <tbody>
                   {sorted.map((entry, i) => {
                     const rowBadges = badgesForEntry(entry);
+                    const idle = idleRow(entry);
+                    const tag = plTag(entry);
                     return (
                       <tr
                         key={entry.userId}
                         className={`whitespace-nowrap border-t border-[var(--border-card)]/60 ${
-                          i === 0 ? "bg-[var(--accent-gold)]/10" : ""
+                          idle ? "text-[var(--text-muted)]" : i === 0 ? "bg-[var(--accent-gold)]/10" : ""
                         }`}
                       >
                         <td className="px-4 py-3 text-center">
@@ -263,8 +282,8 @@ export function LeaderboardPage() {
                           />
                         </td>
                         <td className="px-4 py-3 font-mono">
-                          {i + 1}
-                          {i === 0 && (
+                          {idle ? "—" : i + 1}
+                          {i === 0 && !idle && (
                             <Crown size={16} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
                           )}
                         </td>
@@ -275,12 +294,9 @@ export function LeaderboardPage() {
                           >
                             {entry.displayName || entry.username}
                           </Link>
+                          {tag && <span className={`ml-2 ${PL_TAG_CLASS}`}>{tag}</span>}
                         </td>
-                        <td className="px-4 py-3 font-mono">
-                          {mode === "winPct"
-                            ? `${entry.winPct.toFixed(1)}%`
-                            : entry.confidencePl.toFixed(2)}
-                        </td>
+                        <td className="px-4 py-3 font-mono">{scoreLabel(entry)}</td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono">{recordLabel(entry, mode)}</td>
                         {scope === "overall" && (
                           <td className="px-4 py-3 font-mono">{entry.weeksComplete}</td>
@@ -302,13 +318,17 @@ export function LeaderboardPage() {
             <div className="space-y-3 md:hidden">
               {sorted.map((entry, i) => {
                 const rowBadges = badgesForEntry(entry);
+                const idle = idleRow(entry);
+                const tag = plTag(entry);
                 return (
                   <article
                     key={entry.userId}
                     className={`overflow-visible rounded-2xl border-2 p-4 ${
-                      i === 0
-                        ? "border-[var(--accent-gold)] bg-[var(--accent-gold)]/10"
-                        : "border-[var(--border-card)] bg-[var(--bg-card)]"
+                      idle
+                        ? "border-dashed border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-muted)]"
+                        : i === 0
+                          ? "border-[var(--accent-gold)] bg-[var(--accent-gold)]/10"
+                          : "border-[var(--border-card)] bg-[var(--bg-card)]"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -320,18 +340,25 @@ export function LeaderboardPage() {
                           onChange={(e) => toggleLean(entry.username, e.target.checked)}
                           aria-label={`Show ${entry.username} on pick lean`}
                         />
-                        <span className="font-mono text-lg font-bold">#{i + 1}</span>
+                        <span className="font-mono text-lg font-bold">{idle ? "—" : `#${i + 1}`}</span>
                       </label>
-                      {i === 0 && <Crown size={20} weight="fill" className="text-[var(--accent-gold)]" />}
+                      {i === 0 && !idle && <Crown size={20} weight="fill" className="text-[var(--accent-gold)]" />}
                     </div>
-                    <Link
-                      to={`/history/${encodeURIComponent(entry.username)}`}
-                      className="mt-2 block text-lg font-bold underline-offset-2 hover:underline"
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Link
+                        to={`/history/${encodeURIComponent(entry.username)}`}
+                        className="text-lg font-bold underline-offset-2 hover:underline"
+                      >
+                        {entry.displayName || entry.username}
+                      </Link>
+                      {tag && <span className={PL_TAG_CLASS}>{tag}</span>}
+                    </div>
+                    <p
+                      className={`mt-1 font-mono text-2xl font-bold ${
+                        idle ? "text-[var(--text-muted)]" : "text-[var(--accent-green)]"
+                      }`}
                     >
-                      {entry.displayName || entry.username}
-                    </Link>
-                    <p className="mt-1 font-mono text-2xl font-bold text-[var(--accent-green)]">
-                      {mode === "winPct" ? `${entry.winPct.toFixed(1)}%` : entry.confidencePl.toFixed(2)}
+                      {scoreLabel(entry)}
                     </p>
                     <p className="mt-1 text-sm text-[var(--text-muted)]">
                       {recordLabel(entry, mode)} {mode === "pl" ? "★" : "correct"}

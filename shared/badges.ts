@@ -5,7 +5,6 @@ import {
   computeWinPct,
   isGradedForStandings,
   pickCorrectness,
-  weekPlEligible,
 } from "./scoring";
 import { confidencePlForWeek } from "./statsCompute";
 
@@ -77,8 +76,8 @@ export type WeekView = {
   winPct: number;
   /** ★ bets placed this week (all games). */
   starsUsed: number;
-  /** Week counts for ★ P/L (exactly 5 ★ in the regular season). */
-  plEligible: boolean;
+  /** ★ bets not placed (regular season: 5 − starsUsed; playoffs: 0). Each one costs 1 unit. */
+  missedStars: number;
   /** Primetime games this week and your pick on each (null pick = didn't pick it). */
   primetime: Record<PrimetimeSlot, { game: GameData; pick: PickView | null } | null>;
   /** This week's boards (ats = win %, pl = ★ P/L). */
@@ -87,7 +86,7 @@ export type WeekView = {
   lastWeek: { ats: BoardStanding; pl: BoardStanding };
   /** Season-to-date overall boards through this week. */
   overall: { ats: BoardStanding; pl: BoardStanding };
-  /** Straight weeks >50% ending this week (★ streak skips ineligible weeks). */
+  /** Straight weeks >50% ending this week (★ streak skips weeks with missed ★). */
   streak: { ats: number; conf: number };
 };
 
@@ -373,9 +372,8 @@ function streakEndingAt(pctsOldestFirst: number[]): number {
   return streak;
 }
 
-/** ★ win % for the week (0 when the week isn't ★-eligible). */
-function weekConfWinPct(graded: GameData[], picks: Record<string, UserPick>, eligible: boolean): number {
-  if (!eligible) return 0;
+/** ★ win % for the week. */
+function weekConfWinPct(graded: GameData[], picks: Record<string, UserPick>): number {
   let correct = 0;
   let total = 0;
   for (const g of graded) {
@@ -393,10 +391,12 @@ function weekConfWinPct(graded: GameData[], picks: Record<string, UserPick>, eli
  *
  * - Only complete slates (see `isSlateComplete`) are evaluated, oldest → newest by
  *   (seasonType, week), so the regular season precedes the playoffs.
- * - Weekly boards rank only participants (≥1 pick on a graded game). The ★ P/L board ranks only
- *   P/L-eligible participants with ≥1 ★ bet. Ties share first/last.
- * - Overall boards (season to date through the week) use the leaderboard's metrics.
- * - Streaks reset when the season type changes; ★ streaks skip ineligible weeks.
+ * - Weekly boards rank only participants (≥1 pick on a graded game). The ★ P/L board ranks
+ *   players with ≥1 ★ bet that week, at their ★ units minus 1 per missed ★. Ties share first/last.
+ * - Overall boards (season to date through the week) use the leaderboard's metrics: ★ P/L is
+ *   charged for missed ★ from the player's first week with a pick, and ranks players who have
+ *   placed a ★ this season.
+ * - Streaks reset when the season type changes; ★ streaks skip weeks with missed ★.
  * - "first" and "count" rows keep the first week that earned them.
  */
 export function computeDesiredBadges(input: {
@@ -423,7 +423,10 @@ export function computeDesiredBadges(input: {
     correct: number;
     total: number;
     pl: number;
-    plWeeks: number;
+    /** Has made a pick this week or earlier — ★ P/L (and missed ★) count from then on. */
+    joined: boolean;
+    /** ★ bets placed so far this season. */
+    stars: number;
     picked: boolean;
   };
   const running = new Map<string, Running>();
@@ -435,7 +438,8 @@ export function computeDesiredBadges(input: {
       correct: 0,
       total: 0,
       pl: 0,
-      plWeeks: 0,
+      joined: false,
+      stars: 0,
       picked: false,
     });
   }
@@ -453,7 +457,6 @@ export function computeDesiredBadges(input: {
     const source = { seasonType, weekNumber };
     const gameIds = new Set(games.map((g) => g.id));
     const graded = games.filter((g) => isGradedForStandings(g));
-    const phase = games[0]?.phase ?? "regular";
 
     if (lastSeasonType !== seasonType) {
       for (const r of running.values()) {
@@ -477,7 +480,7 @@ export function computeDesiredBadges(input: {
     // Per-user week stats + running totals.
     const stats = new Map<
       string,
-      { correct: number; winPct: number; pl: number; plEligible: boolean; participant: boolean; starsUsed: number }
+      { correct: number; winPct: number; pl: number; plCounted: boolean; participant: boolean; starsUsed: number; missedStars: number }
     >();
     for (const u of users) {
       const picks = weekPicks.get(u.userId)!;
@@ -486,25 +489,25 @@ export function computeDesiredBadges(input: {
       const winPct = computeWinPct(correct, graded.length);
       const conf = confidencePlForWeek(games, picks);
       const participant = graded.some((g) => picks[g.id]?.pick);
+      const r = running.get(u.userId)!;
+      if (Object.values(picks).some((p) => p.pick)) r.joined = true;
       const st = {
         correct,
         winPct,
-        pl: conf.pl,
-        plEligible: conf.eligible && conf.confCount > 0,
+        pl: conf.pl - conf.missed,
+        plCounted: r.joined,
         participant,
         starsUsed: conf.confCount,
+        missedStars: conf.missed,
       };
       stats.set(u.userId, st);
 
-      const r = running.get(u.userId)!;
       if (graded.length > 0) r.ats.push(winPct);
-      if (conf.eligible) r.conf.push(weekConfWinPct(graded, picks, true));
+      if (conf.missed === 0) r.conf.push(weekConfWinPct(graded, picks));
       r.correct += correct;
       r.total += graded.length;
-      if (st.plEligible) {
-        r.pl += st.pl;
-        r.plWeeks++;
-      }
+      if (st.plCounted) r.pl += st.pl;
+      r.stars += st.starsUsed;
       if (participant) r.picked = true;
     }
 
@@ -515,7 +518,7 @@ export function computeDesiredBadges(input: {
     );
     const plBoard = tieStandings(
       users
-        .filter((u) => stats.get(u.userId)!.participant && stats.get(u.userId)!.plEligible)
+        .filter((u) => stats.get(u.userId)!.plCounted && stats.get(u.userId)!.starsUsed > 0)
         .map((u) => ({ userId: u.userId, score: stats.get(u.userId)!.pl })),
     );
     const overallAts = tieStandings(
@@ -528,7 +531,7 @@ export function computeDesiredBadges(input: {
     );
     const overallPl = tieStandings(
       users
-        .filter((u) => running.get(u.userId)!.plWeeks > 0)
+        .filter((u) => running.get(u.userId)!.joined && running.get(u.userId)!.stars > 0)
         .map((u) => ({ userId: u.userId, score: running.get(u.userId)!.pl })),
     );
     const priorBoards =
@@ -564,7 +567,7 @@ export function computeDesiredBadges(input: {
         correct: st.correct,
         winPct: st.winPct,
         starsUsed: st.starsUsed,
-        plEligible: weekPlEligible(phase, st.starsUsed),
+        missedStars: st.missedStars,
         primetime,
         standing: { ats: atsBoard.get(u.userId) ?? NO_STANDING, pl: plBoard.get(u.userId) ?? NO_STANDING },
         lastWeek: {

@@ -69,8 +69,17 @@ export interface LeaderboardEntry {
   /** ★-only graded record (for Confidence P/L mode). */
   confCorrect: number;
   confTotal: number;
+  /** ★ units, minus 1 for every ★ not placed in a closed regular-season week. */
   confidencePl: number;
+  /** Weeks with every ★ placed. */
   weeksComplete: number;
+  /** ★ bets not placed (already charged in `confidencePl`). */
+  missedStars: number;
+  /**
+   * Place on the ★ P/L board. "idle": greyed at the bottom (weekly: no ★ that week; overall: no ★
+   * in the last 3 weeks, score hidden until the next ★). "off": hasn't made a pick yet.
+   */
+  plStatus: "ranked" | "idle" | "off";
   badges?: EarnedBadge[];
 }
 
@@ -103,7 +112,9 @@ export interface WeeklyStatRow {
   winPct: number;
   confidencePl: number;
   hypotheticalPl: number;
-  /** False when regular/preseason week has fewer than 5 ★ bets (P/L excluded). */
+  /** ★ bets not placed in a closed regular-season week; each one is −1 unit in `confidencePl`. */
+  missedStars: number;
+  /** False for weeks before the player's first pick (no ★ P/L, no missed-★ charge). */
   plEligible: boolean;
 }
 

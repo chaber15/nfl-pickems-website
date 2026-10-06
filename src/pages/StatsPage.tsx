@@ -2,7 +2,6 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Question } from "../components/icons";
 import { CONFIDENCE_BETS_PER_WEEK, type EarnedBadge, type UserStats } from "@shared/types";
-import { isPlayoffPhase } from "@shared/scoring";
 import { BadgeChipRow } from "../components/BadgeChip";
 import { ErrorState } from "../components/ErrorState";
 import { apiLeaderboard, apiStats, errorMessage } from "../lib/api";
@@ -79,13 +78,13 @@ const STAT_HELP = {
   winPctAll:
     "Your overall against-the-spread (ATS) win rate on every final game. Missed picks count as wrong.",
   winPctConfidence:
-    "ATS win rate on your ★ confidence bets only (eligible weeks / playoffs).",
+    "ATS win rate on the ★ confidence bets you placed (playoffs: every pick).",
   confidencePl:
-    `Profit & loss: units won or lost on ★ confidence bets using the posted juice (the price of the bet, e.g. −110 risks 1.10 to win 1). Only weeks with exactly ${CONFIDENCE_BETS_PER_WEEK} ★ bets count (playoffs: all games).`,
+    `Profit & loss: units won or lost on ★ confidence bets using the posted juice (the price of the bet, e.g. −110 risks 1.10 to win 1). In the regular season each of the ${CONFIDENCE_BETS_PER_WEEK} weekly ★ you don't place costs 1 unit (playoffs: all games count).`,
   hypotheticalPl:
     "What your P/L would be if every pick counted at the posted odds. Each missed game costs 1 unit.",
   confidenceRoi:
-    "Return on investment for confidence bets: profit ÷ risk across eligible ★ weeks.",
+    "Return on investment for confidence bets: profit ÷ ★ bets, counting each ★ you didn't place as a lost bet.",
   hypotheticalRoi:
     "Return on investment if you had bet every game (including the −1 for misses).",
   favoritePickRate: "How often you pick the favorite when you make a pick.",
@@ -95,9 +94,9 @@ const STAT_HELP = {
   favoriteUnits: "Units won or lost on favorite picks only (hypothetical track).",
   underdogUnits: "Units won or lost on underdog picks only (hypothetical track).",
   streakAll: "Consecutive weeks with ATS win % over 50% (newest weeks first).",
-  streakConfidence: "Consecutive eligible ★ weeks with win % over 50%.",
-  bestWeek: "Your best eligible week by confidence P/L.",
-  worstWeek: "Your worst eligible week by confidence P/L.",
+  streakConfidence: `Consecutive weeks with all ${CONFIDENCE_BETS_PER_WEEK} ★ placed and ★ win % over 50%.`,
+  bestWeek: "Your best week by confidence P/L.",
+  worstWeek: "Your worst week by confidence P/L (missed ★ included).",
 } as const;
 
 export function StatsPage() {
@@ -329,7 +328,8 @@ export function StatsPage() {
                   <p className="text-sm font-semibold text-[var(--text-muted)]">Confidence P/L</p>
                   <p className="font-mono text-xl font-bold">{stats.confidencePl.toFixed(2)} units</p>
                   <p className="mt-2 text-sm text-[var(--text-muted)]">
-                    From eligible weeks only: exactly {CONFIDENCE_BETS_PER_WEEK} ★ bets (regular season), or all playoff games.
+                    Units on your ★ bets. In the regular season each of the {CONFIDENCE_BETS_PER_WEEK} weekly ★ you
+                    don&apos;t place costs 1 unit; in the playoffs every pick counts.
                   </p>
                 </div>
                 <div>
@@ -364,7 +364,11 @@ export function StatsPage() {
                           <td className="px-4 py-3 font-mono">
                             {row.picksMade}/{row.totalGames}
                           </td>
-                          <td className="px-4 py-3 font-mono">{row.confidenceBets}</td>
+                          <td className="px-4 py-3 font-mono">
+                            {row.missedStars > 0
+                              ? `${row.confidenceBets}/${CONFIDENCE_BETS_PER_WEEK}`
+                              : row.confidenceBets}
+                          </td>
                           <td className="px-4 py-3 font-mono">{row.winPct.toFixed(1)}%</td>
                           <td className="px-4 py-3 font-mono">
                             {row.plEligible ? row.confidencePl.toFixed(2) : "—"}
@@ -384,7 +388,7 @@ export function StatsPage() {
                       <p className="font-bold">Week {row.weekNumber}</p>
                       <p className="mt-1 font-mono text-sm text-[var(--text-muted)]">
                         {row.picksMade}/{row.totalGames} picks · {row.confidenceBets} bets
-                        {!row.plEligible && !isPlayoffPhase(row.phase) ? " · P/L incomplete" : ""}
+                        {row.missedStars > 0 ? ` · ${row.missedStars} ★ missed (−${row.missedStars})` : ""}
                       </p>
                       <p className="mt-2 font-mono text-sm">
                         Win {row.winPct.toFixed(1)}% · Conf{" "}

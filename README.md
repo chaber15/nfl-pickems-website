@@ -92,7 +92,7 @@ Pages also trigger a sync on read (throttled to once per 5 minutes) while games 
 See `shared/scoring.ts` (run `npm test`):
 
 - **Win %**: every final game with a line counts; unpicked = wrong; pushes = 0.5. Postponed/canceled games are never graded
-- **Confidence P/L**: 5 bets/week (regular season); all playoff games auto-count
+- **Confidence P/L**: 5 ★ bets/week (regular season); each ★ not placed costs 1 unit once the week's last game kicks off, starting from the player's first week with a pick. All playoff games auto-count. A week with no ★ is greyed out on that week's P/L board; no ★ in the last 3 weeks greys the player out (score hidden) on the season board until their next ★
 - **Hypothetical P/L**: all picks at odds + -1 unit per unpicked game
 - **ATS**: favorite covers when `(favoriteScore - underdogScore) - spread > 0`; graded against the line frozen at Wednesday 8:00 AM ET. If the favorite flips before the lock, existing picks are swapped so everyone keeps the team they tapped
 

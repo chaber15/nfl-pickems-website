@@ -13,18 +13,17 @@
       <stop offset="1" stop-color="#eeb02c"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="url(#field)"/>
+  <rect width="512" height="512" rx="104" fill="url(#field)"/>
   <g transform="translate(256 256) scale(1) translate(-256 -256)">
-    <g transform="translate(236 284) rotate(38) scale(1)">
+    <g transform="translate(226 296) rotate(38) scale(1.1)">
       <path d="M -196 0 A 232 232 0 0 1 196 0 A 232 232 0 0 1 -196 0 Z" fill="url(#leather)"/>
-      <g stroke="#fff" stroke-width="20" stroke-linecap="round">
-        <line x1="-84" y1="0" x2="84" y2="0"/>
-        <line x1="-60" y1="-34" x2="-60" y2="34"/>
-        <line x1="-20" y1="-34" x2="-20" y2="34"/>
-        <line x1="20" y1="-34" x2="20" y2="34"/>
-        <line x1="60" y1="-34" x2="60" y2="34"/>
+      <g stroke="#fff" stroke-width="30" stroke-linecap="round">
+        <line x1="-74" y1="0" x2="74" y2="0"/>
+        <line x1="-50" y1="-40" x2="-50" y2="40"/>
+        <line x1="0" y1="-40" x2="0" y2="40"/>
+        <line x1="50" y1="-40" x2="50" y2="40"/>
       </g>
     </g>
-    <polygon points="394.0,46.0 413.1,93.7 464.4,97.1 425.0,130.1 437.5,179.9 394.0,152.6 350.5,179.9 363.0,130.1 323.6,97.1 374.9,93.7" fill="url(#gold)" stroke="url(#gold)" stroke-width="15" stroke-linejoin="round"/>
+    <polygon points="398.0,22.0 421.8,81.3 485.5,85.6 436.5,126.5 452.1,188.4 398.0,154.5 343.9,188.4 359.5,126.5 310.5,85.6 374.2,81.3" fill="url(#gold)" stroke="url(#gold)" stroke-width="18" stroke-linejoin="round"/>
   </g>
 </svg>

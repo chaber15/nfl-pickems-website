@@ -1,0 +1,3 @@
+# Private family site: keep it out of search engines (index.html also sends noindex).
+User-agent: *
+Disallow: /

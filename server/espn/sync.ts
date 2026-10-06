@@ -33,14 +33,15 @@ export const READ_SYNC_KICKOFF_LEAD_MS = 10 * 60 * 1000;
  */
 export const STALE_UNFINISHED_MS = 3 * 24 * 60 * 60 * 1000;
 
-function spreadToCents(spread: number | null): number | null {
+// The DB stores the spread in tenths of a point (3.5 → 35); the column is named `spread_cents`.
+function spreadToTenths(spread: number | null): number | null {
   if (spread == null || !Number.isFinite(spread)) return null;
   return Math.round(spread * 10);
 }
 
-function centsToSpread(cents: number | null): number | null {
-  if (cents == null) return null;
-  return cents / 10;
+function tenthsToSpread(tenths: number | null): number | null {
+  if (tenths == null) return null;
+  return tenths / 10;
 }
 
 export function dbGameToGameData(
@@ -48,7 +49,7 @@ export function dbGameToGameData(
   week: typeof schema.weeks.$inferSelect,
 ): GameData {
   const line = normalizePickemLine({
-    spread: centsToSpread(game.spread),
+    spread: tenthsToSpread(game.spread),
     favoriteSide: game.favoriteSide,
     oddsAway: game.oddsAway,
     oddsHome: game.oddsHome,
@@ -80,6 +81,8 @@ export function dbGameToGameData(
     seasonType: week.seasonType,
     phase: week.phase,
   };
+  // A final game's ATS result is recomputed from the scores and line on every read, so the stored
+  // `ats_result` is overridden — hand-editing that column won't stick; fix the scores or line.
   return applyAtsToGame(base);
 }
 
@@ -125,7 +128,7 @@ async function ensureWeek(seasonId: string, weekNumber: number, seasonType: numb
 
 function existingLineSnapshot(game: GameRow): LineSnapshot {
   return {
-    spread: centsToSpread(game.spread),
+    spread: tenthsToSpread(game.spread),
     favoriteSide: game.favoriteSide,
     oddsAway: game.oddsAway,
     oddsHome: game.oddsHome,
@@ -364,7 +367,7 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
         awayRecord: g.awayRecord ?? existing?.awayRecord ?? null,
         homeRecord: g.homeRecord ?? existing?.homeRecord ?? null,
         kickoffAt,
-        spread: spreadToCents(line.spread),
+        spread: spreadToTenths(line.spread),
         favoriteSide: line.favoriteSide,
         oddsAway: line.oddsAway,
         oddsHome: line.oddsHome,

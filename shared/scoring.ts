@@ -1,4 +1,4 @@
-import type { AtsResult, FavoriteSide, GameData, PickSide } from "./types";
+import { CONFIDENCE_BETS_PER_WEEK, type AtsResult, type FavoriteSide, type GameData, type PickSide } from "./types";
 
 const EVEN_ODDS_TOKENS = new Set(["EVEN", "EV", "EVS", "EVENS", "PK", "PICK", "PICKEM", "PICK'EM"]);
 
@@ -89,14 +89,25 @@ export function countConfidenceBets(
   return Object.values(picks).filter((p) => p.isConfidenceBet).length;
 }
 
-/** Regular / preseason: P/L week counts only with exactly 5 ★ bets. Playoffs: always eligible. */
-export function weekPlEligible(
+/**
+ * ★ bets a regular / preseason week is short of the required 5. Each one costs 1 unit once the
+ * week is closed (see `isWeekClosed`). Playoffs: always 0 — every pick counts.
+ */
+export function missedStars(
   phase: GameData["phase"],
   confidenceCount: number,
-  required = 5,
+  required = CONFIDENCE_BETS_PER_WEEK,
+): number {
+  if (isPlayoffPhase(phase)) return 0;
+  return Math.max(0, required - confidenceCount);
+}
+
+/** A week is closed once every game has kicked off — no more ★ can be placed. */
+export function isWeekClosed(
+  games: Array<{ status: string; kickoffAt: string }>,
+  now = new Date(),
 ): boolean {
-  if (isPlayoffPhase(phase)) return true;
-  return confidenceCount === required;
+  return games.length > 0 && games.every((g) => g.status !== "scheduled" || isGameLocked(g.kickoffAt, now));
 }
 
 /**
