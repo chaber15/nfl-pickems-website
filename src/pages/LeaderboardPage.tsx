@@ -212,10 +212,10 @@ export function LeaderboardPage() {
             {scope === "overall"
               ? mode === "winPct"
                 ? "Overall win % across every final game. Missing a pick counts as wrong."
-                : `Overall confidence P/L (profit & loss in units). Record is ★ bets; each of the ${CONFIDENCE_BETS_PER_WEEK} weekly ★ you don't place costs 1 unit. No ★ for 3 weeks greys you out until your next ★.`
+                : `Overall confidence P/L (profit & loss in units). Record is ★ bets; each of the ${CONFIDENCE_BETS_PER_WEEK} weekly ★ you don't place counts as a lost bet at that week's worst price (usually −1.15 to −1.22). No ★ for 3 weeks greys you out until your next ★.`
               : mode === "winPct"
                 ? `Win % for ${shortWeekLabel(seasonType, week)} only.`
-                : `Confidence P/L for ${shortWeekLabel(seasonType, week)} only. Record is ★ bets; each of the ${CONFIDENCE_BETS_PER_WEEK} ★ you don't place costs 1 unit.`}{" "}
+                : `Confidence P/L for ${shortWeekLabel(seasonType, week)} only. Record is ★ bets; each of the ${CONFIDENCE_BETS_PER_WEEK} ★ you don't place counts as a lost bet at the week's worst price.`}{" "}
             Uncheck a player to hide their name on the pick lean — they still count in the bar. Tap a
             name to view their history.
             {mode === "pl" && (

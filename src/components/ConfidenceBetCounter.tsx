@@ -38,7 +38,7 @@ export function ConfidenceBetCounter({ count, max = CONFIDENCE_BETS_PER_WEEK, ph
           {!complete && (
             <span className="text-[var(--text-muted)]">
               {" "}
-              - each ★ you don&apos;t place costs 1 unit on the P/L board
+              - each ★ you don&apos;t place counts as a lost bet at the week&apos;s worst price
               {count < max ? ` (${max - count} to go)` : ""}
               {count > max ? ` (${count - max} too many)` : ""}
             </span>

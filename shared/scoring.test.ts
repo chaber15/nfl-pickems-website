@@ -5,6 +5,7 @@ import {
   pickCorrectness,
   computeWinPct,
   missedStars,
+  missedStarCost,
   isWeekClosed,
   isGradedForStandings,
 } from "./scoring.ts";
@@ -25,12 +26,19 @@ assert.equal(pickCorrectness("favorite", "push"), 0.5);
 assert.equal(pickCorrectness(null, "favorite"), 0);
 assert.equal(computeWinPct(8.5, 16), (8.5 / 16) * 100);
 
-// Each ★ short of 5 costs 1 unit; playoffs never owe any
+// Each ★ short of 5 is charged; playoffs never owe any
 assert.equal(missedStars("regular", 5), 0);
 assert.equal(missedStars("regular", 4), 1);
 assert.equal(missedStars("regular", 0), 5);
 assert.equal(missedStars("preseason", 3), 2);
 assert.equal(missedStars("wildcard", 2), 0);
+// A missed ★ costs a loss at the worst price on the board: −122 beats −118 and the +102 side
+const line = (oddsAway: number | null, oddsHome: number | null, spread: number | null = 3.5) => ({ spread, oddsAway, oddsHome });
+assert.equal(missedStarCost([line(-110, -110), line(-102, -118), line(-122, 102)]), 1.22);
+assert.equal(missedStarCost([line(100, -120)]), 1.2);
+assert.equal(missedStarCost([line(100, 105)]), 1); // plus money risks 1
+assert.equal(missedStarCost([line(-130, -130, null), line(-110, -110)]), 1.1); // no line, can't be picked
+assert.equal(missedStarCost([line(null, null)]), 1.1); // no juice posted anywhere: a standard −110 loss
 // A week is closed (no more ★ can be placed) once its last game has kicked off
 const tue = new Date("2026-09-15T12:00:00Z");
 assert.equal(isWeekClosed([{ status: "final", kickoffAt: "2026-09-13T17:00:00Z" }], tue), true);

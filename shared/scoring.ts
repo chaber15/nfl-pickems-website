@@ -90,8 +90,9 @@ export function countConfidenceBets(
 }
 
 /**
- * ★ bets a regular / preseason week is short of the required 5. Each one costs 1 unit once the
- * week is closed (see `isWeekClosed`). Playoffs: always 0 — every pick counts.
+ * ★ bets a regular / preseason week is short of the required 5. Each one costs
+ * `missedStarCost(week's games)` once the week is closed (see `isWeekClosed`).
+ * Playoffs: always 0 — every pick counts.
  */
 export function missedStars(
   phase: GameData["phase"],
@@ -100,6 +101,32 @@ export function missedStars(
 ): number {
   if (isPlayoffPhase(phase)) return 0;
   return Math.max(0, required - confidenceCount);
+}
+
+/** Units lost on a losing bet at these American odds: −115 → 1.15, +102 → 1. */
+function lossAtOdds(odds: number | null): number | null {
+  if (odds == null) return null;
+  return odds > 0 ? 1 : Math.abs(odds) / 100;
+}
+
+/** A standard −110 loss, for a week with no juice posted on any game. */
+const STANDARD_LOSS = 1.1;
+
+/**
+ * What one missing ★ costs: a loss at the worst price on the board that week (the side that
+ * risks the most, usually −115 to −122). Never cheaper than a ★ you could have placed and lost.
+ */
+export function missedStarCost(
+  games: Array<{ spread: number | null; oddsAway: number | null; oddsHome: number | null }>,
+): number {
+  let worst: number | null = null;
+  for (const g of games) {
+    if (g.spread == null) continue;
+    for (const loss of [lossAtOdds(g.oddsAway), lossAtOdds(g.oddsHome)]) {
+      if (loss != null && (worst == null || loss > worst)) worst = loss;
+    }
+  }
+  return worst ?? STANDARD_LOSS;
 }
 
 /** A week is closed once every game has kicked off — no more ★ can be placed. */

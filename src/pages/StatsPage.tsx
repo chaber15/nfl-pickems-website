@@ -80,7 +80,7 @@ const STAT_HELP = {
   winPctConfidence:
     "ATS win rate on the ★ confidence bets you placed (playoffs: every pick).",
   confidencePl:
-    `Profit & loss: units won or lost on ★ confidence bets using the posted juice (the price of the bet, e.g. −110 risks 1.10 to win 1). In the regular season each of the ${CONFIDENCE_BETS_PER_WEEK} weekly ★ you don't place costs 1 unit (playoffs: all games count).`,
+    `Profit & loss: units won or lost on ★ confidence bets using the posted juice (the price of the bet, e.g. −110 risks 1.10 to win 1). In the regular season each of the ${CONFIDENCE_BETS_PER_WEEK} weekly ★ you don't place counts as a lost bet at that week's worst price, usually −1.15 to −1.22 (playoffs: all games count).`,
   hypotheticalPl:
     "What your P/L would be if every pick counted at the posted odds. Each missed game costs 1 unit.",
   confidenceRoi:
@@ -329,7 +329,7 @@ export function StatsPage() {
                   <p className="font-mono text-xl font-bold">{stats.confidencePl.toFixed(2)} units</p>
                   <p className="mt-2 text-sm text-[var(--text-muted)]">
                     Units on your ★ bets. In the regular season each of the {CONFIDENCE_BETS_PER_WEEK} weekly ★ you
-                    don&apos;t place costs 1 unit; in the playoffs every pick counts.
+                    don&apos;t place counts as a lost bet at that week&apos;s worst price; in the playoffs every pick counts.
                   </p>
                 </div>
                 <div>
@@ -388,7 +388,9 @@ export function StatsPage() {
                       <p className="font-bold">Week {row.weekNumber}</p>
                       <p className="mt-1 font-mono text-sm text-[var(--text-muted)]">
                         {row.picksMade}/{row.totalGames} picks · {row.confidenceBets} bets
-                        {row.missedStars > 0 ? ` · ${row.missedStars} ★ missed (−${row.missedStars})` : ""}
+                        {row.missedStars > 0
+                          ? ` · ${row.missedStars} ★ missed (−${(row.missedStarsCost ?? row.missedStars).toFixed(2)})`
+                          : ""}
                       </p>
                       <p className="mt-2 font-mono text-sm">
                         Win {row.winPct.toFixed(1)}% · Conf{" "}

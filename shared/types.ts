@@ -69,7 +69,7 @@ export interface LeaderboardEntry {
   /** ★-only graded record (for Confidence P/L mode). */
   confCorrect: number;
   confTotal: number;
-  /** ★ units, minus 1 for every ★ not placed in a closed regular-season week. */
+  /** ★ units, minus a loss at that week's worst price for every ★ not placed in a closed regular-season week. */
   confidencePl: number;
   /** Weeks with every ★ placed. */
   weeksComplete: number;
@@ -112,8 +112,10 @@ export interface WeeklyStatRow {
   winPct: number;
   confidencePl: number;
   hypotheticalPl: number;
-  /** ★ bets not placed in a closed regular-season week; each one is −1 unit in `confidencePl`. */
+  /** ★ bets not placed in a closed regular-season week. */
   missedStars: number;
+  /** Units those cost (already in `confidencePl`): a loss at the week's worst price per ★. */
+  missedStarsCost: number;
   /** False for weeks before the player's first pick (no ★ P/L, no missed-★ charge). */
   plEligible: boolean;
 }

@@ -14,6 +14,7 @@ import {
   isGameLocked,
   isGradedForStandings,
   isWeekClosed,
+  missedStarCost,
   missedStars,
   pickCorrectness,
   unitsDelta,
@@ -57,13 +58,13 @@ export function buildHistoryRows(
 
 /**
  * ★ bets on a slate of games in one week: units won/lost on the ★ placed (`pl`), how many were
- * placed, and how many of the required 5 are missing. The week's P/L is `pl − missed` once the
- * week is closed.
+ * placed, how many of the required 5 are missing, and what those cost (`missedCost`, a loss at
+ * the week's worst price each). The week's P/L is `pl − missedCost` once the week is closed.
  */
 export function confidencePlForWeek(
   games: GameData[],
   picks: Record<string, UserPick>,
-): { pl: number; confCount: number; missed: number } {
+): { pl: number; confCount: number; missed: number; missedCost: number } {
   const phase = games[0]?.phase ?? "regular";
   const confCount = countConfidenceBets(picks);
 
@@ -75,7 +76,8 @@ export function confidencePlForWeek(
     if (g.spread == null || !g.favoriteSide || !g.atsResult) continue;
     pl += unitsDelta(up.pick, g.atsResult, g.favoriteSide, g.oddsAway, g.oddsHome);
   }
-  return { pl, confCount, missed: missedStars(phase, confCount) };
+  const missed = missedStars(phase, confCount);
+  return { pl, confCount, missed, missedCost: missed * missedStarCost(games) };
 }
 
 function streakFromWeekWinPcts(weekWinPctsNewestFirst: number[]): number {
@@ -224,12 +226,14 @@ export function computeUserStats(
 
   const weeklyRows: WeeklyStatRowWithSeason[] = Array.from(weekBuckets.values())
     .map((b) => {
-      // The week counts from the player's first week with a pick; each missing ★ costs 1 unit
-      // once the week is closed.
+      // The week counts from the player's first week with a pick; each missing ★ costs a loss at
+      // the week's worst price once the week is closed.
       const counted = joinedWeek != null && compareSeasonWeeks(b, joinedWeek) >= 0;
-      const closed = isWeekClosed(gamesByWeek.get(`${b.seasonType}-${b.weekNumber}`) ?? [], now);
+      const weekGames = gamesByWeek.get(`${b.seasonType}-${b.weekNumber}`) ?? [];
+      const closed = isWeekClosed(weekGames, now);
       const missed = counted && closed ? missedStars(b.phase, b.confidenceBets) : 0;
-      const weekConfPl = counted ? b.confidencePlRaw - missed : 0;
+      const missedCost = missed > 0 ? missed * missedStarCost(weekGames) : 0;
+      const weekConfPl = counted ? b.confidencePlRaw - missedCost : 0;
       const row: WeeklyStatRowWithSeason = {
         weekNumber: b.weekNumber,
         seasonType: b.seasonType,
@@ -241,6 +245,7 @@ export function computeUserStats(
         confidencePl: weekConfPl,
         hypotheticalPl: b.hypotheticalPl,
         missedStars: missed,
+        missedStarsCost: missedCost,
         plEligible: counted,
       };
       return row;

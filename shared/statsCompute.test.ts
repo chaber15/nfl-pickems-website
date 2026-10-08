@@ -62,7 +62,7 @@ test(
   },
 );
 
-test("computeUserStats: each missed ★ costs 1 unit once the week is closed, from the first week with a pick", () => {
+test("computeUserStats: each missed ★ costs a loss at the week's worst price once the week is closed, from the first week with a pick", () => {
   const week = (w: number, n: number, extra: Partial<Parameters<typeof makeGame>[1]> = {}) =>
     Array.from({ length: n }, (_, i) => makeGame(`w${w}g${i}`, { weekNumber: w, ...extra }));
   const games = [
@@ -81,15 +81,17 @@ test("computeUserStats: each missed ★ costs 1 unit once the week is closed, fr
     w4g0: ["favorite", true],
   });
   const stats = computeUserStats(games, picks, new Date("2026-10-05T12:00:00Z"));
-  const rows = stats.weeklyRows.map((r) => [r.weekNumber, r.plEligible, r.missedStars, r.confidencePl]);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const rows = stats.weeklyRows.map((r) => [r.weekNumber, r.plEligible, r.missedStars, r2(r.missedStarsCost), r2(r.confidencePl)]);
+  // Every test game is −110 / −110, so each missed ★ costs 1.10
   assert.deepEqual(rows, [
-    [1, false, 0, 0],
-    [2, true, 2, 1],
-    [3, true, 5, -5],
-    [4, true, 0, 1],
+    [1, false, 0, 0, 0],
+    [2, true, 2, 2.2, 0.8],
+    [3, true, 5, 5.5, -5.5],
+    [4, true, 0, 0, 1],
   ]);
-  assert.equal(stats.confidencePl, -3);
+  assert.equal(r2(stats.confidencePl), -3.7);
   assert.equal(stats.winPctConfidence, 100); // only the ★ actually placed
-  assert.equal(stats.confidenceRoi, (-3 / 11) * 100); // 4 ★ placed + 7 missed
-  assert.deepEqual(stats.worstWeekConfidence, { week: 3, pl: -5, seasonType: 2 });
+  assert.equal(r2(stats.confidenceRoi), r2((-3.7 / 11) * 100)); // 4 ★ placed + 7 missed
+  assert.deepEqual(stats.worstWeekConfidence, { week: 3, pl: -5.5, seasonType: 2 });
 });

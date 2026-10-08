@@ -5,6 +5,9 @@ import { isGradedForStandings } from "../../shared/scoring";
 import { makeGame } from "../../shared/testFixtures";
 import type { LeaderboardEntry } from "../../shared/types";
 
+/** Rounds away float noise (3 − 2 × 1.1 = 0.7999…). */
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
 const noLineFinalsUngraded = !isGradedForStandings({ status: "final", atsResult: null });
 
 function entry(p: Partial<LeaderboardEntry> & { userId: string; displayName: string }): LeaderboardEntry {
@@ -66,7 +69,7 @@ test("buildLeaderboardEntries: totals, push, missed ★, ties ordered by name", 
   assert.deepEqual([a.confCorrect, a.confTotal], [5, 5]);
   const c = entries[2]!;
   assert.equal(c.displayName, "c");
-  assert.equal(c.confidencePl.toFixed(2), "-5.10"); // one losing ★ at -110, four missed
+  assert.equal(c.confidencePl.toFixed(2), "-5.50"); // one losing ★ at -110, four missed at -1.10
   assert.equal(c.missedStars, 4);
   assert.equal(c.weeksComplete, 0);
   assert.equal(c.plStatus, "ranked");
@@ -90,7 +93,7 @@ function starPicks(userId: string, week: number, stars: number): LeaderboardPick
 const byId = (entries: LeaderboardEntry[]) => new Map(entries.map((e) => [e.userId, e]));
 const player = (id: string) => ({ id, username: id, displayName: null });
 
-test("buildLeaderboardEntries: missed ★ cost 1 each, but not before a player's first pick", () => {
+test("buildLeaderboardEntries: missed ★ cost a loss at the week's worst price, but not before a player's first pick", () => {
   const games = [...weekGames(1), ...weekGames(2)];
   const picks = [
     ...starPicks("full", 1, 5),
@@ -105,15 +108,27 @@ test("buildLeaderboardEntries: missed ★ cost 1 each, but not before a player's
     buildLeaderboardEntries(["full", "short", "late", "nostar", "never"].map(player), games, picks, { weekly: false }),
   );
   assert.equal(e.get("full")!.confidencePl, 10);
-  assert.equal(e.get("short")!.confidencePl, 6); // 5 + (3 − 2 missed)
+  assert.equal(r2(e.get("short")!.confidencePl), 5.8); // 5 + (3 − 2 missed × 1.10)
   assert.equal(e.get("short")!.missedStars, 2);
   assert.equal(e.get("short")!.weeksComplete, 1);
   assert.equal(e.get("late")!.confidencePl, 5); // week 1 was before they joined
   assert.equal(e.get("late")!.missedStars, 0);
-  assert.equal(e.get("nostar")!.confidencePl, -10);
+  assert.equal(r2(e.get("nostar")!.confidencePl), -11);
   assert.equal(e.get("nostar")!.plStatus, "ranked"); // only 2 closed weeks so far
   assert.equal(e.get("never")!.confidencePl, 0);
   assert.equal(e.get("never")!.plStatus, "off");
+});
+
+test("buildLeaderboardEntries: the week's worst price sets what a missed ★ costs", () => {
+  const games = [
+    makeGame("cheap", { oddsAway: -102, oddsHome: -118 }),
+    makeGame("pricey", { oddsAway: -122, oddsHome: 102 }),
+    makeGame("even", { oddsAway: 100, oddsHome: -120 }),
+  ];
+  const picks: LeaderboardPick[] = [{ userId: "a", gameId: "cheap", pick: "favorite", isConfidenceBet: true }];
+  const a = buildLeaderboardEntries([player("a")], games, picks, { weekly: true })[0]!;
+  assert.equal(a.missedStars, 4);
+  assert.equal(r2(a.confidencePl), r2(1 - 4 * 1.22));
 });
 
 test("buildLeaderboardEntries: missed ★ aren't charged until the week's last kickoff", () => {
@@ -127,7 +142,7 @@ test("buildLeaderboardEntries: missed ★ aren't charged until the week's last k
   assert.equal(before.confidencePl, 3);
   assert.equal(before.missedStars, 0);
   const after = buildLeaderboardEntries(users, games, picks, { weekly: true, now: new Date("2026-09-15T01:00:00Z") })[0]!;
-  assert.equal(after.confidencePl, 1);
+  assert.equal(r2(after.confidencePl), 0.8);
   assert.equal(after.missedStars, 2);
 });
 
@@ -144,9 +159,9 @@ test("buildLeaderboardEntries: weekly board greys out no-★ players and leaves 
     }),
   );
   assert.deepEqual([e.get("full")!.confidencePl, e.get("full")!.plStatus], [5, "ranked"]);
-  assert.deepEqual([e.get("partial")!.confidencePl, e.get("partial")!.missedStars, e.get("partial")!.plStatus], [1, 2, "ranked"]);
-  assert.deepEqual([e.get("nostar")!.confidencePl, e.get("nostar")!.plStatus], [-5, "idle"]);
-  assert.deepEqual([e.get("away")!.confidencePl, e.get("away")!.plStatus], [-5, "idle"]); // picked in an earlier week
+  assert.deepEqual([r2(e.get("partial")!.confidencePl), e.get("partial")!.missedStars, e.get("partial")!.plStatus], [0.8, 2, "ranked"]);
+  assert.deepEqual([r2(e.get("nostar")!.confidencePl), e.get("nostar")!.plStatus], [-5.5, "idle"]);
+  assert.deepEqual([r2(e.get("away")!.confidencePl), e.get("away")!.plStatus], [-5.5, "idle"]); // picked in an earlier week
   assert.deepEqual([e.get("new")!.confidencePl, e.get("new")!.plStatus], [0, "off"]);
 });
 
@@ -157,7 +172,7 @@ test("buildLeaderboardEntries: no ★ in the last 3 closed weeks = dropout until
   const e = byId(buildLeaderboardEntries(users, closed, picks, { weekly: false }));
   assert.equal(e.get("stay")!.plStatus, "ranked");
   assert.equal(e.get("quit")!.plStatus, "idle");
-  assert.equal(e.get("quit")!.confidencePl, -10); // +5, then −5 × 3 keeps accumulating
+  assert.equal(r2(e.get("quit")!.confidencePl), -11.5); // +5, then −5.50 × 3 keeps accumulating
 
   // A ★ in the week that's still open brings them back with the full number
   const open = makeGame("w5g0", { weekNumber: 5, status: "scheduled", atsResult: null, kickoffAt: "2099-01-01T00:00:00.000Z" });
@@ -167,7 +182,7 @@ test("buildLeaderboardEntries: no ★ in the last 3 closed weeks = dropout until
     }),
   );
   assert.equal(back.get("quit")!.plStatus, "ranked");
-  assert.equal(back.get("quit")!.confidencePl, -10);
+  assert.equal(r2(back.get("quit")!.confidencePl), -11.5);
 });
 
 test(

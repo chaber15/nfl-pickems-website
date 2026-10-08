@@ -494,7 +494,7 @@ export function computeDesiredBadges(input: {
       const st = {
         correct,
         winPct,
-        pl: conf.pl - conf.missed,
+        pl: conf.pl - conf.missedCost,
         plCounted: r.joined,
         participant,
         starsUsed: conf.confCount,

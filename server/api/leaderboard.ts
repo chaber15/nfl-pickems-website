@@ -8,6 +8,7 @@ import {
   computeWinPct,
   isGradedForStandings,
   isWeekClosed,
+  missedStarCost,
   missedStars,
 } from "../../shared/scoring";
 import { compareSeasonWeeks } from "../../shared/statsCompute";
@@ -72,6 +73,8 @@ export function buildLeaderboardEntries(
     phase: GameData["phase"];
     games: GameData[];
     closed: boolean;
+    /** What one missing ★ costs this week (`missedStarCost`). */
+    starCost: number;
   };
   const gameInfo = new Map<string, GameInfo>();
   const weekByKey = new Map<string, WeekInfo>();
@@ -83,14 +86,17 @@ export function buildLeaderboardEntries(
     gameInfo.set(g.id, { g, graded, weekKey });
     let week = weekByKey.get(weekKey);
     if (!week) {
-      week = { key: weekKey, seasonType: g.seasonType, weekNumber: g.weekNumber, phase: g.phase, games: [], closed: false };
+      week = { key: weekKey, seasonType: g.seasonType, weekNumber: g.weekNumber, phase: g.phase, games: [], closed: false, starCost: 0 };
       weekByKey.set(weekKey, week);
     }
     week.games.push(g);
   }
   const now = opts.now ?? new Date();
   const weeks = [...weekByKey.values()].sort(compareSeasonWeeks);
-  for (const w of weeks) w.closed = isWeekClosed(w.games, now);
+  for (const w of weeks) {
+    w.closed = isWeekClosed(w.games, now);
+    w.starCost = missedStarCost(w.games);
+  }
 
   const picksByUser = new Map<string, LeaderboardPick[]>();
   for (const p of picks) {
@@ -149,7 +155,7 @@ export function buildLeaderboardEntries(
       confCorrect += ws?.confCorrect ?? 0;
       confTotal += ws?.confGraded ?? 0;
       if (w.closed) {
-        confidencePl -= short;
+        confidencePl -= short * w.starCost;
         missed += short;
       }
       if (count > 0 && short === 0) weeksComplete++;
