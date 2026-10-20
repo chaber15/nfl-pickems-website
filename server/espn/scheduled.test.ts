@@ -41,6 +41,11 @@ function row(p: Partial<ScheduleRow> & { kickoffAt: Date }): ScheduleRow {
     weekNumber: 8,
     status: "scheduled",
     updatedAt: at("2026-10-25T12:00:00Z"),
+    // Complete line by default so fixtures don't trip post_lock_fill.
+    spread: 35,
+    favoriteSide: "home",
+    oddsAway: -110,
+    oddsHome: -110,
     ...p,
   };
 }
@@ -62,8 +67,8 @@ test("decide: SNF still in progress after midnight → live; previous-week needs
   const now = at("2026-11-02T05:00:00Z"); // Mon 00:00 EST
   const d = decideScheduledSync(
     [
-      row({ weekNumber: 8, kickoffAt: at("2026-11-02T01:20:00Z"), status: "in_progress" }),
-      row({ weekNumber: 8, kickoffAt: at("2026-11-03T01:15:00Z") }), // MNF
+      row({ weekNumber: 8, kickoffAt: at("2026-11-02T01:20:00Z"), status: "in_progress", updatedAt: now }),
+      row({ weekNumber: 8, kickoffAt: at("2026-11-03T01:15:00Z"), updatedAt: now }), // MNF
     ],
     now,
   );
@@ -83,12 +88,68 @@ test("decide: pre-lock line refresh only when last update is >12h old", () => {
   assert.deepEqual(stale.targets, [{ seasonType: 2, week: 4, reasons: ["line_refresh"] }]);
   const fresh = decideScheduledSync([row({ weekNumber: 4, kickoffAt: kick, updatedAt: at("2026-09-29T10:00:00Z") })], now);
   assert.deepEqual(fresh.targets, []);
-  // After lock (Wed 9am EDT) no refresh even when stale
+  // After lock (Wed 9am EDT) no line_refresh; last synced after lock with complete lines → nothing due
   const locked = decideScheduledSync(
-    [row({ weekNumber: 4, kickoffAt: kick, updatedAt: at("2026-09-29T02:00:00Z") })],
+    [row({ weekNumber: 4, kickoffAt: kick, updatedAt: at("2026-09-30T12:30:00Z") })],
     at("2026-09-30T13:00:00Z"),
   );
   assert.deepEqual(locked.targets, []);
+});
+
+test("gate: Wed 7:00 ET runs (lock refresh); Tue 3:00 ET still overnight; Wed 8:xx skipped", () => {
+  assert.deepEqual(scheduledGate(at("2026-09-30T11:00:00Z")), { run: true }); // Wed 7:00 EDT
+  assert.deepEqual(scheduledGate(at("2026-09-29T07:00:00Z")), { run: false, reason: "overnight" }); // Tue 3:00 EDT
+  assert.equal(scheduledGate(at("2026-09-30T12:00:00Z")).run, false); // Wed 8:00 EDT
+  assert.equal(scheduledGate(at("2026-11-04T12:00:00Z")).run, true); // Wed 7:00 EST
+  assert.equal(scheduledGate(at("2026-10-01T11:00:00Z")).run, false); // Thu 7:00 EDT
+});
+
+test("decide: Wed 7:00 ET, an hour before lock → line_refresh even when rows are fresh", () => {
+  const kick = at("2026-10-02T00:15:00Z");
+  const stale = decideScheduledSync(
+    [row({ weekNumber: 4, kickoffAt: kick, updatedAt: at("2026-09-29T18:00:00Z") })], // Tue 14:00 EDT
+    at("2026-09-30T11:00:00Z"),
+  );
+  assert.deepEqual(stale.targets, [{ seasonType: 2, week: 4, reasons: ["line_refresh"] }]);
+  const fresh = decideScheduledSync(
+    [row({ weekNumber: 4, kickoffAt: kick, updatedAt: at("2026-09-30T10:00:00Z") })],
+    at("2026-09-30T11:00:00Z"),
+  );
+  assert.deepEqual(fresh.targets, [{ seasonType: 2, week: 4, reasons: ["line_refresh"] }]);
+});
+
+test("decide: Wed 9:00 ET with newest update before lock → post_lock_fill", () => {
+  const d = decideScheduledSync(
+    [row({ weekNumber: 4, kickoffAt: at("2026-10-02T00:15:00Z"), updatedAt: at("2026-09-29T18:00:00Z") })],
+    at("2026-09-30T13:00:00Z"),
+  );
+  assert.deepEqual(d.targets, [{ seasonType: 2, week: 4, reasons: ["post_lock_fill"] }]);
+});
+
+test("decide: Fri 10:00 ET, an upcoming game missing its line → post_lock_fill, throttled to 2h", () => {
+  const now = at("2026-10-02T14:00:00Z"); // Fri 10:00 EDT
+  const old = at("2026-10-02T11:00:00Z"); // 3h ago, after lock
+  const d = decideScheduledSync(
+    [
+      row({ weekNumber: 4, kickoffAt: at("2026-10-04T17:00:00Z"), updatedAt: old }),
+      row({ weekNumber: 4, kickoffAt: at("2026-10-04T20:25:00Z"), updatedAt: old, spread: null }),
+    ],
+    now,
+  );
+  assert.deepEqual(d.targets, [{ seasonType: 2, week: 4, reasons: ["post_lock_fill"] }]);
+  const recent = decideScheduledSync(
+    [row({ weekNumber: 4, kickoffAt: at("2026-10-04T20:25:00Z"), updatedAt: at("2026-10-02T13:00:00Z"), spread: null })],
+    now,
+  );
+  assert.deepEqual(recent.targets, []);
+});
+
+test("decide: Fri 10:00 ET, all lines complete and synced after lock → no target", () => {
+  const d = decideScheduledSync(
+    [row({ weekNumber: 4, kickoffAt: at("2026-10-04T17:00:00Z"), updatedAt: at("2026-10-02T11:00:00Z") })],
+    at("2026-10-02T14:00:00Z"),
+  );
+  assert.deepEqual(d.targets, []);
 });
 
 test("decide: all final and nothing upcoming → no targets, bootstrap check", () => {

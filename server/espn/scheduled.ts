@@ -1,7 +1,7 @@
 import { and, eq, gt, lt, sql } from "drizzle-orm";
 import { getDb, hasDatabase, schema } from "../db";
 import { resolveCurrentPickemsWeek } from "../../shared/espnClient";
-import { computeLineLockAt, isPastLineLock, LINE_LOCK_TIMEZONE } from "../../shared/lineLock";
+import { computeLineLockAt, hasCompleteLine, isPastLineLock, LINE_LOCK_TIMEZONE } from "../../shared/lineLock";
 import { clampToAvailableWeek, isValidPickemsWeek } from "../../shared/weekUtils";
 import { STALE_UNFINISHED_MS, syncEspnWeek } from "./sync";
 
@@ -9,21 +9,25 @@ import { STALE_UNFINISHED_MS, syncEspnWeek } from "./sync";
 export const KICKOFF_SOON_MS = 60 * 60 * 1000;
 /** Pre-lock line refresh cadence. */
 export const LINE_REFRESH_MS = 12 * 60 * 60 * 1000;
+/** Refresh lines in the final window before lock; after lock, fill gaps at most this often. */
+export const LOCK_WINDOW_MS = 2 * 60 * 60 * 1000;
 /** Rows considered by the scheduler: a week back (grading) to two weeks ahead (lines). */
 const WINDOW_BACK_MS = 8 * 24 * 60 * 60 * 1000;
 const WINDOW_AHEAD_MS = 14 * 24 * 60 * 60 * 1000;
 
-function etParts(now: Date): { month: number; hour: number } {
+function etParts(now: Date): { month: number; hour: number; weekday: string } {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: LINE_LOCK_TIMEZONE,
     month: "numeric",
+    weekday: "short",
     hour: "numeric",
     hourCycle: "h23",
   }).formatToParts(now);
   const month = Number(parts.find((p) => p.type === "month")?.value);
   let hour = Number(parts.find((p) => p.type === "hour")?.value);
   if (hour === 24) hour = 0;
-  return { month, hour };
+  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
+  return { month, hour, weekday };
 }
 
 export type GateResult = { run: true } | { run: false; reason: "offseason" | "overnight" };
@@ -31,12 +35,13 @@ export type GateResult = { run: true } | { run: false; reason: "offseason" | "ov
 /**
  * Cheap no-DB gate for the hourly cron (America/New_York, DST-aware):
  * - March–July: offseason, skip.
- * - 2:00–8:59am: no NFL game is live (earliest kickoff is 9:30am London games), skip.
+ * - 2:00–8:59am: no NFL game is live (earliest kickoff is 9:30am London games), skip,
+ *   except Wednesday 7:00am: the one run before the 8:00am ET line lock.
  */
 export function scheduledGate(now = new Date()): GateResult {
-  const { month, hour } = etParts(now);
+  const { month, hour, weekday } = etParts(now);
   if (month >= 3 && month <= 7) return { run: false, reason: "offseason" };
-  if (hour >= 2 && hour <= 8) return { run: false, reason: "overnight" };
+  if (hour >= 2 && hour <= 8 && !(weekday === "Wed" && hour === 7)) return { run: false, reason: "overnight" };
   return { run: true };
 }
 
@@ -46,9 +51,13 @@ export type ScheduleRow = {
   kickoffAt: Date;
   status: string;
   updatedAt: Date;
+  spread: number | null;
+  favoriteSide: "home" | "away" | null;
+  oddsAway: number | null;
+  oddsHome: number | null;
 };
 
-export type SyncReason = "live" | "kickoff_soon" | "line_refresh";
+export type SyncReason = "live" | "kickoff_soon" | "line_refresh" | "post_lock_fill";
 export type SyncTarget = { seasonType: number; week: number; reasons: SyncReason[] };
 
 /**
@@ -56,7 +65,10 @@ export type SyncTarget = { seasonType: number; week: number; reasons: SyncReason
  * - live: kicked off and not final (live scores / needs final), ignoring games stuck
  *   non-final for days (postponed / canceled);
  * - kickoff_soon: a game kicks off within the next hour;
- * - line_refresh: an upcoming week before its line lock whose newest update is >12h old.
+ * - line_refresh: an upcoming week before its line lock whose newest update is >12h old,
+ *   or that locks within 2h (catches the final pre-lock line);
+ * - post_lock_fill: an upcoming week past its lock that was last synced before the lock or
+ *   still has an upcoming game without a complete line; at most once per 2h.
  * `bootstrapCheck` = no upcoming games stored → ask ESPN whether a new week needs rows.
  */
 export function decideScheduledSync(
@@ -94,7 +106,13 @@ export function decideScheduledSync(
     if (upcoming) {
       const lockAt = computeLineLockAt(weekRows.map((r) => r.kickoffAt.toISOString()));
       const newest = Math.max(...weekRows.map((r) => r.updatedAt.getTime()));
-      if (!isPastLineLock(lockAt, now) && t - newest > LINE_REFRESH_MS) reasons.push("line_refresh");
+      if (!isPastLineLock(lockAt, now)) {
+        const lockSoon = lockAt != null && lockAt.getTime() - t <= LOCK_WINDOW_MS;
+        if (t - newest > LINE_REFRESH_MS || lockSoon) reasons.push("line_refresh");
+      } else if (lockAt != null && t - newest > LOCK_WINDOW_MS) {
+        const missingLine = weekRows.some((r) => r.kickoffAt.getTime() > t && !hasCompleteLine(r));
+        if (newest < lockAt.getTime() || missingLine) reasons.push("post_lock_fill");
+      }
     }
 
     if (reasons.length > 0) targets.push({ seasonType, week: weekNumber, reasons });
@@ -118,6 +136,10 @@ async function loadScheduleRows(now: Date): Promise<ScheduleRow[]> {
       kickoffAt: schema.games.kickoffAt,
       status: schema.games.status,
       updatedAt: schema.games.updatedAt,
+      spread: schema.games.spread,
+      favoriteSide: schema.games.favoriteSide,
+      oddsAway: schema.games.oddsAway,
+      oddsHome: schema.games.oddsHome,
     })
     .from(schema.games)
     .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
