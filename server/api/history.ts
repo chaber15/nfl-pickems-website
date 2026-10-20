@@ -1,5 +1,5 @@
 import type { HandlerEvent } from "@netlify/functions";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { dbGameToGameData, resolveActiveSeasonId } from "../espn/sync";
 import type { GameData, UserPick } from "../../shared/types";
@@ -37,7 +37,7 @@ async function loadSeasonGamesAndPicks(
   const seasonId = await resolveActiveSeasonId();
   if (!seasonId) return { games: [], picks: {} };
 
-  const weekConds: SQL[] = [eq(schema.weeks.seasonId, seasonId)];
+  const weekConds: SQL[] = [eq(schema.weeks.seasonId, seasonId), inArray(schema.weeks.seasonType, [2, 3])];
   if (weekFilter) {
     weekConds.push(eq(schema.weeks.seasonType, weekFilter.seasonType));
     weekConds.push(eq(schema.weeks.weekNumber, weekFilter.week));

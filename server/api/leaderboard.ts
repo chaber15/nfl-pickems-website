@@ -198,7 +198,10 @@ export async function computeLeaderboard(filter?: {
   const db = getDb();
   const seasonId = await resolveActiveSeasonId();
 
-  const weekConds: SQL[] = seasonId ? [eq(schema.weeks.seasonId, seasonId)] : [];
+  // Regular season + playoffs only: preseason (1) / offseason (4) rows never count.
+  const weekConds: SQL[] = seasonId
+    ? [eq(schema.weeks.seasonId, seasonId), inArray(schema.weeks.seasonType, [2, 3])]
+    : [];
   if (filter) {
     weekConds.push(eq(schema.weeks.seasonType, filter.seasonType));
     weekConds.push(eq(schema.weeks.weekNumber, filter.week));
@@ -242,6 +245,7 @@ export async function computeLeaderboard(filter?: {
           .where(
             and(
               eq(schema.weeks.seasonId, seasonId),
+              inArray(schema.weeks.seasonType, [2, 3]),
               or(
                 lt(schema.weeks.seasonType, filter.seasonType),
                 and(eq(schema.weeks.seasonType, filter.seasonType), lt(schema.weeks.weekNumber, filter.week)),

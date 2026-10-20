@@ -203,3 +203,25 @@ test(
     assert.equal(entries[0]!.winPct, 100);
   },
 );
+
+test("computeLeaderboard: only regular-season and playoff weeks are loaded (no preseason)", async () => {
+  const { installFakeDb } = await import("../testDb");
+  const { computeLeaderboard } = await import("./leaderboard");
+  const fake = installFakeDb(({ sql }) =>
+    /from "site_settings"/.test(sql) ? [{ current_season_id: "season-1" }] : [],
+  );
+  try {
+    await computeLeaderboard();
+    await computeLeaderboard({ seasonType: 2, week: 3 });
+    const weekScoped = fake.queries.filter((q) => /join "weeks"/.test(q.sql));
+    // overall: games + picks; weekly: games + picks + earlier pickers
+    assert.equal(weekScoped.length, 5);
+    for (const q of weekScoped) {
+      assert.match(q.sql, /"weeks"\."season_type" in \(\$\d+, \$\d+\)/);
+    }
+    const typeParams = weekScoped.map((q) => q.params.filter((p) => p === 2 || p === 3));
+    for (const p of typeParams) assert.ok(p.includes(2) && p.includes(3));
+  } finally {
+    fake.reset();
+  }
+});

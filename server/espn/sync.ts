@@ -496,5 +496,5 @@ export async function getActiveSeasonGameRows() {
     .select({ game: schema.games, week: schema.weeks })
     .from(schema.games)
     .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
-    .where(eq(schema.weeks.seasonId, seasonId));
+    .where(and(eq(schema.weeks.seasonId, seasonId), inArray(schema.weeks.seasonType, [2, 3])));
 }
