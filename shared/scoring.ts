@@ -134,6 +134,20 @@ export function missedStarCost(
 }
 
 /** A week is closed once every game has kicked off — no more ★ can be placed. */
+const ABANDONED_GAME_MS = 3 * 24 * 60 * 60 * 1000;
+
+/**
+ * A week's slate is complete once every game is settled (final, or still "scheduled" 3+ days
+ * after kickoff — postponed / canceled) and at least one is graded. Badges and Stats streaks
+ * only look at complete slates.
+ */
+export function isSlateComplete(games: GameData[], now = new Date()): boolean {
+  const settled = (g: GameData) =>
+    g.status === "final" ||
+    (g.status === "scheduled" && now.getTime() - new Date(g.kickoffAt).getTime() > ABANDONED_GAME_MS);
+  return games.length > 0 && games.every(settled) && games.some((g) => isGradedForStandings(g));
+}
+
 export function isWeekClosed(
   games: Array<{ status: string; kickoffAt: string }>,
   now = new Date(),

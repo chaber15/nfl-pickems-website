@@ -4,6 +4,7 @@ import {
   computeAtsResult,
   computeWinPct,
   isGradedForStandings,
+  isSlateComplete,
   pickCorrectness,
 } from "./scoring";
 import { confidencePlForWeek } from "./statsCompute";
@@ -330,15 +331,8 @@ export type DesiredBadgeRow = {
 };
 
 /** Games still "scheduled" this long after kickoff (canceled / never rescheduled) don't block a week. */
-const ABANDONED_GAME_MS = 3 * 24 * 60 * 60 * 1000;
-
-/** A week is evaluated once every game is settled and at least one is graded. */
-export function isSlateComplete(games: GameData[], now = new Date()): boolean {
-  const settled = (g: GameData) =>
-    g.status === "final" ||
-    (g.status === "scheduled" && now.getTime() - new Date(g.kickoffAt).getTime() > ABANDONED_GAME_MS);
-  return games.length > 0 && games.every(settled) && games.some((g) => isGradedForStandings(g));
-}
+/** A week is evaluated once every game is settled and at least one is graded (lives in scoring). */
+export { isSlateComplete };
 
 export function compareSlates(
   a: { seasonType: number; weekNumber: number },

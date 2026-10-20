@@ -113,3 +113,33 @@ test("computeUserStats: a ★ loss on a side with no juice posted is graded at �
   const stats = computeUserStats(games, picksOf({ g0: ["favorite", true] }));
   assert.equal(Math.round(stats.confidencePl * 100) / 100, -5.5); // the loss + 4 missed ★ at 1.10
 });
+
+test("computeUserStats: streaks and best/worst ★ week ignore the week still in progress", () => {
+  // Weeks 1–3: all final, 5 ★ wins each (100%). Week 4: one final ★ loss, one game not played yet.
+  const week = (w: number, n = 5) =>
+    Array.from({ length: n }, (_, i) =>
+      makeGame(`w${w}g${i}`, { weekNumber: w, kickoffAt: `2026-09-${String(6 + w * 7).padStart(2, "0")}T17:00:00.000Z` }),
+    );
+  const games = [
+    ...week(1),
+    ...week(2),
+    ...week(3),
+    makeGame("w4g0", { weekNumber: 4, kickoffAt: "2026-10-04T17:00:00.000Z", atsResult: "underdog" }),
+    makeGame("w4g1", { weekNumber: 4, kickoffAt: "2026-10-06T00:15:00.000Z", status: "scheduled", atsResult: null }),
+  ];
+  const entries: Record<string, ["favorite", boolean]> = {};
+  for (const w of [1, 2, 3]) for (let i = 0; i < 5; i++) entries[`w${w}g${i}`] = ["favorite", true];
+  entries.w4g0 = ["favorite", true];
+  const stats = computeUserStats(games, picksOf(entries), new Date("2026-10-05T12:00:00Z"));
+
+  assert.equal(stats.currentStreakAll, 3);
+  assert.equal(stats.currentStreakConfidence, 3);
+  assert.deepEqual(stats.worstWeekConfidence, { week: 1, pl: 5, seasonType: 2 });
+  assert.equal(stats.bestWeekConfidence?.pl, 5);
+  // The open week is still listed, with its P/L so far.
+  assert.deepEqual(
+    stats.weeklyRows.map((r) => r.weekNumber),
+    [1, 2, 3, 4],
+  );
+  assert.equal(Math.round(stats.weeklyRows[3].confidencePl * 100) / 100, -1.1);
+});

@@ -14,6 +14,7 @@ import {
   countConfidenceBets,
   isGameLocked,
   isGradedForStandings,
+  isSlateComplete,
   isWeekClosed,
   missedStarCost,
   missedStars,
@@ -285,10 +286,15 @@ export function computeUserStats(
     confWeekPctByKey.set(key, confWeek);
   }
 
+  // Streaks and best/worst ★ week only judge finished weeks; the open week still shows in
+  // weeklyRows (and in the P/L totals) as soon as one game is graded.
+  const slateDone = (w: { seasonType: number; weekNumber: number }) =>
+    isSlateComplete(gamesByWeek.get(`${w.seasonType}-${w.weekNumber}`) ?? [], now);
+
   let bestWeekConfidence: WeekRef | null = null;
   let worstWeekConfidence: WeekRef | null = null;
   for (const row of weeklyRows) {
-    if (!row.plEligible) continue;
+    if (!row.plEligible || !slateDone(row)) continue;
     const ref = { week: row.weekNumber, pl: row.confidencePl, seasonType: row.seasonType };
     if (!bestWeekConfidence || row.confidencePl > bestWeekConfidence.pl) bestWeekConfidence = ref;
     if (!worstWeekConfidence || row.confidencePl < worstWeekConfidence.pl) worstWeekConfidence = ref;
@@ -298,12 +304,12 @@ export function computeUserStats(
 
   // Newest first = reverse chronological (seasonType, week), so playoff weeks are newest.
   const weekPctNewestFirst = weeklyRows
-    .filter((r) => r.totalGames > 0)
+    .filter((r) => r.totalGames > 0 && slateDone(r))
     .reverse()
     .map((r) => r.winPct);
 
   const confWeekPctNewestFirst = [...confWeekPctByKey.values()]
-    .filter((w) => w.total > 0)
+    .filter((w) => w.total > 0 && slateDone(w))
     .sort((a, b) => compareSeasonWeeks(b, a))
     .map((w) => computeWinPct(w.correct, w.total));
 
