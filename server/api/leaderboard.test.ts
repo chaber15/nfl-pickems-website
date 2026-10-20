@@ -210,6 +210,7 @@ test("computeLeaderboard: only regular-season and playoff weeks are loaded (no p
   const fake = installFakeDb(({ sql }) =>
     /from "site_settings"/.test(sql) ? [{ current_season_id: "season-1" }] : [],
   );
+  (await import("../espn/sync")).invalidateActiveSeasonCache();
   try {
     await computeLeaderboard();
     await computeLeaderboard({ seasonType: 2, week: 3 });

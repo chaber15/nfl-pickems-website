@@ -1,7 +1,7 @@
 import { eq, ne, sql, inArray } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { getDb, schema } from "./db";
-import { syncEspnWeek } from "./espn/sync";
+import { invalidateActiveSeasonCache, syncEspnWeek } from "./espn/sync";
 import { resolveCurrentPickemsWeek } from "../shared/espnClient";
 import { clampToAvailableWeek } from "../shared/weekUtils";
 
@@ -86,6 +86,7 @@ export async function factoryReset(keepAdminUserId: string): Promise<FactoryRese
   );
 
   await db.batch(ops as [BatchItem<"pg">, ...BatchItem<"pg">[]]);
+  invalidateActiveSeasonCache(); // the batch may have nulled current_season_id
 
   const current = await resolveCurrentPickemsWeek();
   const clamped = clampToAvailableWeek(current.seasonType, current.week);

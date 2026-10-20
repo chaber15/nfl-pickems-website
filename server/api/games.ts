@@ -2,6 +2,7 @@ import type { HandlerEvent } from "@netlify/functions";
 import { hasDatabase } from "../db";
 import {
   syncEspnWeek,
+  getGamesAndSyncRows,
   getGamesForWeek,
   shouldSyncWeekOnRead,
 } from "../espn/sync";
@@ -19,14 +20,15 @@ export async function handleGames(event: HandlerEvent) {
 
   if (hasDatabase()) {
     let games: Awaited<ReturnType<typeof getGamesForWeek>> = [];
+    let syncRows: Awaited<ReturnType<typeof getGamesAndSyncRows>>["syncRows"] | undefined;
     try {
-      games = await getGamesForWeek(seasonType, week);
+      ({ games, syncRows } = await getGamesAndSyncRows(seasonType, week));
     } catch (err) {
       console.error("[games] DB read failed:", err);
     }
 
     try {
-      if (await shouldSyncWeekOnRead(seasonType, week)) {
+      if (await shouldSyncWeekOnRead(seasonType, week, syncRows)) {
         await syncEspnWeek(seasonType, week, { readPath: true, oddsDeadlineMs: READ_ODDS_DEADLINE_MS });
         games = await getGamesForWeek(seasonType, week);
       }

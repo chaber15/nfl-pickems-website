@@ -103,7 +103,10 @@ async function ensureSeasonYear(year: number) {
       .values({ year, label: `${year} NFL Season` })
       .onConflictDoNothing()
       .returning();
-    if (created) return created;
+    if (created) {
+      invalidateActiveSeasonCache(); // a new newest-year season can change the fallback
+      return created;
+    }
   } catch (err) {
     if (!isUniqueViolation(err)) throw err;
   }
@@ -249,13 +252,32 @@ export function resolvePreOtScores(
   return { preOtAwayScore: current.awayScore, preOtHomeScore: current.homeScore };
 }
 
-/** Active season for queries — prefers site_settings.currentSeasonId, else newest year. */
+const ACTIVE_SEASON_TTL_MS = 30_000;
+let activeSeasonMemo: { id: string; at: number } | null = null;
+
+/** Drop the memoized active season — call wherever site_settings.current_season_id changes. */
+export function invalidateActiveSeasonCache(): void {
+  activeSeasonMemo = null;
+}
+
+/**
+ * Active season for queries — prefers site_settings.currentSeasonId, else newest year.
+ * Memoized for 30 s per server instance (a rollover may take that long to show up on other
+ * instances); a null result is never cached.
+ */
 export async function resolveActiveSeasonId(): Promise<string | null> {
+  if (activeSeasonMemo && Date.now() - activeSeasonMemo.at < ACTIVE_SEASON_TTL_MS) {
+    return activeSeasonMemo.id;
+  }
   const db = getDb();
   const [settings] = await db.select().from(schema.siteSettings).limit(1);
-  if (settings?.currentSeasonId) return settings.currentSeasonId;
-  const [latest] = await db.select().from(schema.seasons).orderBy(desc(schema.seasons.year)).limit(1);
-  return latest?.id ?? null;
+  let id = settings?.currentSeasonId ?? null;
+  if (!id) {
+    const [latest] = await db.select().from(schema.seasons).orderBy(desc(schema.seasons.year)).limit(1);
+    id = latest?.id ?? null;
+  }
+  activeSeasonMemo = id ? { id, at: Date.now() } : null;
+  return id;
 }
 
 export async function findWeekRow(seasonType: number, weekNumber: number) {
@@ -346,6 +368,7 @@ export async function syncEspnWeek(seasonType?: number, week?: number, syncOpts:
       .insert(schema.siteSettings)
       .values({ id: 1, currentSeasonId: season.id })
       .onConflictDoUpdate({ target: schema.siteSettings.id, set: { currentSeasonId: season.id } });
+    invalidateActiveSeasonCache();
   }
 
   const weekRow = await ensureWeek(
@@ -446,9 +469,17 @@ export function gameWriteStatements(
 }
 
 export async function getGamesForWeek(seasonType: number, weekNumber: number): Promise<GameData[]> {
+  return (await getGamesAndSyncRows(seasonType, weekNumber)).games;
+}
+
+/** Games for a week plus the (status, kickoffAt, updatedAt) rows `shouldSyncWeekOnRead` needs — one query. */
+export async function getGamesAndSyncRows(
+  seasonType: number,
+  weekNumber: number,
+): Promise<{ games: GameData[]; syncRows: ReadSyncRow[] }> {
   const db = getDb();
   const seasonId = await resolveActiveSeasonId();
-  if (!seasonId) return [];
+  if (!seasonId) return { games: [], syncRows: [] };
 
   const rows = await db
     .select({ game: schema.games, week: schema.weeks })
@@ -463,9 +494,14 @@ export async function getGamesForWeek(seasonType: number, weekNumber: number): P
     )
     .orderBy(asc(schema.games.kickoffAt));
 
-  return sortGamesLiveFirstThenChronological(
-    rows.map(({ game, week }) => dbGameToGameData(game, week)),
-  );
+  return {
+    games: sortGamesLiveFirstThenChronological(rows.map(({ game, week }) => dbGameToGameData(game, week))),
+    syncRows: rows.map(({ game }) => ({
+      status: game.status,
+      kickoffAt: game.kickoffAt,
+      updatedAt: game.updatedAt,
+    })),
+  };
 }
 
 export type ReadSyncRow = { status: string; kickoffAt: Date; updatedAt: Date };
@@ -490,8 +526,14 @@ export function decideReadSync(rows: readonly ReadSyncRow[], now: Date): boolean
 }
 
 /** Whether a games GET should trigger ESPN sync on the request path. */
-export async function shouldSyncWeekOnRead(seasonType: number, weekNumber: number): Promise<boolean> {
+export async function shouldSyncWeekOnRead(
+  seasonType: number,
+  weekNumber: number,
+  /** Rows the caller already loaded for this week; skips this function's own query. */
+  loadedRows?: readonly ReadSyncRow[],
+): Promise<boolean> {
   if (!isValidPickemsWeek(seasonType, weekNumber)) return false;
+  if (loadedRows) return decideReadSync(loadedRows, new Date());
   const db = getDb();
   const seasonId = await resolveActiveSeasonId();
   if (!seasonId) return true;
