@@ -61,6 +61,9 @@ function BadgeTrigger({ group, children }: { group: BadgeGroup; children: ReactN
   const open = hover || pinned;
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const tipRef = useRef<HTMLDivElement>(null);
+  /** Tooltip height the last placement assumed, and that placement — re-run once the real card is measured. */
+  const placedHeight = useRef(0);
+  const placeRef = useRef<(() => void) | null>(null);
 
   useLayoutEffect(() => {
     if (!open || !ref.current) {
@@ -74,14 +77,16 @@ function BadgeTrigger({ group, children }: { group: BadgeGroup; children: ReactN
       const maxW = Math.min(288, window.innerWidth - pad * 2);
       let left = r.left + r.width / 2;
       left = Math.min(window.innerWidth - pad - maxW / 2, Math.max(pad + maxW / 2, left));
-      // Measure the card when it is rendered (after the first placement); assume 120px otherwise.
+      // Measure the card once rendered; the first placement (card not mounted yet) assumes 120px.
       const tipHeight = tipRef.current?.offsetHeight || 120;
+      placedHeight.current = tipHeight;
       const top =
         r.bottom + 6 + tipHeight > window.innerHeight - pad
           ? Math.max(pad, r.top - 6 - tipHeight)
           : r.bottom + 6;
       setPos({ top, left });
     };
+    placeRef.current = place;
     place();
     window.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
@@ -90,6 +95,12 @@ function BadgeTrigger({ group, children }: { group: BadgeGroup; children: ReactN
       window.removeEventListener("resize", place);
     };
   }, [open]);
+
+  // The card mounts after the first placement: re-place before paint if its real height differs.
+  useLayoutEffect(() => {
+    const h = tipRef.current?.offsetHeight;
+    if (open && h && h !== placedHeight.current) placeRef.current?.();
+  }, [open, pos]);
 
   useEffect(() => {
     if (!pinned) return;
