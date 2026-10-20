@@ -240,3 +240,26 @@ test("buildLeaderboardEntries ↔ computeUserStats: a ★ loss with no juice pos
   assert.equal(r2(board.get("u")!.confidencePl), 2.9);
   assert.equal(r2(stats.confidencePl), 2.9);
 });
+
+test("buildLeaderboardEntries ↔ computeUserStats: a closed week with nothing graded charges no missed ★", async () => {
+  const { computeUserStats } = await import("../../shared/statsCompute");
+  const { picksOf } = await import("../../shared/testFixtures");
+  const now = new Date("2026-10-30T12:00:00Z");
+  // Week 1: graded, 5 ★ wins. Week 2: kicked off but nothing graded (no line → no ATS result).
+  const w2 = weekGames(2).map((g) => ({ ...g, spread: null, favoriteSide: null, atsResult: null }));
+  const picks = [...starPicks("u", 1, 5), { userId: "u", gameId: "w2g0", pick: "favorite" as const, isConfidenceBet: false }];
+  const pickMap = picksOf(Object.fromEntries(picks.map((p) => [p.gameId, [p.pick, p.isConfidenceBet] as ["favorite", boolean]])));
+
+  const ungraded = [...weekGames(1), ...w2];
+  const board = byId(buildLeaderboardEntries([player("u")], ungraded, picks, { weekly: false, now }));
+  assert.equal(board.get("u")!.missedStars, 0);
+  assert.equal(r2(board.get("u")!.confidencePl), 5);
+  assert.equal(r2(computeUserStats(ungraded, pickMap, now).confidencePl), 5);
+
+  // One graded game in week 2 → the 5 missing ★ are charged (−110 board: 1.10 each), in both engines.
+  const oneGraded = [...weekGames(1), ...weekGames(2).map((g, i) => (i === 0 ? g : { ...g, spread: null, favoriteSide: null, atsResult: null }))];
+  const board2 = byId(buildLeaderboardEntries([player("u")], oneGraded, picks, { weekly: false, now }));
+  assert.equal(board2.get("u")!.missedStars, 5);
+  assert.equal(r2(board2.get("u")!.confidencePl), r2(5 - 5 * 1.1));
+  assert.equal(r2(computeUserStats(oneGraded, pickMap, now).confidencePl), r2(5 - 5 * 1.1));
+});

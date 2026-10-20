@@ -74,6 +74,8 @@ export function buildLeaderboardEntries(
     phase: GameData["phase"];
     games: GameData[];
     closed: boolean;
+    /** Games that count for standings; a closed week with none charges no missed ★. */
+    graded: number;
     /** What one missing ★ costs this week (`missedStarCost`). */
     starCost: number;
   };
@@ -87,10 +89,11 @@ export function buildLeaderboardEntries(
     gameInfo.set(g.id, { g, graded, weekKey });
     let week = weekByKey.get(weekKey);
     if (!week) {
-      week = { key: weekKey, seasonType: g.seasonType, weekNumber: g.weekNumber, phase: g.phase, games: [], closed: false, starCost: 0 };
+      week = { key: weekKey, seasonType: g.seasonType, weekNumber: g.weekNumber, phase: g.phase, games: [], closed: false, graded: 0, starCost: 0 };
       weekByKey.set(weekKey, week);
     }
     week.games.push(g);
+    if (graded) week.graded++;
   }
   const now = opts.now ?? new Date();
   const weeks = [...weekByKey.values()].sort(compareSeasonWeeks);
@@ -155,7 +158,9 @@ export function buildLeaderboardEntries(
       confidencePl += ws?.rawPl ?? 0;
       confCorrect += ws?.confCorrect ?? 0;
       confTotal += ws?.confGraded ?? 0;
-      if (w.closed) {
+      // Same rule as computeUserStats: a week with nothing graded (all postponed / no lines)
+      // never charges missed ★.
+      if (w.closed && w.graded > 0) {
         confidencePl -= short * w.starCost;
         missed += short;
       }
