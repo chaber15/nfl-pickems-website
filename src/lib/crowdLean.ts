@@ -2,7 +2,8 @@ import type { GameData, WeekComparePlayer } from "@shared/types";
 import { isCrowdNameVisible } from "./crowdVisibility";
 import { venueForPick } from "./gameStatus";
 
-export type CrowdName = { username: string; star: boolean; isYou?: boolean };
+/** `key` is the login username (unique); `username` is the display text (display name or login). */
+export type CrowdName = { key: string; username: string; star: boolean; isYou?: boolean };
 
 export type GameCrowdLean = {
   /** Visible names only (Leaderboard lean checkboxes). */
@@ -39,6 +40,7 @@ export function crowdLeanForGame(
     }
     const venue = venueForPick(game, entry.pick);
     const row: CrowdName = {
+      key: p.username,
       username: p.displayName || p.username,
       star: entry.isConfidenceBet,
       isYou,

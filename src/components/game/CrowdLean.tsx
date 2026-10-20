@@ -16,7 +16,7 @@ function NameList({ names, tone }: { names: CrowdName[]; tone: ResultTone }) {
   return (
     <>
       {names.map((r) => (
-        <li key={r.username} className={`flex items-center justify-center gap-0.5 font-semibold ${toneClass}`}>
+        <li key={r.key} className={`flex items-center justify-center gap-0.5 font-semibold ${toneClass}`}>
           {r.isYou ? "You" : r.username}
           {r.star && <Star size={11} weight="fill" className="text-[var(--accent-gold)]" />}
         </li>

@@ -69,12 +69,13 @@ export function BadgeCatalogSection({ rows }: { rows: BadgeCatalogRow[] }) {
   );
 }
 
+/** Groups by userId (stable); the heading comes from each group's `player` name. */
 function groupByPlayer(changes: BadgeChange[]): Array<[string, BadgeChange[]]> {
   const groups = new Map<string, BadgeChange[]>();
   for (const c of changes) {
-    const list = groups.get(c.player) ?? [];
+    const list = groups.get(c.userId) ?? [];
     list.push(c);
-    groups.set(c.player, list);
+    groups.set(c.userId, list);
   }
   return [...groups];
 }
@@ -108,9 +109,9 @@ function PreviewList({ preview }: { preview: BadgePreview }) {
         )}
       </p>
       <ul className="max-h-96 space-y-3 overflow-y-auto rounded-xl border-2 border-[var(--border-card)] p-3">
-        {groupByPlayer(preview.changes).map(([player, list]) => (
-          <li key={player}>
-            <p className="font-bold">{player}</p>
+        {groupByPlayer(preview.changes).map(([userId, list]) => (
+          <li key={userId}>
+            <p className="font-bold">{list[0].player}</p>
             <ul className="mt-1 space-y-0.5 text-sm">
               {list.map((c, i) => (
                 <li key={`${c.action}-${c.badgeId}-${c.seasonType}-${c.weekNumber}-${i}`} className="flex gap-2">
