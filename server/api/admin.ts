@@ -1,5 +1,5 @@
 import type { HandlerEvent } from "@netlify/functions";
-import { eq, ne } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { syncEspnWeek } from "../espn/sync";
 import { factoryReset } from "../factoryReset";
@@ -108,7 +108,7 @@ export async function handleAdmin(path: string, event: HandlerEvent) {
   if (path !== "admin") return json(404, { error: "Not found", code: "NOT_FOUND" });
 
   if (event.httpMethod === "GET") {
-    return json(200, await adminOverview(user.id, tier));
+    return json(200, await adminOverview(tier));
   }
 
   if (event.httpMethod !== "POST") return json(404, { error: "Not found", code: "NOT_FOUND" });
@@ -203,7 +203,7 @@ export async function handleAdmin(path: string, event: HandlerEvent) {
   throw new HttpError(400, "Invalid action", "INVALID_ACTION");
 }
 
-async function adminOverview(selfId: string, tier: AdminTier) {
+async function adminOverview(tier: AdminTier) {
   const db = getDb();
   const [users, [settings], earned] = await Promise.all([
     db
@@ -215,8 +215,7 @@ async function adminOverview(selfId: string, tier: AdminTier) {
         isAdmin: schema.users.isAdmin,
         isSuperAdmin: schema.users.isSuperAdmin,
       })
-      .from(schema.users)
-      .where(ne(schema.users.id, selfId)),
+      .from(schema.users),
     db.select().from(schema.siteSettings).limit(1),
     allBadgeRows(),
   ]);

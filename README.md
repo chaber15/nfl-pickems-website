@@ -35,7 +35,7 @@ Open http://localhost:5173, enter a username, and make picks. `npm run dev:full 
 - Players log in with **just a username** (intentional — family-friendly). Typing an unknown name asks before creating a new player. Names like `admin`/`root` can't be registered.
 - Once everyone has joined, close registration in **Admin** so strangers can't create accounts. The leaderboard API requires login.
 - **Admin** (`users.is_admin`): unlock with `ADMIN_PIN` once per device → ESPN sync, badge recalculation, edit names, ban/unban, open/close registration.
-- **Super admin** (`users.is_super_admin`, set directly in the database): unlock with `SUPER_ADMIN_PIN` → also grant/revoke admin, delete players, factory reset (only if `ALLOW_FACTORY_RESET=true`). Regular admins can't act on a super admin.
+- **Super admin** (`users.is_super_admin`, set directly in the database; requires `users.is_admin = true` as well): unlock with `SUPER_ADMIN_PIN` → also grant/revoke admin, delete players, factory reset (only if `ALLOW_FACTORY_RESET=true`). Regular admins can't act on a super admin.
 - Passphrases are needed because anyone can type any username; changing a PIN in Netlify re-locks every device.
 
 ## Scripts
