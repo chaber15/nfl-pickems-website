@@ -23,6 +23,14 @@ describe("cacheHeadersFor", () => {
     assert.equal(PUBLIC_BROWSER_CACHE, "public, max-age=0, must-revalidate");
   });
 
+  it("ESPN-fallback responses are never CDN-cached", () => {
+    assert.deepEqual(cacheHeadersFor("games", "GET", 200, "espn"), { "Cache-Control": PRIVATE_NO_STORE });
+    assert.deepEqual(cacheHeadersFor("games", "GET", 200, undefined), {
+      "Cache-Control": PUBLIC_BROWSER_CACHE,
+      "Netlify-CDN-Cache-Control": PUBLIC_CDN_CACHE,
+    });
+  });
+
   it("private no-store for everything else", () => {
     const cases: Array<[string, string, number]> = [
       ["games", "GET", 400],

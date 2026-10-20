@@ -1,4 +1,4 @@
-import { describe, it, before } from "node:test";
+import { describe, it, before, mock } from "node:test";
 import assert from "node:assert/strict";
 import type { HandlerEvent } from "@netlify/functions";
 import { routeApiRequest, apiPath } from "./router";
@@ -59,6 +59,26 @@ describe("router", () => {
     assert.equal(res.statusCode, 200);
     assert.equal(res.headers["Netlify-CDN-Cache-Control"], "public, s-maxage=60, stale-while-revalidate=120");
     assert.equal(res.headers["Cache-Control"], "public, max-age=0, must-revalidate");
+  });
+
+  it("ESPN fallback (no DB) → private no-store, not CDN-cached", async () => {
+    // No DB: /api/games goes straight to the ESPN fallback. Stub fetch so the
+    // response is an empty scoreboard instead of a real network call.
+    mock.method(globalThis, "fetch", async () =>
+      new Response(JSON.stringify({ events: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    try {
+      const res = await routeApiRequest(event({ path: "/api/games" }));
+      assert.equal(res.statusCode, 200);
+      assert.equal(JSON.parse(res.body).source, "espn");
+      assert.equal(res.headers["Cache-Control"], "private, no-store");
+      assert.equal(res.headers["Netlify-CDN-Cache-Control"], undefined);
+    } finally {
+      mock.restoreAll();
+    }
   });
 
   it("DB-backed routes without a DB → 503 JSON", async () => {

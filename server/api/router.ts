@@ -69,7 +69,12 @@ export async function routeApiRequest(event: HandlerEvent): Promise<ApiResponse>
     ...response,
     headers: {
       ...response.headers,
-      ...cacheHeadersFor(path, event.httpMethod, response.statusCode),
+      ...cacheHeadersFor(
+        path,
+        event.httpMethod,
+        response.statusCode,
+        response.headers?.["X-Pickems-Source"],
+      ),
     },
   };
 }

@@ -50,7 +50,7 @@ export async function handleGames(event: HandlerEvent) {
     console.error("[games] ESPN fallback failed:", err);
     throw new HttpError(502, "Couldn't load games right now — try again shortly", "UPSTREAM_UNAVAILABLE");
   }
-  return json(200, { ...board, source: "espn" });
+  return json(200, { ...board, source: "espn" }, { "X-Pickems-Source": "espn" });
 }
 
 export async function handleCalendar(path: string, event: HandlerEvent) {

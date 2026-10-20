@@ -16,7 +16,10 @@ export function cacheHeadersFor(
   path: string,
   method: string,
   statusCode: number,
+  source?: string,
 ): Record<string, string> {
+  // ESPN-fallback slates are never CDN-cached: a CDN copy could outlive the fallback.
+  if (source === "espn") return { "Cache-Control": PRIVATE_NO_STORE };
   if (method === "GET" && statusCode === 200 && PUBLIC_CACHEABLE_PATHS.has(path)) {
     return {
       "Cache-Control": PUBLIC_BROWSER_CACHE,
