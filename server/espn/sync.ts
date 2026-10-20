@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, notInArray, sql } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import {
   fetchScoreboard,
@@ -437,6 +437,28 @@ export async function syncEspnWeek(seasonType?: number, week?: number, syncOpts:
   if (statements.length > 0) {
     // neon-http batch = one HTTP round trip, one transaction.
     await db.batch(statements as [Stmt, ...Stmt[]]);
+  }
+
+  // Logging only: stored games for this week that ESPN's board no longer lists. Never mutates.
+  // board.games is non-empty here (early return above), so notInArray gets a non-empty list.
+  try {
+    const boardEventIds = board.games.map((g) => g.espnEventId);
+    const absent = await db
+      .select({
+        espnEventId: schema.games.espnEventId,
+        awayAbbrev: schema.games.awayAbbrev,
+        homeAbbrev: schema.games.homeAbbrev,
+        status: schema.games.status,
+      })
+      .from(schema.games)
+      .where(and(eq(schema.games.weekId, weekRow.id), notInArray(schema.games.espnEventId, boardEventIds)));
+    for (const row of absent) {
+      console.warn(
+        `ESPN sync: stored game ${row.awayAbbrev}@${row.homeAbbrev} (${row.espnEventId}, ${row.status}) absent from ESPN board for ${board.seasonType}/${board.week}`,
+      );
+    }
+  } catch (err) {
+    console.error("ESPN sync: absent-game check failed:", err);
   }
 
   return result;
