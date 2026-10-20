@@ -46,6 +46,9 @@ function row(p: Partial<ScheduleRow> & { kickoffAt: Date }): ScheduleRow {
     favoriteSide: "home",
     oddsAway: -110,
     oddsHome: -110,
+    // Scored by default so "all final" fixtures don't trip stale_final.
+    awayScore: 20,
+    homeScore: 24,
     ...p,
   };
 }
@@ -150,6 +153,41 @@ test("decide: Fri 10:00 ET, all lines complete and synced after lock → no targ
     at("2026-10-02T14:00:00Z"),
   );
   assert.deepEqual(d.targets, []);
+});
+
+test("decide: stale_final — null score or sync too soon after kickoff, within 48h", () => {
+  const kick = at("2026-10-25T17:00:00Z"); // Sun 1pm EDT
+  const lines = { weekNumber: 8, kickoffAt: kick, status: "final" };
+  // Final with null score 3h after kickoff (last synced 0.5h after kickoff, >2h ago)
+  const nullScore = decideScheduledSync(
+    [row({ ...lines, awayScore: null, updatedAt: at("2026-10-25T17:30:00Z") })],
+    at("2026-10-25T20:00:00Z"),
+  );
+  assert.deepEqual(nullScore.targets, [{ seasonType: 2, week: 8, reasons: ["stale_final"] }]);
+  // Scored final synced 3.2h after kickoff, checked 6h after kickoff → re-sync
+  const early = decideScheduledSync(
+    [row({ ...lines, updatedAt: at("2026-10-25T20:10:00Z") })],
+    at("2026-10-25T23:00:00Z"),
+  );
+  assert.deepEqual(early.targets, [{ seasonType: 2, week: 8, reasons: ["stale_final"] }]);
+  // ... but throttled inside 2h of the last update
+  const throttled = decideScheduledSync(
+    [row({ ...lines, updatedAt: at("2026-10-25T20:10:00Z") })],
+    at("2026-10-25T21:00:00Z"),
+  );
+  assert.deepEqual(throttled.targets, []);
+  // Final updated 7h after kickoff → settled
+  const settled = decideScheduledSync(
+    [row({ ...lines, updatedAt: at("2026-10-26T00:00:00Z") })],
+    at("2026-10-26T10:00:00Z"),
+  );
+  assert.deepEqual(settled.targets, []);
+  // Final 3 days old, even with a null score → left alone
+  const old = decideScheduledSync(
+    [row({ ...lines, awayScore: null, updatedAt: at("2026-10-25T19:30:00Z") })],
+    at("2026-10-28T20:00:00Z"),
+  );
+  assert.deepEqual(old.targets, []);
 });
 
 test("decide: all final and nothing upcoming → no targets, bootstrap check", () => {

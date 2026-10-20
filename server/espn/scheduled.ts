@@ -11,6 +11,10 @@ export const KICKOFF_SOON_MS = 60 * 60 * 1000;
 export const LINE_REFRESH_MS = 12 * 60 * 60 * 1000;
 /** Refresh lines in the final window before lock; after lock, fill gaps at most this often. */
 export const LOCK_WINDOW_MS = 2 * 60 * 60 * 1000;
+/** Finals are re-checked for this long after kickoff. */
+const STALE_FINAL_WINDOW_MS = 48 * 60 * 60 * 1000;
+/** A final last synced sooner than this after kickoff may predate ESPN's settled result. */
+const STALE_FINAL_MIN_AGE_MS = 6 * 60 * 60 * 1000;
 /** Rows considered by the scheduler: a week back (grading) to two weeks ahead (lines). */
 const WINDOW_BACK_MS = 8 * 24 * 60 * 60 * 1000;
 const WINDOW_AHEAD_MS = 14 * 24 * 60 * 60 * 1000;
@@ -55,9 +59,11 @@ export type ScheduleRow = {
   favoriteSide: "home" | "away" | null;
   oddsAway: number | null;
   oddsHome: number | null;
+  awayScore: number | null;
+  homeScore: number | null;
 };
 
-export type SyncReason = "live" | "kickoff_soon" | "line_refresh" | "post_lock_fill";
+export type SyncReason = "live" | "kickoff_soon" | "line_refresh" | "post_lock_fill" | "stale_final";
 export type SyncTarget = { seasonType: number; week: number; reasons: SyncReason[] };
 
 /**
@@ -69,6 +75,8 @@ export type SyncTarget = { seasonType: number; week: number; reasons: SyncReason
  *   or that locks within 2h (catches the final pre-lock line);
  * - post_lock_fill: an upcoming week past its lock that was last synced before the lock or
  *   still has an upcoming game without a complete line; at most once per 2h.
+ * - stale_final: a game marked final in the last 48h with a missing score, or last synced
+ *   under 6h after kickoff (may predate ESPN's final / stat corrections); at most once per 2h.
  * `bootstrapCheck` = no upcoming games stored → ask ESPN whether a new week needs rows.
  */
 export function decideScheduledSync(
@@ -115,6 +123,15 @@ export function decideScheduledSync(
       }
     }
 
+    const newestUpdate = Math.max(...weekRows.map((r) => r.updatedAt.getTime()));
+    const staleFinal = weekRows.some(
+      (r) =>
+        r.status === "final" &&
+        r.kickoffAt.getTime() > t - STALE_FINAL_WINDOW_MS &&
+        (r.awayScore == null || r.homeScore == null || r.updatedAt.getTime() - r.kickoffAt.getTime() < STALE_FINAL_MIN_AGE_MS),
+    );
+    if (staleFinal && t - newestUpdate > LOCK_WINDOW_MS) reasons.push("stale_final");
+
     if (reasons.length > 0) targets.push({ seasonType, week: weekNumber, reasons });
   }
 
@@ -140,6 +157,8 @@ async function loadScheduleRows(now: Date): Promise<ScheduleRow[]> {
       favoriteSide: schema.games.favoriteSide,
       oddsAway: schema.games.oddsAway,
       oddsHome: schema.games.oddsHome,
+      awayScore: schema.games.awayScore,
+      homeScore: schema.games.homeScore,
     })
     .from(schema.games)
     .innerJoin(schema.weeks, eq(schema.games.weekId, schema.weeks.id))
