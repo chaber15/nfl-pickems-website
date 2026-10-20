@@ -11,6 +11,13 @@
   command = "vite"
   targetPort = 5173
 
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
 [functions]
   node_bundler = "esbuild"
   included_files = ["shared/**", "server/**"]
