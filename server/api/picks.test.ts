@@ -132,3 +132,40 @@ describe("handlePicks: postponed game with a future kickoff", () => {
     assert.equal(res.statusCode, 200);
   });
 });
+
+describe("handlePicks: venue protocol", () => {
+  const insertedSide = (f: ReturnType<typeof installFakeDb>) => {
+    const ins = f.queries.find((q) => /^insert into "picks"/.test(q.sql));
+    assert.ok(ins, "insert ran");
+    return ins.params.find((p) => p === "favorite" || p === "underdog");
+  };
+
+  it("maps the tapped team to favorite/underdog from the stored line", async () => {
+    fake = setup({ game: { "games.favorite_side": "away" } });
+    const res = await handlePicks(post({ venue: "home" }));
+    assert.equal(insertedSide(fake), "underdog");
+    assert.equal(JSON.parse(res.body).favoriteSide, "away");
+    fake.reset();
+
+    fake = setup({ game: { "games.favorite_side": "away" } });
+    await handlePicks(post({ venue: "away" }));
+    assert.equal(insertedSide(fake), "favorite");
+  });
+
+  it("still accepts the legacy favorite/underdog body", async () => {
+    fake = setup();
+    await handlePicks(post({ pick: "underdog" }));
+    assert.equal(insertedSide(fake), "underdog");
+  });
+
+  it("no line posted → NO_LINE", async () => {
+    fake = setup({ game: { "games.spread_cents": null, "games.favorite_side": null } });
+    await rejectsWith(handlePicks(post({ venue: "home" })), "NO_LINE");
+  });
+
+  it("neither venue nor pick → INVALID_REQUEST before any DB access", async () => {
+    fake = setup();
+    await rejectsWith(handlePicks(post({ venue: "left" })), "INVALID_REQUEST");
+    assert.ok(!fake.queries.some((q) => /from "games"/.test(q.sql)));
+  });
+});

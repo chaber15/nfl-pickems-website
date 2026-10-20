@@ -1,5 +1,6 @@
 import type {
   EarnedBadge,
+  FavoriteSide,
   GameData,
   LeaderboardEntry,
   PickSide,
@@ -183,22 +184,28 @@ export async function apiWeekPicks(
   return request(`/picks/week?seasonType=${seasonType}&week=${week}`, { signal });
 }
 
-export type SavedPick = { pick: PickSide | null; isConfidenceBet: boolean };
+export type SavedPick = {
+  pick: PickSide | null;
+  isConfidenceBet: boolean;
+  /** The server's current favorite for the game (side saves only) — the stored pick is relative to it. */
+  favoriteSide?: FavoriteSide;
+};
 
 export type SavePickBody =
-  | { gameId: string; pick: PickSide }
+  /** The team tapped; the server maps it to favorite/underdog from its stored line. */
+  | { gameId: string; venue: FavoriteSide }
   | { gameId: string; action: "set_confidence"; value: boolean };
 
 /** Saves a side or sets ★ explicitly (idempotent). Resolves with the stored pick when the server returns it. */
 export async function apiSavePick(body: SavePickBody): Promise<SavedPick | null> {
-  const res = await request<{ pick?: { pick?: string | null; isConfidenceBet?: boolean } } | undefined>(
-    "/picks",
-    { method: "POST", body: JSON.stringify(body) },
-  );
+  const res = await request<
+    { pick?: { pick?: string | null; isConfidenceBet?: boolean }; favoriteSide?: string | null } | undefined
+  >("/picks", { method: "POST", body: JSON.stringify(body) });
   const p = res?.pick;
   if (!p || typeof p.isConfidenceBet !== "boolean") return null;
   const side = p.pick === "favorite" || p.pick === "underdog" ? p.pick : null;
-  return { pick: side, isConfidenceBet: p.isConfidenceBet };
+  const fav = res?.favoriteSide === "home" || res?.favoriteSide === "away" ? res.favoriteSide : undefined;
+  return { pick: side, isConfidenceBet: p.isConfidenceBet, ...(fav && { favoriteSide: fav }) };
 }
 
 /* ───────────── Standings ───────────── */

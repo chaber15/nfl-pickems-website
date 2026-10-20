@@ -1,5 +1,5 @@
 import { Star } from "../icons";
-import type { GameData, PickSide, UserPick } from "@shared/types";
+import type { GameData, UserPick } from "@shared/types";
 import { formatKickoff, formatPick } from "@shared/pickDisplay";
 import { hasCompleteLine, snapshotLine } from "@shared/lineLock";
 import { isGameLocked, isPlayoffPhase } from "@shared/scoring";
@@ -25,7 +25,8 @@ import { useEstimatedClock } from "./useEstimatedClock";
 interface GameCardProps {
   game: GameData;
   userPick?: UserPick;
-  onPick: (side: PickSide) => void;
+  /** The team tapped (the server maps it to favorite/underdog). */
+  onPick: (venue: Venue) => void;
   /** Explicit ★ value to save (never a blind toggle). */
   onSetConfidence: (value: boolean) => void;
   confidenceDisabled?: boolean;
@@ -71,8 +72,7 @@ export function GameCard({
   const homePick = pickSideForVenue(game, "home");
 
   const onPickVenue = (venue: Venue) => {
-    const side = pickSideForVenue(game, venue);
-    if (side && !saving) onPick(side);
+    if (hasLine && !saving) onPick(venue);
   };
 
   const lineNote = !hasLine

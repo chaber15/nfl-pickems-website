@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CONFIDENCE_BETS_PER_WEEK,
-  type PickSide,
   type UserPick,
   type WeekComparePlayer,
   type WeekPhase,
@@ -19,7 +18,7 @@ import { useWeek } from "../lib/weekContext";
 import { useGames, weekKeyOf } from "../lib/gamesContext";
 import { apiSavePick, apiUserPicks, apiWeekPicks, errorMessage } from "../lib/api";
 import { crowdLeanForGame } from "../lib/crowdLean";
-import { weekLineLock } from "../lib/gameStatus";
+import { pickSideForVenue, weekLineLock, type Venue } from "../lib/gameStatus";
 import { usePageVisible, useTabReturn } from "../lib/visibility";
 
 /** Crowd lean refresh while picks can still change (tab visible only). */
@@ -190,7 +189,14 @@ export function PicksPage() {
     markSaving(gameId, true);
     try {
       const saved = await apiSavePick(body);
-      const final: UserPick = saved ? { gameId, ...saved } : optimistic;
+      const final: UserPick = saved ? { gameId, pick: saved.pick, isConfidenceBet: saved.isConfidenceBet } : optimistic;
+      // The stored pick is relative to the server's favorite; if this tab's line is stale,
+      // adopt the server's favorite now (so the card shows the team tapped) and reload the slate.
+      const local = games.find((g) => g.id === gameId);
+      if (saved?.favoriteSide && local && local.favoriteSide !== saved.favoriteSide) {
+        gamesCtx.patchGame(gameId, { favoriteSide: saved.favoriteSide });
+        void gamesCtx.refresh();
+      }
       setPickFor(k, gameId, final);
       setCardError(gameId, null);
       if (!patchCrowd(k, gameId, final)) void loadCrowd();
@@ -202,13 +208,16 @@ export function PicksPage() {
     }
   };
 
-  const handlePick = (gameId: string, side: PickSide) => {
+  const handlePick = (gameId: string, venue: Venue) => {
+    const game = games.find((g) => g.id === gameId);
+    const side = game ? pickSideForVenue(game, venue) : null;
+    if (!side) return;
     const current = picks[gameId];
     if (current?.pick === side) return;
     void save(
       gameId,
       { gameId, pick: side, isConfidenceBet: playoffs ? true : (current?.isConfidenceBet ?? false) },
-      { gameId, pick: side },
+      { gameId, venue },
       "Couldn't save your pick. Please try again.",
     );
   };
@@ -312,7 +321,7 @@ export function PicksPage() {
                   key={game.id}
                   game={game}
                   userPick={picks[game.id]}
-                  onPick={(side) => handlePick(game.id, side)}
+                  onPick={(venue) => handlePick(game.id, venue)}
                   onSetConfidence={(value) => handleConfidence(game.id, value)}
                   confidenceDisabled={!picks[game.id]?.isConfidenceBet && confCount >= CONFIDENCE_BETS_PER_WEEK}
                   crowd={crowdLeanForGame(game, players, username)}

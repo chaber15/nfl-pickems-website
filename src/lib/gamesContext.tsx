@@ -44,6 +44,8 @@ interface GamesContextValue {
   refreshing: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  /** Overwrite fields of one loaded game (e.g. the server reports a newer favorite after a save). */
+  patchGame: (gameId: string, patch: Partial<GameData>) => void;
   /** Changes at each kickoff so lock state is re-evaluated. */
   clockTick: number;
 }
@@ -145,6 +147,10 @@ export function GamesProvider({ children }: { children: ReactNode }) {
     if (!allFinal && Date.now() - s.loadedAt >= STALE_ON_RETURN_MS) void load();
   }, ready && !!username);
 
+  const patchGame = useCallback((gameId: string, patch: Partial<GameData>) => {
+    setState((prev) => ({ ...prev, games: prev.games.map((g) => (g.id === gameId ? { ...g, ...patch } : g)) }));
+  }, []);
+
   const value = useMemo<GamesContextValue>(
     () => ({
       currentKey,
@@ -154,9 +160,10 @@ export function GamesProvider({ children }: { children: ReactNode }) {
       refreshing: loadingKey === currentKey,
       error: state.key === currentKey ? state.error : null,
       refresh: load,
+      patchGame,
       clockTick,
     }),
-    [currentKey, state, loadingKey, load, clockTick],
+    [currentKey, state, loadingKey, load, patchGame, clockTick],
   );
 
   return <GamesContext.Provider value={value}>{children}</GamesContext.Provider>;

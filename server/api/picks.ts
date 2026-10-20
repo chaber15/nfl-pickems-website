@@ -4,7 +4,7 @@ import { getDb, schema } from "../db";
 import { dbGameToGameData, findWeekRow, getGamesForWeek } from "../espn/sync";
 import { isPostponed } from "../../shared/gameStatus";
 import { isPlayoffPhase } from "../../shared/scoring";
-import { CONFIDENCE_BETS_PER_WEEK } from "../../shared/types";
+import { CONFIDENCE_BETS_PER_WEEK, type FavoriteSide } from "../../shared/types";
 import { publicDisplayName } from "../../shared/userDisplay";
 import { HttpError } from "./errors";
 import { json, parseJsonBody, requireUser } from "./http";
@@ -14,6 +14,10 @@ type PickSide = "favorite" | "underdog";
 
 function isPickSide(value: unknown): value is PickSide {
   return value === "favorite" || value === "underdog";
+}
+
+function isVenue(value: unknown): value is FavoriteSide {
+  return value === "home" || value === "away";
 }
 
 export async function handlePicks(event: HandlerEvent) {
@@ -28,7 +32,10 @@ export async function handlePicks(event: HandlerEvent) {
 
   // Resolve the requested operation up front so bad input never touches the DB.
   let confidenceTarget: boolean | "toggle" | null = null;
-  let pick: PickSide | null = null;
+  // A side pick names the team tapped (venue); the server maps it to favorite/underdog from
+  // the stored line, so a tab showing a stale favorite still saves the team the player chose.
+  let venue: FavoriteSide | null = null;
+  let legacyPick: PickSide | null = null;
   if (body.action === "set_confidence") {
     if (typeof body.value !== "boolean") {
       throw new HttpError(400, "value must be true or false", "INVALID_REQUEST");
@@ -38,11 +45,14 @@ export async function handlePicks(event: HandlerEvent) {
     confidenceTarget = "toggle";
   } else if (body.action !== undefined) {
     throw new HttpError(400, "Invalid action", "INVALID_REQUEST");
+  } else if (isVenue(body.venue)) {
+    venue = body.venue;
+  } else if (isPickSide(body.pick)) {
+    // Deprecated body from tabs opened before the venue protocol; remove next release.
+    console.log("[picks] deprecated pick body (favorite/underdog) — client needs a refresh");
+    legacyPick = body.pick;
   } else {
-    if (!isPickSide(body.pick)) {
-      throw new HttpError(400, "pick must be favorite or underdog", "INVALID_REQUEST");
-    }
-    pick = body.pick;
+    throw new HttpError(400, "venue must be home or away", "INVALID_REQUEST");
   }
 
   const [row] = await db
@@ -134,7 +144,7 @@ export async function handlePicks(event: HandlerEvent) {
     throw new HttpError(400, "Line not posted yet", "NO_LINE");
   }
 
-  const side = pick as PickSide;
+  const side: PickSide = venue ? (game.favoriteSide === venue ? "favorite" : "underdog") : legacyPick!;
   const [saved] = await db
     .insert(schema.picks)
     .values({
@@ -148,7 +158,7 @@ export async function handlePicks(event: HandlerEvent) {
       set: { pick: side, updatedAt: new Date() },
     })
     .returning();
-  return json(200, { pick: saved });
+  return json(200, { pick: saved, favoriteSide: game.favoriteSide });
 }
 
 export async function handleUserPicks(event: HandlerEvent) {
