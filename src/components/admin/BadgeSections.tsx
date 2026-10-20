@@ -13,6 +13,7 @@ import {
   type BadgeCatalogRow,
   type BadgePreview,
 } from "../../lib/api";
+import { clearCache } from "../../lib/cache";
 import { confirmAction } from "../../lib/confirm";
 import { AdminCard, SectionError, SectionSuccess, type AdminErrorHandler } from "./adminShared";
 
@@ -164,6 +165,7 @@ export function BadgeRecalcSection({ onDone, onError }: { onDone: () => void; on
     setError("");
     try {
       const res = await apiAdminApplyBadges(preview.fingerprint);
+      clearCache();
       setMsg(`Done — added ${res.added}, removed ${res.removed}.`);
       setPreview(null);
       onDone();

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { shortWeekLabel } from "@shared/weekUtils";
 import { apiSyncEspn } from "../../lib/api";
+import { clearCache } from "../../lib/cache";
 import { useGames } from "../../lib/gamesContext";
 import { useWeek } from "../../lib/weekContext";
 import { AdminCard, SectionError, SectionSuccess, type AdminErrorHandler } from "./adminShared";
@@ -18,6 +19,7 @@ export function SyncSection({ onError }: { onError: AdminErrorHandler }) {
     setError("");
     try {
       const res = await apiSyncEspn(seasonType, week);
+      clearCache();
       setMsg(`Synced ${res.upserted} games for ${shortWeekLabel(seasonType, week)}.`);
       void refresh();
     } catch (err) {

@@ -13,6 +13,7 @@ import { GameCardSkeleton } from "../components/game/GameCardSkeleton";
 import { ConfidenceBetCounter } from "../components/ConfidenceBetCounter";
 import { ErrorState } from "../components/ErrorState";
 import { HelpTip, JUICE_HELP } from "../components/HelpTip";
+import { clearCache } from "../lib/cache";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
 import { useGames, weekKeyOf } from "../lib/gamesContext";
@@ -216,6 +217,7 @@ export function PicksPage() {
     markSaving(gameId, true);
     try {
       const saved = await apiSavePick(body);
+      clearCache();
       const final: UserPick = saved ? { gameId, pick: saved.pick, isConfidenceBet: saved.isConfidenceBet } : optimistic;
       // The stored pick is relative to the server's favorite; if this tab's line is stale,
       // adopt the server's favorite now (so the card shows the team tapped) and reload the slate.

@@ -10,6 +10,7 @@ import {
   type AdminTier,
   type AdminUserRow,
 } from "../../lib/api";
+import { clearCache } from "../../lib/cache";
 import { confirmAction } from "../../lib/confirm";
 import { ADMIN_BTN, AdminCard, SectionError, type AdminErrorHandler } from "./adminShared";
 
@@ -58,6 +59,7 @@ export function UsersSection({ users, setUsers, tier, currentUserId, onError }: 
     }
     void run(u, "Ban failed", async () => {
       await apiAdminBan(u.id);
+      clearCache();
       patchUser(u.id, { isBanned: true });
     });
   };
@@ -65,6 +67,7 @@ export function UsersSection({ users, setUsers, tier, currentUserId, onError }: 
   const handleUnban = (u: AdminUserRow) =>
     void run(u, "Unban failed", async () => {
       await apiAdminUnban(u.id);
+      clearCache();
       patchUser(u.id, { isBanned: false });
     });
 
@@ -78,6 +81,7 @@ export function UsersSection({ users, setUsers, tier, currentUserId, onError }: 
     }
     void run(u, "Delete failed", async () => {
       await apiAdminDeleteUser(u.id);
+      clearCache();
       setUsers((prev) => prev.filter((row) => row.id !== u.id));
       if (editingId === u.id) setEditingId(null);
     });
@@ -96,6 +100,7 @@ export function UsersSection({ users, setUsers, tier, currentUserId, onError }: 
     }
     void run(u, "Failed to update admin", async () => {
       await apiAdminSetAdmin(u.id, next);
+      clearCache();
       patchUser(u.id, { isAdmin: next });
     });
   };
@@ -117,6 +122,7 @@ export function UsersSection({ users, setUsers, tier, currentUserId, onError }: 
     try {
       if (editUsername.trim() !== u.username) {
         const res = await apiAdminSetUsername(u.id, editUsername.trim());
+        clearCache();
         nextUsername = res.user.username;
         nextDisplay = res.user.displayName;
         usernameSaved = true;
@@ -124,6 +130,7 @@ export function UsersSection({ users, setUsers, tier, currentUserId, onError }: 
       }
       if (editName.trim() !== publicDisplayName({ username: nextUsername, displayName: nextDisplay })) {
         const res = await apiAdminSetDisplayName(u.id, editName);
+        clearCache();
         nextDisplay = res.displayName;
         patchUser(u.id, { displayName: nextDisplay });
       }
