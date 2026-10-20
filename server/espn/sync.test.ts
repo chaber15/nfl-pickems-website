@@ -1,6 +1,6 @@
-import { test } from "node:test";
+import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
-import { decideReadSync, mergeGameState, resolvePreOtScores, type ReadSyncRow } from "./sync.ts";
+import { decideReadSync, gameWriteStatements, mergeGameState, resolvePreOtScores, type ReadSyncRow } from "./sync.ts";
 
 const line = { spread: 3, favoriteSide: "home" as const };
 const storedFinal = {
@@ -141,4 +141,60 @@ test("read sync: upcoming (>10 min) or all-final weeks don't sync", () => {
     decideReadSync([r("2026-10-04T17:00:00Z", "scheduled", "2026-10-04T21:00:00Z")], d("2026-10-09T12:00:00Z")),
     false,
   );
+});
+
+describe("gameWriteStatements (favorite flip)", () => {
+  const values = {
+    weekId: "week-1",
+    espnEventId: "401",
+    awayTeam: "Away",
+    awayAbbrev: "AWY",
+    homeTeam: "Home",
+    homeAbbrev: "HOM",
+    kickoffAt: new Date("2026-10-25T17:00:00Z"),
+    spread: 15,
+    favoriteSide: "away" as const,
+    oddsAway: -110,
+    oddsHome: -110,
+  };
+
+  it("swaps picks before the upsert, guarded on the stored favorite still being the old one", async () => {
+    const { installFakeDb } = await import("../testDb");
+    const { getDb } = await import("../db");
+    const fake = installFakeDb();
+    try {
+      const { swap, upsert } = gameWriteStatements(getDb(), { id: "game-db-1", favoriteSide: "home" }, values);
+      assert.ok(swap);
+      const s = swap.toSQL();
+      assert.match(s.sql, /^update "picks" set "pick" = case "picks"\."pick" when 'favorite'/);
+      assert.match(
+        s.sql,
+        /where \("picks"\."game_id" = \$\d+ and exists \(select 1 from "games" where "games"\."id" = \$\d+ and "games"\."favorite_side" = \$\d+\)\)/,
+      );
+      assert.deepEqual(s.params.slice(-3), ["game-db-1", "game-db-1", "home"]);
+      assert.match(upsert.toSQL().sql, /^insert into "games"/);
+
+      // syncEspnWeek pushes swap then upsert into one batch: run them that way.
+      await getDb().batch([swap, upsert]);
+      assert.deepEqual(
+        fake.queries.map((q) => q.sql.split(" ").slice(0, 3).join(" ")),
+        ['update "picks" set', 'insert into "games"'],
+      );
+    } finally {
+      fake.reset();
+    }
+  });
+
+  it("no swap when the favorite is unchanged or the stored row has none", async () => {
+    const { installFakeDb } = await import("../testDb");
+    const { getDb } = await import("../db");
+    const fake = installFakeDb();
+    try {
+      assert.equal(gameWriteStatements(getDb(), { id: "g", favoriteSide: "away" }, values).swap, null);
+      assert.equal(gameWriteStatements(getDb(), { id: "g", favoriteSide: null }, values).swap, null);
+      assert.equal(gameWriteStatements(getDb(), undefined, values).swap, null);
+    } finally {
+      fake.reset();
+    }
+  });
 });

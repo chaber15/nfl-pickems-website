@@ -377,30 +377,15 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
         updatedAt: now,
       };
 
-      statements.push(
-        db
-          .insert(schema.games)
-          .values(values)
-          .onConflictDoUpdate({ target: schema.games.espnEventId, set: values }),
-      );
-
-      // Favorite flipped home↔away (pre-lock line move): swap stored picks in the same
-      // transaction so every user keeps the TEAM they tapped.
-      if (existing && shouldSwapPicksForFavoriteFlip(existing.favoriteSide, line.favoriteSide)) {
-        statements.push(
-          db
-            .update(schema.picks)
-            .set({
-              pick: sql`case ${schema.picks.pick} when 'favorite' then 'underdog'::pick_side else 'favorite'::pick_side end`,
-              updatedAt: sql`now()`,
-            })
-            .where(eq(schema.picks.gameId, existing.id)),
-        );
+      const { swap, upsert } = gameWriteStatements(db, existing, values);
+      if (swap) {
+        statements.push(swap);
         result.picksSwapped++;
         console.log(
-          `ESPN sync: favorite flipped ${existing.favoriteSide}→${line.favoriteSide} for ${g.awayAbbrev}@${g.homeAbbrev}; swapped picks`,
+          `ESPN sync: favorite flipped ${existing!.favoriteSide}→${line.favoriteSide} for ${g.awayAbbrev}@${g.homeAbbrev}; swapped picks`,
         );
       }
+      statements.push(upsert);
       result.upserted++;
     } catch (err) {
       console.error(`ESPN sync: skipped event ${g.espnEventId}:`, err);
@@ -415,6 +400,39 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
   return result;
 }
 
+
+/**
+ * One event's writes, in batch order. When the favorite flipped home↔away (pre-lock line
+ * move), stored picks are swapped so every user keeps the TEAM they tapped. The swap runs
+ * before the game upsert and only while the stored row still has the old favorite, so a
+ * second sync that read the same stale row (or already applied the flip) is a no-op.
+ */
+export function gameWriteStatements(
+  db: ReturnType<typeof getDb>,
+  existing: Pick<GameRow, "id" | "favoriteSide"> | undefined,
+  values: typeof schema.games.$inferInsert,
+) {
+  const upsert = db
+    .insert(schema.games)
+    .values(values)
+    .onConflictDoUpdate({ target: schema.games.espnEventId, set: values });
+  if (!existing?.favoriteSide || !shouldSwapPicksForFavoriteFlip(existing.favoriteSide, values.favoriteSide)) {
+    return { swap: null, upsert };
+  }
+  const swap = db
+    .update(schema.picks)
+    .set({
+      pick: sql`case ${schema.picks.pick} when 'favorite' then 'underdog'::pick_side else 'favorite'::pick_side end`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(schema.picks.gameId, existing.id),
+        sql`exists (select 1 from ${schema.games} where ${schema.games.id} = ${existing.id} and ${schema.games.favoriteSide} = ${existing.favoriteSide})`,
+      ),
+    );
+  return { swap, upsert };
+}
 
 export async function getGamesForWeek(seasonType: number, weekNumber: number): Promise<GameData[]> {
   const db = getDb();
