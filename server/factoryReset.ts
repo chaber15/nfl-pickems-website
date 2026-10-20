@@ -89,7 +89,7 @@ export async function factoryReset(keepAdminUserId: string): Promise<FactoryRese
 
   const current = await resolveCurrentPickemsWeek();
   const clamped = clampToAvailableWeek(current.seasonType, current.week);
-  const synced = await syncEspnWeek(clamped.seasonType, clamped.week);
+  const synced = await syncEspnWeek(clamped.seasonType, clamped.week, { pinActiveSeason: true });
 
   return {
     deletedUsers: otherUsers,

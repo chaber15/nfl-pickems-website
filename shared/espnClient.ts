@@ -477,8 +477,11 @@ export async function resolveCurrentPickemsWeek(now = new Date()): Promise<{
   seasonType: number;
   week: number;
   seasonYear: number;
+  /** ESPN's unclamped `season.type` (1 preseason, 2 regular, 3 post, 4 off) — before clamping. */
+  rawSeasonType: number;
 }> {
   const current = await detectCurrentWeek();
+  const rawSeasonType = current.seasonType;
   let seasonType = current.seasonType;
   let week = current.week;
   const clamped = clampToAvailableWeek(seasonType, week);
@@ -486,7 +489,7 @@ export async function resolveCurrentPickemsWeek(now = new Date()): Promise<{
   week = clamped.week;
 
   if (!isAfterTuesdayNoonEt(now)) {
-    return { seasonType, week, seasonYear: current.seasonYear };
+    return { seasonType, week, seasonYear: current.seasonYear, rawSeasonType };
   }
 
   try {
@@ -496,12 +499,12 @@ export async function resolveCurrentPickemsWeek(now = new Date()): Promise<{
       games.length === 0 ||
       games.every((g) => g.status === "final" || /cancel|postpone/i.test(g.statusDetail ?? ""));
     if (!finished) {
-      return { seasonType, week, seasonYear: current.seasonYear };
+      return { seasonType, week, seasonYear: current.seasonYear, rawSeasonType };
     }
 
     const next = nextAvailableWeek(seasonType, week);
     if (next.seasonType === seasonType && next.week === week) {
-      return { seasonType, week, seasonYear: current.seasonYear };
+      return { seasonType, week, seasonYear: current.seasonYear, rawSeasonType };
     }
 
     const nextBoard = await fetchScoreboard(next.seasonType, next.week, { withOddsFallback: false });
@@ -510,11 +513,12 @@ export async function resolveCurrentPickemsWeek(now = new Date()): Promise<{
         seasonType: next.seasonType,
         week: next.week,
         seasonYear: current.seasonYear,
+        rawSeasonType,
       };
     }
   } catch {
     /* fall through to ESPN week */
   }
 
-  return { seasonType, week, seasonYear: current.seasonYear };
+  return { seasonType, week, seasonYear: current.seasonYear, rawSeasonType };
 }

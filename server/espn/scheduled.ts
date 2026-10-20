@@ -221,7 +221,7 @@ export async function runScheduledEspnSync(now = new Date()): Promise<ScheduledS
     const wk = clampToAvailableWeek(current.seasonType, current.week);
     const planned = plan.some((p) => p.seasonType === wk.seasonType && p.week === wk.week);
     if (
-      (current.seasonType === 2 || current.seasonType === 3) &&
+      (current.rawSeasonType === 2 || current.rawSeasonType === 3) &&
       !planned &&
       isValidPickemsWeek(wk.seasonType, wk.week) &&
       !(await weekHasRows(current.seasonYear, wk.seasonType, wk.week))
@@ -236,7 +236,9 @@ export async function runScheduledEspnSync(now = new Date()): Promise<ScheduledS
   for (const target of plan) {
     const summary: WeekSyncSummary = { ...target };
     try {
-      const result = await syncEspnWeek(target.seasonType, target.week);
+      const result = await syncEspnWeek(target.seasonType, target.week, {
+        pinActiveSeason: target.reasons.includes("bootstrap"),
+      });
       summary.upserted = result.upserted;
       summary.picksSwapped = result.picksSwapped;
 

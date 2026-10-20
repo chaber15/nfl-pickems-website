@@ -276,7 +276,12 @@ export async function findWeekRow(seasonType: number, weekNumber: number) {
   return weekRow ?? null;
 }
 
-export async function syncEspnWeek(seasonType?: number, week?: number) {
+export type SyncEspnWeekOptions = {
+  /** Point site_settings.current_season_id at the synced season (bootstrap / factory reset only). */
+  pinActiveSeason?: boolean;
+};
+
+export async function syncEspnWeek(seasonType?: number, week?: number, syncOpts: SyncEspnWeekOptions = {}) {
   const db = getDb();
   const now = new Date();
 
@@ -327,10 +332,9 @@ export async function syncEspnWeek(seasonType?: number, week?: number) {
 
   const season = await ensureSeasonYear(board.seasonYear);
 
-  // Only pin the active season when syncing ESPN's current slate — not when an
-  // admin (or on-read path) syncs an arbitrary historical week.
-  const pinActiveSeason = seasonType == null || week == null;
-  if (pinActiveSeason) {
+  // Only pin the active season when the caller asks (scheduler bootstrap, factory reset) —
+  // never for admin / on-read syncs of an arbitrary week.
+  if (syncOpts.pinActiveSeason === true) {
     await db
       .insert(schema.siteSettings)
       .values({ id: 1, currentSeasonId: season.id })
