@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { resolveCurrentPickemsWeek } from "@shared/espnClient";
+import { apiCalendarCurrent } from "./api";
 import { DEFAULT_SEASON_TYPE, DEFAULT_WEEK } from "@shared/types";
 import {
   clampToAvailableWeek,
@@ -14,6 +14,8 @@ interface WeekContextValue {
   week: number;
   /** False until the default week is known (or the URL / user picked one). */
   ready: boolean;
+  /** True when the current week couldn't be determined (server and ESPN both failed): ask the user to pick. */
+  needsWeekChoice: boolean;
   setWeekSelection: (seasonType: number, week: number) => void;
 }
 
@@ -53,6 +55,7 @@ export function WeekProvider({ children }: { children: ReactNode }) {
   const initialUrlRef = useRef(fromUrl);
   const [sel, setSel] = useState<WeekSel>(() => initialUrlRef.current ?? fallbackDefaultWeek());
   const [ready, setReady] = useState(initialUrlRef.current != null);
+  const [needsWeekChoice, setNeedsWeekChoice] = useState(false);
   /** Once the user (or a shared link) chooses a week, the auto-detected default must not override it. */
   const chosenRef = useRef(initialUrlRef.current != null);
   /** Last week we wrote to / read from the URL — tells our own writes apart from back/forward. */
@@ -63,14 +66,19 @@ export function WeekProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       let next: WeekSel;
+      let failed = false;
       try {
-        const current = await resolveCurrentPickemsWeek();
+        const current = await apiCalendarCurrent();
         next = clampToAvailableWeek(current.seasonType, current.week);
       } catch {
         next = fallbackDefaultWeek();
+        failed = true;
       }
       if (cancelled) return;
-      if (!chosenRef.current) setSel(next);
+      if (!chosenRef.current) {
+        setSel(next);
+        if (failed) setNeedsWeekChoice(true);
+      }
       setReady(true);
     })();
     return () => {
@@ -86,6 +94,7 @@ export function WeekProvider({ children }: { children: ReactNode }) {
       syncedRef.current = fromUrl;
       setSel(fromUrl);
       setReady(true);
+      setNeedsWeekChoice(false);
       return;
     }
     if (!ready || WEEKLESS_PATHS.has(location.pathname)) return;
@@ -107,11 +116,12 @@ export function WeekProvider({ children }: { children: ReactNode }) {
     chosenRef.current = true;
     setSel(clampToAvailableWeek(nextSeasonType, nextWeek));
     setReady(true);
+    setNeedsWeekChoice(false);
   }, []);
 
   const value = useMemo<WeekContextValue>(
-    () => ({ seasonType: sel.seasonType, week: sel.week, ready, setWeekSelection }),
-    [sel, ready, setWeekSelection],
+    () => ({ seasonType: sel.seasonType, week: sel.week, ready, needsWeekChoice, setWeekSelection }),
+    [sel, ready, needsWeekChoice, setWeekSelection],
   );
 
   return <WeekContext.Provider value={value}>{children}</WeekContext.Provider>;

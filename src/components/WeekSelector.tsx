@@ -16,7 +16,7 @@ function seasonTypeForTab(tab: PhaseTab): number {
 }
 
 export function WeekSelector() {
-  const { seasonType, week, setWeekSelection } = useWeek();
+  const { seasonType, week, needsWeekChoice, setWeekSelection } = useWeek();
   const options = buildWeekOptions();
   const index = weekOptionIndex(seasonType, week);
   const prev = index > 0 ? options[index - 1] : null;
@@ -97,6 +97,15 @@ export function WeekSelector() {
       >
         <CaretRight size={20} weight="bold" />
       </button>
+
+      {needsWeekChoice && !open && (
+        <p
+          role="status"
+          className="absolute right-0 top-full mt-1 whitespace-nowrap text-xs font-semibold text-[var(--text-muted)]"
+        >
+          Couldn't determine the current week — choose one
+        </p>
+      )}
 
       {open && (
         <div

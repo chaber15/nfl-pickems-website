@@ -168,6 +168,13 @@ export async function apiGames(
   return request(`/games?seasonType=${seasonType}&week=${week}`, { signal });
 }
 
+/** Server-resolved current week (ESPN, or the DB when ESPN is down). */
+export async function apiCalendarCurrent(
+  signal?: AbortSignal,
+): Promise<{ seasonType: number; week: number; source?: string }> {
+  return request("/calendar/current", { signal });
+}
+
 export async function apiUserPicks(
   seasonType: number,
   week: number,

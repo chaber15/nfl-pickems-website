@@ -32,6 +32,12 @@ describe("cacheHeadersFor", () => {
     });
   });
 
+  it("DB-fallback current-week answers are never CDN-cached", () => {
+    assert.deepEqual(cacheHeadersFor("calendar/current", "GET", 200, "db-fallback"), {
+      "Cache-Control": PRIVATE_NO_STORE,
+    });
+  });
+
   it("private no-store for everything else", () => {
     const cases: Array<[string, string, number]> = [
       ["games", "GET", 400],
