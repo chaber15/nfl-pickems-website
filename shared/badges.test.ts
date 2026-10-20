@@ -4,6 +4,7 @@ import {
   badgeRowKey,
   computeDesiredBadges,
   diffBadgeRows,
+  primetimeSlot,
   tieStandings,
   type BadgeRule,
   type DesiredBadgeRow,
@@ -11,6 +12,7 @@ import {
   type SeasonSlate,
   type WeekView,
 } from "./badges";
+import { BADGES } from "./badgeDefs";
 import { isGradedForStandings } from "./scoring";
 import type { UserPick } from "./types";
 import { makeGame, picksOf } from "./testFixtures";
@@ -309,4 +311,167 @@ test("diffBadgeRows: duplicates collapse to the oldest; legacy lifetime week row
   assert.deepEqual(d.toDelete.map((r) => r.id).sort(), ["dupNew", "legacy", "life"]);
   assert.deepEqual(d.kept.map((r) => r.id), ["dupOld"]);
   assert.deepEqual(d.toInsert.map(badgeRowKey), ["A|steamroller|0"]);
+});
+
+// ── T20: badge rule fixes (real badge list) ─────────────────────────────────
+
+const ruleHits = (rows: DesiredBadgeRow[], userId: string, badgeId: string) =>
+  rows.filter((r) => r.userId === userId && r.badgeId === badgeId);
+
+const solo = [{ userId: "A", username: "A" }];
+
+function runSolo(games: ReturnType<typeof makeGame>[], picks: Record<string, UserPick>, seasonType = 2, weekNumber = 1) {
+  return computeDesiredBadges({
+    users: solo,
+    slates: [{ seasonType, weekNumber, games }],
+    picksByUser: new Map([["A", picks]]),
+    rules: BADGES,
+  }).rows;
+}
+
+test("busted_five: four losses and a push is not 'all five lose'", () => {
+  const results = ["underdog", "underdog", "underdog", "underdog", "push"] as const;
+  const games = results.map((atsResult, i) => makeGame(`b${i}`, { atsResult }));
+  const picks = picksOf(Object.fromEntries(games.map((g) => [g.id, ["favorite", true] as const])));
+  assert.equal(ruleHits(runSolo(games, picks), "A", "busted_five").length, 0);
+
+  const allLoss = games.map((g) => ({ ...g, atsResult: "underdog" as const }));
+  assert.equal(ruleHits(runSolo(allLoss, picks), "A", "busted_five").length, 1);
+});
+
+test("five_star_general / sniper / busted_five are regular season only", () => {
+  const mk = (win: boolean[], n = 5) =>
+    Array.from({ length: n }, (_, i) =>
+      makeGame(`p${i}`, { seasonType: 3, phase: "wildcard", atsResult: win[i] ? "favorite" : "underdog" }),
+    );
+  const starFive = (games: ReturnType<typeof makeGame>[]) =>
+    picksOf(Object.fromEntries(games.map((g, i) => [g.id, ["favorite", i < 5] as const])));
+
+  const wins = mk([true, true, true, true, true]);
+  assert.equal(ruleHits(runSolo(wins, starFive(wins), 3), "A", "five_star_general").length, 0);
+  const losses = mk([false, false, false, false, false]);
+  assert.equal(ruleHits(runSolo(losses, starFive(losses), 3), "A", "busted_five").length, 0);
+  // Sniper: 4 of 5 stars win in a week that is mostly losses.
+  const sn = mk([true, true, true, true, false, false, false, false, false, false, false], 11);
+  assert.equal(ruleHits(runSolo(sn, starFive(sn), 3), "A", "sniper").length, 0);
+  // The same weeks in the regular season do award them.
+  const regWins = wins.map((g) => ({ ...g, seasonType: 2, phase: "regular" as const }));
+  assert.equal(ruleHits(runSolo(regWins, starFive(regWins)), "A", "five_star_general").length, 1);
+  const regSn = sn.map((g) => ({ ...g, seasonType: 2, phase: "regular" as const }));
+  assert.equal(ruleHits(runSolo(regSn, starFive(regSn)), "A", "sniper").length, 1);
+});
+
+test("primetimeSlot: ET midnight is hour 0, not 24", () => {
+  assert.equal(primetimeSlot("2026-09-11T00:15:00Z"), "tnf"); // Thu 8:15pm ET
+  assert.equal(primetimeSlot("2026-09-14T00:20:00Z"), "snf"); // Sun 8:20pm ET
+  assert.equal(primetimeSlot("2026-09-15T00:15:00Z"), "mnf"); // Mon 8:15pm ET
+  assert.equal(primetimeSlot("2026-09-14T04:00:00Z"), null); // Mon 12:00am ET
+});
+
+test("primetime: an MNF doubleheader keeps both games (starred win on the earlier one counts)", () => {
+  const games = [
+    makeGame("tnf", { kickoffAt: "2026-09-11T00:15:00Z" }),
+    makeGame("snf", { kickoffAt: "2026-09-14T00:20:00Z" }),
+    makeGame("mnf1", { kickoffAt: "2026-09-14T23:15:00Z" }), // Mon 7:15pm ET
+    makeGame("mnf2", { kickoffAt: "2026-09-15T00:15:00Z", atsResult: "underdog" }), // Mon 8:15pm ET, lost
+  ];
+  const picks = picksOf({
+    tnf: ["favorite", true],
+    snf: ["favorite", true],
+    mnf1: ["favorite", true],
+    mnf2: ["favorite", false],
+  });
+  assert.equal(ruleHits(runSolo(games, picks), "A", "primetime").length, 1);
+});
+
+test("overall ★ P/L board drops a player idle for three closed weeks (like the leaderboard)", () => {
+  // Playoff weeks 1,2,3,5. A stars once (week 1, wins) then goes starless; B stars week 2 and loses.
+  const overallPlFirst: BadgeRule = {
+    id: "overall_pl_first",
+    name: "x",
+    description: "x",
+    icon: "🏅",
+    rarity: "common",
+    kind: "weekly",
+    earned: (w) => w.overall.pl.first,
+  };
+  const slates = [1, 2, 3, 5].map((weekNumber) => ({
+    seasonType: 3,
+    weekNumber,
+    games: [
+      makeGame(`d${weekNumber}`, {
+        seasonType: 3,
+        weekNumber,
+        phase: "divisional",
+        atsResult: weekNumber === 2 ? "underdog" : "favorite",
+      }),
+    ],
+  }));
+  const picksA = picksOf({ d1: ["favorite", true], d2: "favorite", d3: "favorite", d5: "favorite" });
+  const picksB = picksOf({ d1: "favorite", d2: ["favorite", true], d3: "favorite", d5: "favorite" });
+  const { rows } = computeDesiredBadges({
+    users: [
+      { userId: "A", username: "A" },
+      { userId: "B", username: "B" },
+    ],
+    slates,
+    picksByUser: new Map([
+      ["A", picksA],
+      ["B", picksB],
+    ]),
+    rules: [overallPlFirst],
+  });
+  const weeksOf = (u: string) => rows.filter((r) => r.userId === u).map((r) => r.weekNumber).sort();
+  // A leads weeks 1-3 (idle only 2 closed weeks by week 3), then has dropped out by week 5.
+  assert.deepEqual(weeksOf("A"), [1, 2, 3]);
+  assert.deepEqual(weeksOf("B"), [5]);
+});
+
+test("lastWeek for the Super Bowl is the Conference Championship (week 5 follows week 3)", () => {
+  const lastWeekFirst: BadgeRule = {
+    id: "last_week_first",
+    name: "x",
+    description: "x",
+    icon: "🏅",
+    rarity: "common",
+    kind: "weekly",
+    earned: (w) => w.lastWeek.ats.first,
+  };
+  const slates = [3, 5].map((weekNumber) => ({
+    seasonType: 3,
+    weekNumber,
+    games: [makeGame(`c${weekNumber}`, { seasonType: 3, weekNumber })],
+  }));
+  const { rows } = computeDesiredBadges({
+    users: solo,
+    slates,
+    picksByUser: new Map([["A", picksOf({ c3: "favorite", c5: "favorite" })]]),
+    rules: [lastWeekFirst],
+  });
+  assert.deepEqual(rows.map((r) => r.weekNumber), [5]);
+});
+
+function otHero(opts: Parameters<typeof makeGame>[1], pick: "favorite" | "underdog") {
+  const g = makeGame("ot", opts);
+  return ruleHits(runSolo([g], picksOf({ ot: [pick, true] })), "A", "ot_hero").length === 1;
+}
+
+test("OT Hero: derived from 'went to OT' + the spread, not stored pre-OT scores", () => {
+  const base = {
+    spread: 3.5,
+    favoriteSide: "home" as const,
+    homeScore: 30,
+    awayScore: 24,
+    atsResult: "favorite" as const,
+  };
+  // Favorite -3.5 wins 30-24 after OT (no pre-OT snapshot, or a stale Q4 one) -> awarded.
+  assert.equal(otHero({ ...base, period: 5, statusDetail: "OT" }, "favorite"), true);
+  assert.equal(otHero({ ...base, period: 5, preOtHomeScore: 24, preOtAwayScore: 17 }, "favorite"), true);
+  assert.equal(otHero({ ...base, statusDetail: "OT" }, "favorite"), true);
+  // Same score in regulation -> not OT.
+  assert.equal(otHero({ ...base, period: 4 }, "favorite"), false);
+  // Underdog backer winning in OT was never losing ATS at regulation.
+  assert.equal(otHero({ ...base, homeScore: 24, awayScore: 27, atsResult: "underdog", period: 5 }, "underdog"), false);
+  // Pick'em favorite: the regulation tie was a push, not a loss.
+  assert.equal(otHero({ ...base, spread: 0, homeScore: 27, awayScore: 24, period: 5 }, "favorite"), false);
 });

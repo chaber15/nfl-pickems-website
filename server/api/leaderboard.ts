@@ -11,7 +11,7 @@ import {
   missedStarCost,
   missedStars,
 } from "../../shared/scoring";
-import { compareSeasonWeeks } from "../../shared/statsCompute";
+import { compareSeasonWeeks, isStarDropout } from "../../shared/statsCompute";
 import type { GameData, LeaderboardEntry, PickSide } from "../../shared/types";
 import { publicDisplayName } from "../../shared/userDisplay";
 import {
@@ -48,9 +48,6 @@ export type LeaderboardPick = {
   pick: PickSide;
   isConfidenceBet: boolean;
 };
-
-/** No ★ in this many closed weeks in a row = dropped out of the season ★ P/L board. */
-const DROPOUT_WEEKS = 3;
 
 /**
  * Pure leaderboard math. `games` are the games in scope (season or one week);
@@ -174,9 +171,7 @@ export function buildLeaderboardEntries(
     // Weekly: no ★ in the (closed) week. Season: no ★ in the last few closed weeks and none placed since.
     const idle = opts.weekly
       ? stars === 0 && weeks.every((w) => w.closed)
-      : openWeekStars === 0 &&
-        starless.length >= DROPOUT_WEEKS &&
-        starless.slice(-DROPOUT_WEEKS).every(Boolean);
+      : openWeekStars === 0 && isStarDropout(starless);
 
     entries.push({
       userId: u.id,

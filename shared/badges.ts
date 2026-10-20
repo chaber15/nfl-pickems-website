@@ -1,13 +1,12 @@
 import { BADGES } from "./badgeDefs";
 import type { EarnedBadge, GameData, PickSide, UserPick } from "./types";
 import {
-  computeAtsResult,
   computeWinPct,
   isGradedForStandings,
   isSlateComplete,
   pickCorrectness,
 } from "./scoring";
-import { confidencePlForWeek } from "./statsCompute";
+import { confidencePlForWeek, isStarDropout } from "./statsCompute";
 
 /*
  * Badge engine. The badges themselves live in ./badgeDefs.ts; this file turns each completed
@@ -79,11 +78,11 @@ export type WeekView = {
   starsUsed: number;
   /** ★ bets not placed (regular season: 5 − starsUsed; playoffs: 0). Each one costs 1 unit. */
   missedStars: number;
-  /** Primetime games this week and your pick on each (null pick = didn't pick it). */
-  primetime: Record<PrimetimeSlot, { game: GameData; pick: PickView | null } | null>;
+  /** Primetime games this week by slot (a slot can hold several, e.g. an MNF doubleheader) and your pick on each (null pick = didn't pick it). */
+  primetime: Record<PrimetimeSlot, Array<{ game: GameData; pick: PickView | null }>>;
   /** This week's boards (ats = win %, pl = ★ P/L). */
   standing: { ats: BoardStanding; pl: BoardStanding };
-  /** The previous week of the same season type (NO_STANDING if none / not ranked). */
+  /** The previous completed slate of the same season type (NO_STANDING if none / not ranked). */
   lastWeek: { ats: BoardStanding; pl: BoardStanding };
   /** Season-to-date overall boards through this week. */
   overall: { ats: BoardStanding; pl: BoardStanding };
@@ -232,7 +231,7 @@ export function primetimeSlot(kickoffAt: string): PrimetimeSlot | null {
     timeZone: "America/New_York",
     weekday: "short",
     hour: "numeric",
-    hour12: false,
+    hourCycle: "h23",
   });
   const parts = easternFmt.formatToParts(d);
   const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
@@ -253,6 +252,11 @@ function crowdCounts(game: GameData, weekPicksByUser: Iterable<Record<string, Us
     if (side) out[side]++;
   }
   return out;
+}
+
+/** ESPN keeps period 5+ (and an "OT" status label) on a finished overtime game. */
+function wentToOvertime(game: GameData): boolean {
+  return (game.period ?? 0) >= 5 || /\bOT\b/i.test(game.statusDetail ?? "");
 }
 
 function pickView(game: GameData, up: UserPick & { pick: PickSide }, crowd: CrowdCounts): PickView {
@@ -278,9 +282,11 @@ function pickView(game: GameData, up: UserPick & { pick: PickSide }, crowd: Crow
   view.coverBy = up.pick === "favorite" ? favCover : -favCover;
   view.dogHome = favoriteSide === "away";
   view.dogWonOutright = dogScore > favScore;
-  if (view.result === "win" && game.preOtHomeScore != null && game.preOtAwayScore != null) {
-    const preAts = computeAtsResult(game.preOtHomeScore, game.preOtAwayScore, spread, favoriteSide);
-    view.wonAfterLosingIntoOt = preAts != null && preAts !== "push" && preAts !== up.pick;
+  // Regulation of an OT game ends tied, so the favorite's regulation ATS margin was -|spread|:
+  // only a favorite backer laying points was losing ATS then (at a pick'em a tie is a push).
+  // Spread is stored as a magnitude with `favoriteSide` naming the favorite.
+  if (view.result === "win" && wentToOvertime(game) && up.pick === "favorite" && Math.abs(spread) > 0) {
+    view.wonAfterLosingIntoOt = true;
   }
   return view;
 }
@@ -417,6 +423,8 @@ export function computeDesiredBadges(input: {
     correct: number;
     total: number;
     pl: number;
+    /** Per completed slate, oldest first: joined by then but placed no ★ (dropout rule). */
+    starless: boolean[];
     /** Has made a pick this week or earlier — ★ P/L (and missed ★) count from then on. */
     joined: boolean;
     /** ★ bets placed so far this season. */
@@ -432,6 +440,7 @@ export function computeDesiredBadges(input: {
       correct: 0,
       total: 0,
       pl: 0,
+      starless: [],
       joined: false,
       stars: 0,
       picked: false,
@@ -502,6 +511,7 @@ export function computeDesiredBadges(input: {
       r.total += graded.length;
       if (st.plCounted) r.pl += st.pl;
       r.stars += st.starsUsed;
+      r.starless.push(r.joined && st.starsUsed === 0);
       if (participant) r.picked = true;
     }
 
@@ -525,11 +535,16 @@ export function computeDesiredBadges(input: {
     );
     const overallPl = tieStandings(
       users
-        .filter((u) => running.get(u.userId)!.joined && running.get(u.userId)!.stars > 0)
+        // Same dropout rule as the leaderboard (idle DROPOUT_WEEKS closed weeks = un-ranked).
+        .filter((u) => {
+          const r = running.get(u.userId)!;
+          return r.joined && r.stars > 0 && !isStarDropout(r.starless);
+        })
         .map((u) => ({ userId: u.userId, score: running.get(u.userId)!.pl })),
     );
-    const priorBoards =
-      prior != null && prior.seasonType === seasonType && prior.weekNumber === weekNumber - 1 ? prior : null;
+    // Previous completed slate of the same season type (playoff weeks are 1,2,3,5: the Super
+    // Bowl follows the Conference Championship).
+    const priorBoards = prior != null && prior.seasonType === seasonType ? prior : null;
 
     for (const u of users) {
       const st = stats.get(u.userId)!;
@@ -545,10 +560,10 @@ export function computeDesiredBadges(input: {
         pickViews.push(v);
         viewByGame.set(g.id, v);
       }
-      const primetime: WeekView["primetime"] = { tnf: null, snf: null, mnf: null };
+      const primetime: WeekView["primetime"] = { tnf: [], snf: [], mnf: [] };
       for (const g of graded) {
         const slot = primetimeSlot(g.kickoffAt);
-        if (slot) primetime[slot] = { game: g, pick: viewByGame.get(g.id) ?? null };
+        if (slot) primetime[slot].push({ game: g, pick: viewByGame.get(g.id) ?? null });
       }
 
       const w: WeekView = {

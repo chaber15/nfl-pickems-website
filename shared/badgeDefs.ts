@@ -17,7 +17,7 @@
  *
  * `w` is a read-only summary of one player's completed week (see `WeekView` in ./badges.ts):
  *   w.picks / w.starred   your graded picks (each: side, starred, result, crowd, coverBy, …)
- *   w.missed, w.winPct, w.correct, w.gradedGames, w.missedStars, w.primetime.{tnf,snf,mnf}
+ *   w.missed, w.winPct, w.correct, w.gradedGames, w.missedStars, w.primetime.{tnf,snf,mnf} (arrays)
  *   w.standing / w.lastWeek / w.overall   { ats, pl } → { first, last } (ties share first/last)
  *   w.streak.{ats,conf}   straight weeks >50% ending this week
  *
@@ -74,8 +74,9 @@ export const BADGES: BadgeRule[] = [
     kind: "weekly",
     earned: (w) => {
       const { tnf, snf, mnf } = w.primetime;
-      if (!tnf || !snf || !mnf) return false;
-      return [tnf, snf, mnf].every((s) => s.pick?.starred && s.pick.result === "win");
+      if (!tnf.length || !snf.length || !mnf.length) return false;
+      // Several games in a slot (MNF doubleheader): the starred win can be any one of them.
+      return [tnf, snf, mnf].every((slot) => slot.some((s) => s.pick?.starred && s.pick.result === "win"));
     },
   },
   {
@@ -149,7 +150,7 @@ export const BADGES: BadgeRule[] = [
     description: "All five of your stars win.",
     rarity: "rare",
     kind: "weekly",
-    earned: (w) => w.starred.length === 5 && allWins(w.starred),
+    earned: (w) => w.seasonType === 2 && w.starred.length === 5 && allWins(w.starred),
   },
   {
     id: "sniper",
@@ -158,7 +159,7 @@ export const BADGES: BadgeRule[] = [
     description: "Win 4 or 5 of your stars in a week where you lost most of your picks.",
     rarity: "rare",
     kind: "weekly",
-    earned: (w) => w.starred.length === 5 && starWins(w) >= 4 && w.winPct < 50,
+    earned: (w) => w.seasonType === 2 && w.starred.length === 5 && starWins(w) >= 4 && w.winPct < 50,
   },
   {
     id: "repeat_champ",
@@ -250,7 +251,7 @@ export const BADGES: BadgeRule[] = [
     rarity: "uncommon",
     kind: "weekly",
     earned: (w) => {
-      if (!fullWeek(w) || w.primetime.mnf?.pick?.result !== "win") return false;
+      if (!fullWeek(w) || !w.primetime.mnf.some((s) => s.pick?.result === "win")) return false;
       return computeWinPct(w.correct - 1, w.gradedGames - 1) <= 50 && w.winPct > 50;
     },
   },
@@ -312,7 +313,7 @@ export const BADGES: BadgeRule[] = [
     description: "All five of your stars lose.",
     rarity: "common",
     kind: "weekly",
-    earned: (w) => w.starred.length === 5 && starWins(w) === 0,
+    earned: (w) => w.seasonType === 2 && w.starred.length === 5 && w.starred.every((p) => p.result === "loss"),
   },
   {
     id: "fall_from_grace_ats",

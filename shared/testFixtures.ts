@@ -110,7 +110,7 @@ export function makeRandomSeason(seed: number, nUsers = 6, nWeeks = 8, nGames = 
           weekNumber,
           seasonType,
           phase: seasonType === 3 ? "wildcard" : "regular",
-          ...(ot ? { preOtHomeScore: homeScore - pick([0, 3, 7]), preOtAwayScore: awayScore - pick([0, 3, 6]) } : {}),
+          ...(ot ? { period: 5, statusDetail: "OT", preOtHomeScore: homeScore - pick([0, 3, 7]), preOtAwayScore: awayScore - pick([0, 3, 6]) } : {}),
         }),
       );
     }

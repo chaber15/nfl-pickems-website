@@ -348,3 +348,15 @@ export function toUserPickMap(
   }
   return mapped;
 }
+
+/** No ★ in this many closed weeks in a row = dropped out of the season ★ P/L board. */
+export const DROPOUT_WEEKS = 3;
+
+/**
+ * `starless` = per closed week, oldest first: joined by then but placed no ★. Dropped out =
+ * the last `DROPOUT_WEEKS` closed weeks were all starless. (The leaderboard also requires no ★
+ * in a still-open week; the badge engine only sees closed weeks.)
+ */
+export function isStarDropout(starless: readonly boolean[]): boolean {
+  return starless.length >= DROPOUT_WEEKS && starless.slice(-DROPOUT_WEEKS).every(Boolean);
+}
