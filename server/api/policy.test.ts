@@ -7,6 +7,7 @@ import {
   cacheHeadersFor,
   isOriginAllowed,
   isValidWeekParams,
+  parseOptionalWeekQuery,
   parseWeekQuery,
 } from "./policy";
 import { HttpError } from "./errors";
@@ -97,6 +98,30 @@ describe("week validation", () => {
     ]) {
       assert.throws(
         () => parseWeekQuery(q),
+        (err: unknown) => err instanceof HttpError && err.status === 400 && err.code === "INVALID_WEEK",
+        JSON.stringify(q),
+      );
+    }
+  });
+});
+
+describe("parseOptionalWeekQuery", () => {
+  it("no week params (or empty strings) means season scope", () => {
+    assert.equal(parseOptionalWeekQuery({}), null);
+    assert.equal(parseOptionalWeekQuery({ seasonType: "", week: "" }), null);
+  });
+
+  it("a lone week defaults seasonType to 2", () => {
+    assert.deepEqual(parseOptionalWeekQuery({ week: "3" }), { seasonType: 2, week: 3 });
+  });
+
+  it("rejects non-integer and invalid weeks with 400", () => {
+    for (const q of [
+      { seasonType: "2", week: "1.5" },
+      { seasonType: "1", week: "2" },
+    ]) {
+      assert.throws(
+        () => parseOptionalWeekQuery(q),
         (err: unknown) => err instanceof HttpError && err.status === 400 && err.code === "INVALID_WEEK",
         JSON.stringify(q),
       );

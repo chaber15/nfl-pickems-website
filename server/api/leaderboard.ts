@@ -22,6 +22,7 @@ import {
   SEASON_BADGE_WEEK,
 } from "../../shared/badges";
 import { json } from "./http";
+import { parseOptionalWeekQuery } from "./policy";
 
 /** P/L sums are floats; closer than this counts as a tie. */
 const PL_EPS = 1e-9;
@@ -288,13 +289,7 @@ export async function computeLeaderboard(filter?: {
 }
 
 export async function handleLeaderboard(event: HandlerEvent) {
-  const params = event.queryStringParameters ?? {};
-  const seasonType = params.seasonType != null ? Number(params.seasonType) : null;
-  const week = params.week != null ? Number(params.week) : null;
-  const filter =
-    seasonType != null && week != null && Number.isFinite(seasonType) && Number.isFinite(week)
-      ? { seasonType, week }
-      : undefined;
+  const filter = parseOptionalWeekQuery(event.queryStringParameters ?? {}) ?? undefined;
   const entries = await computeLeaderboard(filter);
   return json(200, { entries, scope: filter ? "week" : "overall", ...filter });
 }

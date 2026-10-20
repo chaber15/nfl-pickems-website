@@ -71,3 +71,16 @@ export function parseWeekQuery(params: Record<string, string | undefined>): {
   }
   return { seasonType, week };
 }
+
+/**
+ * Optional week filter: both params absent/empty → null (season scope). Otherwise delegates to
+ * parseWeekQuery, so a lone `week` gets seasonType 2 and a lone `seasonType` gets week 1; invalid → 400.
+ */
+export function parseOptionalWeekQuery(params: Record<string, string | undefined>): {
+  seasonType: number;
+  week: number;
+} | null {
+  const absent = (s: string | undefined) => s === undefined || s === "";
+  if (absent(params.seasonType) && absent(params.week)) return null;
+  return parseWeekQuery(params);
+}

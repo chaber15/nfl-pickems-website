@@ -13,6 +13,7 @@ import {
 } from "../../shared/badges";
 import { badgesForUser } from "../badges";
 import { json, requireUser } from "./http";
+import { parseOptionalWeekQuery } from "./policy";
 
 async function findUserByUsername(username: string) {
   const db = getDb();
@@ -72,8 +73,7 @@ async function loadSeasonGamesAndPicks(
 export async function handleHistory(event: HandlerEvent) {
   const { user: sessionUser } = await requireUser(event);
   const params = event.queryStringParameters ?? {};
-  const seasonType = params.seasonType != null ? Number(params.seasonType) : null;
-  const week = params.week != null ? Number(params.week) : null;
+  const weekFilter = parseOptionalWeekQuery(params) ?? undefined;
   const usernameParam = params.username?.trim();
 
   let targetUser = sessionUser;
@@ -82,11 +82,6 @@ export async function handleHistory(event: HandlerEvent) {
     if (!found || found.isBanned) return json(404, { error: "User not found" });
     targetUser = found;
   }
-
-  const weekFilter =
-    seasonType != null && week != null && Number.isFinite(seasonType) && Number.isFinite(week)
-      ? { seasonType, week }
-      : undefined;
   const { games, picks } = await loadSeasonGamesAndPicks(targetUser.id, weekFilter);
 
   return json(200, {
