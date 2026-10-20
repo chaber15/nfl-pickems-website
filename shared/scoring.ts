@@ -20,6 +20,9 @@ export function parseAmericanOdds(value: string | number | null | undefined): nu
   return Number.isFinite(n) && Math.abs(n) >= 100 ? n : null;
 }
 
+/** The price a graded pick is settled at when its side has no juice posted. */
+const STANDARD_ODDS = -110;
+
 export function unitsDelta(
   pick: PickSide,
   atsResult: AtsResult,
@@ -38,11 +41,12 @@ export function unitsDelta(
         ? oddsAway
         : oddsHome;
 
-  if (odds == null) return 0;
+  // Spread posted but no price on this side: grade at a standard −110 (never a free ★).
+  const price = odds ?? STANDARD_ODDS;
 
   const won = pick === atsResult;
-  if (won) return odds > 0 ? odds / 100 : 1;
-  return odds > 0 ? -1 : -Math.abs(odds / 100);
+  if (won) return price > 0 ? price / 100 : 1;
+  return price > 0 ? -1 : -Math.abs(price / 100);
 }
 
 export function pickCorrectness(

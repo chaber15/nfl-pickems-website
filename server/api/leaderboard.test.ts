@@ -225,3 +225,17 @@ test("computeLeaderboard: only regular-season and playoff weeks are loaded (no p
     fake.reset();
   }
 });
+
+test("buildLeaderboardEntries ↔ computeUserStats: a ★ loss with no juice posted costs a standard 1.10", async () => {
+  const { computeUserStats } = await import("../../shared/statsCompute");
+  const { picksOf } = await import("../../shared/testFixtures");
+  const games = weekGames(1).map((g, i) =>
+    i === 0 ? { ...g, oddsHome: null, atsResult: "underdog" as const } : g,
+  );
+  // Five ★ on the favorite: g0 loses at a missing price, g1–g4 win at −110
+  const picks = starPicks("u", 1, 5);
+  const board = byId(buildLeaderboardEntries([player("u")], games, picks, { weekly: false }));
+  const stats = computeUserStats(games, picksOf(Object.fromEntries(picks.map((p) => [p.gameId, ["favorite", true]]))));
+  assert.equal(r2(board.get("u")!.confidencePl), 2.9);
+  assert.equal(r2(stats.confidencePl), 2.9);
+});

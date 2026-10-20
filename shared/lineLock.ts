@@ -186,12 +186,15 @@ export function resolveLineFields(
   }
 
   // After lock but incomplete: fill gaps from incoming, prefer stored non-nulls once set.
+  // Juice is only borrowed from an incoming line on the same spread + favorite — a price
+  // quoted for a moved line doesn't belong to the line the picks were made on.
   const pair = hasSpreadPair(stored) ? stored : hasSpreadPair(incoming) ? incoming : stored;
+  const samePair = incoming.spread === pair.spread && incoming.favoriteSide === pair.favoriteSide;
   return {
     spread: pair.spread,
     favoriteSide: pair.favoriteSide,
-    oddsAway: stored.oddsAway ?? incoming.oddsAway,
-    oddsHome: stored.oddsHome ?? incoming.oddsHome,
+    oddsAway: stored.oddsAway ?? (samePair ? incoming.oddsAway : null),
+    oddsHome: stored.oddsHome ?? (samePair ? incoming.oddsHome : null),
   };
 }
 

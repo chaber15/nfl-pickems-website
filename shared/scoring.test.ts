@@ -19,6 +19,11 @@ assert.equal(unitsDelta("favorite", "favorite", "home", 150, -110), 1);
 assert.equal(unitsDelta("favorite", "underdog", "home", 150, -110), -1.1);
 assert.equal(unitsDelta("underdog", "underdog", "home", 150, -110), 1.5);
 assert.equal(unitsDelta("underdog", "favorite", "home", 150, -110), -1);
+// No juice on the picked side: graded at a standard −110
+assert.equal(unitsDelta("favorite", "favorite", "home", 150, null), 1);
+assert.equal(unitsDelta("favorite", "underdog", "home", 150, null), -1.1);
+assert.equal(unitsDelta("underdog", "underdog", "away", null, null), 1);
+assert.equal(unitsDelta("underdog", "push", "home", null, null), 0);
 assert.equal(unitsDelta("favorite", "push", "home", 150, -110), 0);
 
 assert.equal(pickCorrectness("favorite", "favorite"), 1);

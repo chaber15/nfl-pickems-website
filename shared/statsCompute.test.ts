@@ -95,3 +95,9 @@ test("computeUserStats: each missed ★ costs a loss at the week's worst price o
   assert.equal(r2(stats.confidenceRoi), r2((-3.7 / 11) * 100)); // 4 ★ placed + 7 missed
   assert.deepEqual(stats.worstWeekConfidence, { week: 3, pl: -5.5, seasonType: 2 });
 });
+
+test("computeUserStats: a ★ loss on a side with no juice posted is graded at −110", () => {
+  const games = [makeGame("g0", { oddsHome: null, atsResult: "underdog" })];
+  const stats = computeUserStats(games, picksOf({ g0: ["favorite", true] }));
+  assert.equal(Math.round(stats.confidencePl * 100) / 100, -5.5); // the loss + 4 missed ★ at 1.10
+});

@@ -40,13 +40,35 @@ test("after lock: complete stored line is frozen, even against nulls or a flip",
   );
 });
 
-test("after lock: incomplete stored line only fills gaps", () => {
+test("after lock: incomplete stored line only fills gaps, with juice from the same line only", () => {
   const partial: LineSnapshot = { spread: 3, favoriteSide: "home", oddsAway: null, oddsHome: -110 };
+  // A moved line's prices don't fill the locked line.
   assert.deepEqual(
     resolveLineFields(partial, { spread: 4, favoriteSide: "away", oddsAway: -105, oddsHome: -115 }, true),
+    partial,
+  );
+  assert.deepEqual(
+    resolveLineFields(partial, { spread: 3, favoriteSide: "home", oddsAway: -105, oddsHome: -115 }, true),
     { spread: 3, favoriteSide: "home", oddsAway: -105, oddsHome: -110 },
   );
   assert.deepEqual(resolveLineFields(partial, empty, true), partial);
+
+  const noJuice: LineSnapshot = { spread: 1.5, favoriteSide: "home", oddsAway: null, oddsHome: null };
+  assert.deepEqual(
+    resolveLineFields(noJuice, { spread: 2.5, favoriteSide: "away", oddsAway: -120, oddsHome: 100 }, true),
+    noJuice,
+  );
+  assert.deepEqual(
+    resolveLineFields(noJuice, { spread: 1.5, favoriteSide: "home", oddsAway: -115, oddsHome: -105 }, true),
+    { spread: 1.5, favoriteSide: "home", oddsAway: -115, oddsHome: -105 },
+  );
+
+  // Nothing stored but a spread-less row: the incoming pair and its own juice are taken.
+  const bare: LineSnapshot = { spread: null, favoriteSide: null, oddsAway: null, oddsHome: null };
+  assert.deepEqual(
+    resolveLineFields(bare, { spread: 3, favoriteSide: "away", oddsAway: -112, oddsHome: -108 }, true),
+    { spread: 3, favoriteSide: "away", oddsAway: -112, oddsHome: -108 },
+  );
 });
 
 test("pick'em: spread 0 without favorite → home nominal favorite", () => {
