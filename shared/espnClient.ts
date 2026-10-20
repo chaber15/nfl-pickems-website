@@ -93,6 +93,11 @@ export interface ScoreboardOptions {
   skipOddsFallback?: (
     events: Array<{ eventId: string; kickoffAt: string }>,
   ) => Promise<Set<string>> | Set<string>;
+  /**
+   * Total budget (ms, measured from the start of the scoreboard request) for odds-fallback
+   * lookups; once spent, remaining events skip the fallback and keep their embedded odds.
+   */
+  oddsDeadlineMs?: number;
 }
 
 /** fetch + JSON with an AbortController timeout covering headers and body. */
@@ -393,12 +398,14 @@ function needsOddsFallback(oddsBlock: EspnOddsBlock | undefined): boolean {
   );
 }
 
-async function buildBoard(
+export async function buildBoard(
   data: EspnScoreboard,
   requestedSeasonType: number,
   requestedWeek: number,
   opts: ScoreboardOptions,
+  startedAt = Date.now(),
 ): Promise<ScoreboardResult> {
+  const oddsDeadlineAt = opts.oddsDeadlineMs != null ? startedAt + opts.oddsDeadlineMs : null;
   const events = (data.events ?? []).filter((e) => e?.id && e.competitions?.[0]);
   const resolvedType = data.season?.type ?? requestedSeasonType;
 
@@ -414,6 +421,7 @@ async function buildBoard(
     const comp = event.competitions![0]!;
     const embedded = comp.odds?.[0];
     if (!withFallback || skip.has(event.id) || !needsOddsFallback(embedded)) return embedded ?? null;
+    if (oddsDeadlineAt != null && Date.now() > oddsDeadlineAt) return embedded ?? null;
     return (await fetchOddsFallback(event.id, comp.id ?? event.id)) ?? embedded ?? null;
   });
 
@@ -440,17 +448,19 @@ export async function fetchScoreboard(
   week = 2,
   opts: ScoreboardOptions = {},
 ): Promise<ScoreboardResult> {
+  const startedAt = Date.now();
   const data = await fetchJson<EspnScoreboard>(
     `${SCOREBOARD_URL}?seasontype=${seasonType}&week=${week}`,
     "ESPN scoreboard",
   );
-  return buildBoard(data, seasonType, week, opts);
+  return buildBoard(data, seasonType, week, opts, startedAt);
 }
 
 /** ESPN's current slate — one scoreboard download (the default endpoint is the current week). */
 export async function fetchCurrentScoreboard(opts: ScoreboardOptions = {}): Promise<ScoreboardResult> {
+  const startedAt = Date.now();
   const data = await fetchJson<EspnScoreboard>(SCOREBOARD_URL, "ESPN scoreboard");
-  return buildBoard(data, data.season?.type ?? 2, data.week?.number ?? 1, opts);
+  return buildBoard(data, data.season?.type ?? 2, data.week?.number ?? 1, opts, startedAt);
 }
 
 /** Detect current NFL week from ESPN calendar (no week params). */

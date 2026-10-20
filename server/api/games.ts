@@ -11,6 +11,9 @@ import { HttpError } from "./errors";
 import { json } from "./http";
 import { parseWeekQuery } from "./policy";
 
+/** Total odds-fallback budget for a request-triggered sync (Netlify functions time out at 10 s). */
+const READ_ODDS_DEADLINE_MS = 5000;
+
 export async function handleGames(event: HandlerEvent) {
   const { seasonType, week } = parseWeekQuery(event.queryStringParameters ?? {});
 
@@ -24,7 +27,7 @@ export async function handleGames(event: HandlerEvent) {
 
     try {
       if (await shouldSyncWeekOnRead(seasonType, week)) {
-        await syncEspnWeek(seasonType, week);
+        await syncEspnWeek(seasonType, week, { readPath: true, oddsDeadlineMs: READ_ODDS_DEADLINE_MS });
         games = await getGamesForWeek(seasonType, week);
       }
     } catch (err) {

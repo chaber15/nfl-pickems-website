@@ -141,3 +141,46 @@ test("mapWithConcurrency keeps order and caps parallelism", async () => {
   assert.equal(peak, 4);
   assert.deepEqual(await mapWithConcurrency([], 4, async (n: number) => n), []);
 });
+
+test("buildBoard: odds fallback honours oddsDeadlineMs (spent → no lookups; in budget → lookups)", async () => {
+  const { buildBoard } = await import("./espnClient.ts");
+  const mkEvent = (id: string) => ({
+    id,
+    date: "2026-10-25T17:00Z",
+    competitions: [
+      {
+        id,
+        date: "2026-10-25T17:00Z",
+        competitors: [
+          { homeAway: "away", team: { displayName: "A", abbreviation: "A" } },
+          { homeAway: "home", team: { displayName: "H", abbreviation: "H" } },
+        ],
+        odds: [{ spread: -3 }], // no juice → needs fallback
+        status: { type: { name: "STATUS_SCHEDULED", state: "pre", completed: false } },
+      },
+    ],
+  });
+  const data = { season: { type: 2, year: 2026 }, week: { number: 8 }, events: [mkEvent("1"), mkEvent("2"), mkEvent("3")] } as unknown as Parameters<typeof buildBoard>[0];
+  const original = globalThis.fetch;
+  let oddsCalls = 0;
+  globalThis.fetch = (async () => {
+    oddsCalls++;
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    // Request started 10 s ago with a 5 s budget → already spent.
+    const late = await buildBoard(data, 2, 8, { oddsDeadlineMs: 5000 }, Date.now() - 10_000);
+    assert.equal(oddsCalls, 0);
+    assert.equal(late.games.length, 3);
+    assert.equal(late.games[0]!.spread, 3); // embedded odds kept
+
+    await buildBoard(data, 2, 8, { oddsDeadlineMs: 5000 }, Date.now());
+    assert.equal(oddsCalls, 3);
+
+    oddsCalls = 0;
+    await buildBoard(data, 2, 8, {}, Date.now() - 10_000); // no deadline → unbounded
+    assert.equal(oddsCalls, 3);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

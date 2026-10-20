@@ -279,6 +279,10 @@ export async function findWeekRow(seasonType: number, weekNumber: number) {
 export type SyncEspnWeekOptions = {
   /** Point site_settings.current_season_id at the synced season (bootstrap / factory reset only). */
   pinActiveSeason?: boolean;
+  /** Request-path sync (must stay under Netlify's limit): no odds lookups once past line lock. */
+  readPath?: boolean;
+  /** Total odds-fallback budget in ms, forwarded to the scoreboard fetch. */
+  oddsDeadlineMs?: number;
 };
 
 export async function syncEspnWeek(seasonType?: number, week?: number, syncOpts: SyncEspnWeekOptions = {}) {
@@ -296,9 +300,12 @@ export async function syncEspnWeek(seasonType?: number, week?: number, syncOpts:
     for (const r of rows) existingByEvent.set(r.espnEventId, r);
   };
   const opts: ScoreboardOptions = {
+    oddsDeadlineMs: syncOpts.oddsDeadlineMs,
     skipOddsFallback: async (events) => {
       await loadExisting(events.map((e) => e.eventId));
       if (!isPastLineLock(computeLineLockAt(events.map((e) => e.kickoffAt)), now)) return new Set();
+      // Lines are frozen after lock; the scheduler's post_lock_fill backfills any gaps.
+      if (syncOpts.readPath) return new Set(events.map((e) => e.eventId));
       return new Set(
         events
           .filter((e) => {
