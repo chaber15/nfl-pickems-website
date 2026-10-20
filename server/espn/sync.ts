@@ -350,6 +350,7 @@ export async function syncEspnWeek(seasonType?: number, week?: number, syncOpts:
   const result = {
     upserted: 0,
     picksSwapped: 0,
+    starsCleared: 0,
     week: board.week,
     seasonType: board.seasonType,
     seasonYear: board.seasonYear,
@@ -411,7 +412,14 @@ export async function syncEspnWeek(seasonType?: number, week?: number, syncOpts:
         updatedAt: now,
       };
 
-      const { swap, upsert } = gameWriteStatements(db, existing, values);
+      const { clearStars, swap, upsert } = gameWriteStatements(db, existing, values);
+      if (clearStars) {
+        statements.push(clearStars);
+        result.starsCleared++;
+        console.warn(
+          `ESPN sync: event ${g.espnEventId} ${g.awayAbbrev}@${g.homeAbbrev} moved week ${existing!.weekId} → ${board.seasonType}/${board.week} (${weekRow.id}); cleared ★ picks`,
+        );
+      }
       if (swap) {
         statements.push(swap);
         result.picksSwapped++;
@@ -443,15 +451,30 @@ export async function syncEspnWeek(seasonType?: number, week?: number, syncOpts:
  */
 export function gameWriteStatements(
   db: ReturnType<typeof getDb>,
-  existing: Pick<GameRow, "id" | "favoriteSide"> | undefined,
+  existing: Pick<GameRow, "id" | "weekId" | "favoriteSide"> | undefined,
   values: typeof schema.games.$inferInsert,
 ) {
   const upsert = db
     .insert(schema.games)
     .values(values)
     .onConflictDoUpdate({ target: schema.games.espnEventId, set: values });
+  // ESPN moved the game to another week: its ★ no longer belongs to the week it was
+  // placed in. Runs before the upsert (which moves week_id) and only while the stored row
+  // is still in the old week, so a repeat sync is a no-op.
+  const clearStars =
+    existing && existing.weekId !== values.weekId
+      ? db
+          .update(schema.picks)
+          .set({ isConfidenceBet: false, updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(schema.picks.gameId, existing.id),
+              sql`exists (select 1 from ${schema.games} where ${schema.games.id} = ${existing.id} and ${schema.games.weekId} = ${existing.weekId})`,
+            ),
+          )
+      : null;
   if (!existing?.favoriteSide || !shouldSwapPicksForFavoriteFlip(existing.favoriteSide, values.favoriteSide)) {
-    return { swap: null, upsert };
+    return { clearStars, swap: null, upsert };
   }
   const swap = db
     .update(schema.picks)
@@ -465,7 +488,7 @@ export function gameWriteStatements(
         sql`exists (select 1 from ${schema.games} where ${schema.games.id} = ${existing.id} and ${schema.games.favoriteSide} = ${existing.favoriteSide})`,
       ),
     );
-  return { swap, upsert };
+  return { clearStars, swap, upsert };
 }
 
 export async function getGamesForWeek(seasonType: number, weekNumber: number): Promise<GameData[]> {

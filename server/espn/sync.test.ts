@@ -163,7 +163,7 @@ describe("gameWriteStatements (favorite flip)", () => {
     const { getDb } = await import("../db");
     const fake = installFakeDb();
     try {
-      const { swap, upsert } = gameWriteStatements(getDb(), { id: "game-db-1", favoriteSide: "home" }, values);
+      const { swap, upsert } = gameWriteStatements(getDb(), { id: "game-db-1", weekId: "week-1", favoriteSide: "home" }, values);
       assert.ok(swap);
       const s = swap.toSQL();
       assert.match(s.sql, /^update "picks" set "pick" = case "picks"\."pick" when 'favorite'/);
@@ -190,9 +190,70 @@ describe("gameWriteStatements (favorite flip)", () => {
     const { getDb } = await import("../db");
     const fake = installFakeDb();
     try {
-      assert.equal(gameWriteStatements(getDb(), { id: "g", favoriteSide: "away" }, values).swap, null);
-      assert.equal(gameWriteStatements(getDb(), { id: "g", favoriteSide: null }, values).swap, null);
+      assert.equal(gameWriteStatements(getDb(), { id: "g", weekId: "week-1", favoriteSide: "away" }, values).swap, null);
+      assert.equal(gameWriteStatements(getDb(), { id: "g", weekId: "week-1", favoriteSide: null }, values).swap, null);
       assert.equal(gameWriteStatements(getDb(), undefined, values).swap, null);
+    } finally {
+      fake.reset();
+    }
+  });
+});
+
+describe("gameWriteStatements (week move clears ★)", () => {
+  const values = {
+    weekId: "week-new",
+    espnEventId: "401",
+    awayTeam: "Away",
+    awayAbbrev: "AWY",
+    homeTeam: "Home",
+    homeAbbrev: "HOM",
+    kickoffAt: new Date("2026-10-25T17:00:00Z"),
+    spread: 3,
+    favoriteSide: "home" as const,
+    oddsAway: -110,
+    oddsHome: -110,
+  };
+
+  it("clears stars before the upsert, guarded on the stored row still being in the old week", async () => {
+    const { installFakeDb } = await import("../testDb");
+    const { getDb } = await import("../db");
+    const fake = installFakeDb();
+    try {
+      const { clearStars, swap, upsert } = gameWriteStatements(
+        getDb(),
+        { id: "game-db-1", weekId: "week-old", favoriteSide: "home" },
+        values,
+      );
+      assert.ok(clearStars);
+      assert.equal(swap, null);
+      const s = clearStars.toSQL();
+      assert.match(s.sql, /^update "picks" set "is_confidence_bet" = \$\d+, "updated_at" = now\(\)/);
+      assert.match(
+        s.sql,
+        /where \("picks"\."game_id" = \$\d+ and exists \(select 1 from "games" where "games"\."id" = \$\d+ and "games"\."week_id" = \$\d+\)\)/,
+      );
+      assert.deepEqual(s.params, [false, "game-db-1", "game-db-1", "week-old"]);
+
+      await getDb().batch([clearStars, upsert]);
+      assert.deepEqual(
+        fake.queries.map((q) => q.sql.split(" ").slice(0, 3).join(" ")),
+        ['update "picks" set', 'insert into "games"'],
+      );
+    } finally {
+      fake.reset();
+    }
+  });
+
+  it("no clear when the week is unchanged or the game is new", async () => {
+    const { installFakeDb } = await import("../testDb");
+    const { getDb } = await import("../db");
+    const fake = installFakeDb();
+    try {
+      assert.equal(
+        gameWriteStatements(getDb(), { id: "g", weekId: "week-new", favoriteSide: "home" }, values).clearStars,
+        null,
+      );
+      assert.equal(gameWriteStatements(getDb(), undefined, values).clearStars, null);
     } finally {
       fake.reset();
     }
