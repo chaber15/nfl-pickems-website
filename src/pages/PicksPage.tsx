@@ -41,6 +41,9 @@ export function PicksPage() {
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const savingRef = useRef(new Set<string>());
+  /** The game whose ★ save is in flight; ★ changes are serialized across all cards. */
+  const starSavingRef = useRef<string | null>(null);
+  const [starSavingId, setStarSavingId] = useState<string | null>(null);
   const crowdFetchedAt = useRef(0);
   const picksReq = useRef(0);
   const crowdReq = useRef(0);
@@ -251,12 +254,20 @@ export function PicksPage() {
     if (!current?.pick) return;
     if (value && confCount >= CONFIDENCE_BETS_PER_WEEK) return;
     if (current.isConfidenceBet === value) return;
+    // One ★ save at a time across all cards, so "un-star A, star B" reaches the server in order.
+    // The other cards' ★ buttons are disabled meanwhile; this guard covers taps before re-render.
+    if (starSavingRef.current) return;
+    starSavingRef.current = gameId;
+    setStarSavingId(gameId);
     void save(
       gameId,
       { ...current, isConfidenceBet: value },
       { gameId, action: "set_confidence", value },
       "Couldn't update your ★ bet. Please try again.",
-    );
+    ).finally(() => {
+      starSavingRef.current = null;
+      setStarSavingId(null);
+    });
   };
 
   const retryAll = async () => {
@@ -347,7 +358,10 @@ export function PicksPage() {
                   userPick={picks[game.id]}
                   onPick={(venue) => handlePick(game.id, venue)}
                   onSetConfidence={(value) => handleConfidence(game.id, value)}
-                  confidenceDisabled={!picks[game.id]?.isConfidenceBet && confCount >= CONFIDENCE_BETS_PER_WEEK}
+                  confidenceDisabled={
+                    (starSavingId != null && starSavingId !== game.id) ||
+                    (!picks[game.id]?.isConfidenceBet && confCount >= CONFIDENCE_BETS_PER_WEEK)
+                  }
                   crowd={crowdLeanForGame(game, players, username)}
                   expandCrowdNames={expandCrowdNames}
                   saving={saving[game.id] ?? false}
