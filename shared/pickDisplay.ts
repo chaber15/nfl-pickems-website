@@ -1,4 +1,5 @@
 import type { FavoriteSide, GameData, PickSide } from "./types";
+import { isPostponed } from "./gameStatus";
 
 export function formatSpread(spread: number, side: PickSide, _favoriteSide: FavoriteSide): string {
   const isFavorite = side === "favorite";
@@ -73,6 +74,7 @@ export function formatKickoff(kickoffAt: string): string {
 }
 
 export function formatResult(game: GameData): string | null {
+  if (isPostponed(game)) return game.statusDetail ?? "Postponed";
   if (!game.atsResult || game.atsResult === "push") {
     if (game.atsResult === "push") return "Push";
     return null;

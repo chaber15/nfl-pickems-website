@@ -7,6 +7,7 @@ import type {
   WeeklyStatRow,
 } from "./types";
 import { abbrevForSide, formatMatchup, formatPick, formatResult } from "./pickDisplay";
+import { isPostponed } from "./gameStatus";
 import { sortGamesLiveFirstThenChronological } from "./gameOrder";
 import {
   computeWinPct,
@@ -31,7 +32,7 @@ export function buildHistoryRows(
       let outcome: HistoryRow["outcome"] = "pending";
       let units = 0;
 
-      if (!up?.pick && locked) {
+      if (!up?.pick && locked && !isPostponed(g)) {
         outcome = "no_pick";
       } else if (up?.pick && isGradedForStandings(g) && g.atsResult && g.spread != null && g.favoriteSide) {
         const c = pickCorrectness(up.pick, g.atsResult);

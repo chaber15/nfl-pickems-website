@@ -62,6 +62,18 @@ test(
   },
 );
 
+test("buildHistoryRows: unpicked postponed game past kickoff stays pending and shows its status detail", () => {
+  const games = [
+    makeGame("pp", { status: "scheduled", statusDetail: "Postponed", kickoffAt: "2026-09-01T00:00:00Z" }),
+    makeGame("np", { status: "scheduled", statusDetail: null, kickoffAt: "2026-09-01T00:00:00Z" }),
+  ];
+  const rows = buildHistoryRows(games, picksOf({}), new Date("2026-10-01T00:00:00Z"));
+  const pp = rows.find((r) => r.gameId === "pp")!;
+  assert.equal(pp.outcome, "pending");
+  assert.equal(pp.resultDisplay, "Postponed");
+  assert.equal(rows.find((r) => r.gameId === "np")!.outcome, "no_pick");
+});
+
 test("computeUserStats: each missed ★ costs a loss at the week's worst price once the week is closed, from the first week with a pick", () => {
   const week = (w: number, n: number, extra: Partial<Parameters<typeof makeGame>[1]> = {}) =>
     Array.from({ length: n }, (_, i) => makeGame(`w${w}g${i}`, { weekNumber: w, ...extra }));

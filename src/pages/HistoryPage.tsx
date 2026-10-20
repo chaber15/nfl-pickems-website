@@ -48,7 +48,8 @@ function pickAccentStyle(row: HistoryRow): CSSProperties | undefined {
 }
 
 function resultText(row: HistoryRow): string {
-  if (row.outcome === "pending" || row.outcome === "no_pick") return outcomeLabel(row);
+  if (row.outcome === "no_pick") return outcomeLabel(row);
+  if (row.outcome === "pending") return row.resultDisplay ?? outcomeLabel(row);
   return row.resultDisplay ?? outcomeLabel(row);
 }
 
