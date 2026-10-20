@@ -60,6 +60,7 @@ function BadgeTrigger({ group, children }: { group: BadgeGroup; children: ReactN
   const [pinned, setPinned] = useState(false);
   const open = hover || pinned;
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     if (!open || !ref.current) {
@@ -73,7 +74,12 @@ function BadgeTrigger({ group, children }: { group: BadgeGroup; children: ReactN
       const maxW = Math.min(288, window.innerWidth - pad * 2);
       let left = r.left + r.width / 2;
       left = Math.min(window.innerWidth - pad - maxW / 2, Math.max(pad + maxW / 2, left));
-      const top = Math.min(window.innerHeight - pad, r.bottom + 6);
+      // Measure the card when it is rendered (after the first placement); assume 120px otherwise.
+      const tipHeight = tipRef.current?.offsetHeight || 120;
+      const top =
+        r.bottom + 6 + tipHeight > window.innerHeight - pad
+          ? Math.max(pad, r.top - 6 - tipHeight)
+          : r.bottom + 6;
       setPos({ top, left });
     };
     place();
@@ -138,6 +144,7 @@ function BadgeTrigger({ group, children }: { group: BadgeGroup; children: ReactN
         pos &&
         createPortal(
           <div
+            ref={tipRef}
             className="pointer-events-none fixed z-[200] w-[min(18rem,calc(100vw-1rem))] -translate-x-1/2"
             style={{ top: pos.top, left: pos.left }}
           >
