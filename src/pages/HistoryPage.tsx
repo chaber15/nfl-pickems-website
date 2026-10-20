@@ -10,6 +10,7 @@ import { teamColor } from "../lib/teamLogos";
 import { toneBorder, toneText } from "../lib/tone";
 import type { ResultTone } from "../lib/gameStatus";
 import { useTabReturn } from "../lib/visibility";
+import { shortWeekLabel } from "@shared/weekUtils";
 
 function outcomeTone(outcome: HistoryRow["outcome"]): ResultTone {
   if (outcome === "win") return "win";
@@ -150,7 +151,7 @@ export function HistoryPage() {
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.gameId} className="border-t border-[var(--border-card)]/60">
-                      <td className="px-4 py-3 font-mono">{row.weekNumber}</td>
+                      <td className="px-4 py-3 font-mono">{seasonType === 2 ? row.weekNumber : shortWeekLabel(seasonType, row.weekNumber)}</td>
                       <td className="px-4 py-3 font-semibold">{row.matchup}</td>
                       <td className="px-4 py-3">
                         {row.outcome === "no_pick" ? (
@@ -189,7 +190,7 @@ export function HistoryPage() {
                   className={`rounded-2xl border-2 bg-[var(--bg-card)] p-4 ${rowBorderClass(row)}`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-xs font-semibold text-[var(--text-muted)]">Week {row.weekNumber}</p>
+                    <p className="text-xs font-semibold text-[var(--text-muted)]">{shortWeekLabel(seasonType, row.weekNumber)}</p>
                     <span className={`text-xs font-bold uppercase tracking-wide ${outcomeClass(row.outcome)}`}>
                       {outcomeLabel(row)}
                     </span>

@@ -8,6 +8,7 @@ import { apiLeaderboard, apiStats, errorMessage } from "../lib/api";
 import { fetchCached, leaderboardCacheKey } from "../lib/cache";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
+import { shortWeekLabel } from "@shared/weekUtils";
 
 function StatCard({ label, value, help }: { label: string; value: string; help: string }) {
   const [open, setOpen] = useState(false);
@@ -299,7 +300,7 @@ export function StatsPage() {
                 label="Best week P/L"
                 value={
                   stats.bestWeekConfidence
-                    ? `W${stats.bestWeekConfidence.week}: ${stats.bestWeekConfidence.pl.toFixed(2)}`
+                    ? `${shortWeekLabel(stats.bestWeekConfidence.seasonType, stats.bestWeekConfidence.week)}: ${stats.bestWeekConfidence.pl.toFixed(2)}`
                     : "-"
                 }
                 help={STAT_HELP.bestWeek}
@@ -308,7 +309,7 @@ export function StatsPage() {
                 label="Worst week P/L"
                 value={
                   stats.worstWeekConfidence
-                    ? `W${stats.worstWeekConfidence.week}: ${stats.worstWeekConfidence.pl.toFixed(2)}`
+                    ? `${shortWeekLabel(stats.worstWeekConfidence.seasonType, stats.worstWeekConfidence.week)}: ${stats.worstWeekConfidence.pl.toFixed(2)}`
                     : "-"
                 }
                 help={STAT_HELP.worstWeek}
@@ -354,7 +355,7 @@ export function StatsPage() {
                     <tbody>
                       {stats.weeklyRows.map((row) => (
                         <tr key={`${row.phase}-${row.weekNumber}`} className="border-t border-[var(--border-card)]/60">
-                          <td className="px-4 py-3 font-mono">{row.weekNumber}</td>
+                          <td className="px-4 py-3 font-mono">{row.seasonType === 2 ? row.weekNumber : shortWeekLabel(row.seasonType, row.weekNumber)}</td>
                           <td className="px-4 py-3 font-mono">
                             {row.picksMade}/{row.totalGames}
                           </td>
@@ -379,7 +380,7 @@ export function StatsPage() {
                       key={`${row.phase}-${row.weekNumber}`}
                       className="rounded-xl bg-[var(--bg-page)] p-4"
                     >
-                      <p className="font-bold">Week {row.weekNumber}</p>
+                      <p className="font-bold">{shortWeekLabel(row.seasonType, row.weekNumber)}</p>
                       <p className="mt-1 font-mono text-sm text-[var(--text-muted)]">
                         {row.picksMade}/{row.totalGames} picks · {row.confidenceBets} bets
                         {row.missedStars > 0

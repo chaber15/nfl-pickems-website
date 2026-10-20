@@ -90,8 +90,8 @@ export interface UserStats {
   hypotheticalPl: number;
   confidenceRoi: number;
   hypotheticalRoi: number;
-  bestWeekConfidence: { week: number; pl: number } | null;
-  worstWeekConfidence: { week: number; pl: number } | null;
+  bestWeekConfidence: { week: number; seasonType: number; pl: number } | null;
+  worstWeekConfidence: { week: number; seasonType: number; pl: number } | null;
   favoritePickRate: number;
   underdogPickRate: number;
   favoriteHitRate: number;
@@ -105,6 +105,7 @@ export interface UserStats {
 
 export interface WeeklyStatRow {
   weekNumber: number;
+  seasonType: number;
   phase: WeekPhase;
   picksMade: number;
   totalGames: number;
