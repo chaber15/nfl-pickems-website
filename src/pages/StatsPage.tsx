@@ -8,7 +8,6 @@ import { apiLeaderboard, apiStats, errorMessage } from "../lib/api";
 import { fetchCached, leaderboardCacheKey } from "../lib/cache";
 import { useAuth } from "../lib/authContext";
 import { useWeek } from "../lib/weekContext";
-import { getVisibleCrowdUsernames } from "../lib/crowdVisibility";
 
 function StatCard({ label, value, help }: { label: string; value: string; help: string }) {
   const [open, setOpen] = useState(false);
@@ -126,14 +125,9 @@ export function StatsPage() {
       try {
         const res = await fetchCached(leaderboardCacheKey(), () => apiLeaderboard(), 5 * 60_000);
         if (cancelled) return;
-        const visible = new Set(getVisibleCrowdUsernames(res.entries.map((e) => e.username)));
         setOtherPlayers(
           res.entries
-            .filter(
-              (e) =>
-                visible.has(e.username) &&
-                (!username || e.username.toLowerCase() !== username.toLowerCase()),
-            )
+            .filter((e) => !username || e.username.toLowerCase() !== username.toLowerCase())
             .map((e) => ({ username: e.username, label: e.displayName || e.username }))
             .sort((a, b) => a.label.localeCompare(b.label)),
         );
