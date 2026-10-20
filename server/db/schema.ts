@@ -25,27 +25,36 @@ export const favoriteSideEnum = pgEnum("favorite_side", ["home", "away"]);
 export const atsResultEnum = pgEnum("ats_result", ["favorite", "underdog", "push"]);
 export const gameStatusEnum = pgEnum("game_status", ["scheduled", "in_progress", "final"]);
 
-export const users = pgTable("users", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  username: text("username").notNull().unique(),
-  /** Shown in UI; login still uses username. */
-  displayName: text("display_name"),
-  isAdmin: boolean("is_admin").notNull().default(false),
-  /** Owner tier (grant/revoke admin, delete players, factory reset). Set only via SQL. */
-  isSuperAdmin: boolean("is_super_admin").notNull().default(false),
-  isBanned: boolean("is_banned").notNull().default(false),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    username: text("username").notNull().unique(),
+    /** Shown in UI; login still uses username. */
+    displayName: text("display_name"),
+    isAdmin: boolean("is_admin").notNull().default(false),
+    /** Owner tier (grant/revoke admin, delete players, factory reset). Set only via SQL. */
+    isSuperAdmin: boolean("is_super_admin").notNull().default(false),
+    isBanned: boolean("is_banned").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Login is case-insensitive, so usernames must be unique case-insensitively too.
+  (t) => [uniqueIndex("users_username_lower_idx").on(sql`lower(${t.username})`)],
+);
 
-export const sessions = pgTable("sessions", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  token: text("token").notNull().unique(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sessions_user_id_idx").on(t.userId)],
+);
 
 export const seasons = pgTable(
   "seasons",
@@ -161,6 +170,26 @@ export const siteSettings = pgTable("site_settings", {
   currentSeasonId: uuid("current_season_id").references(() => seasons.id),
   confidenceBetsPerWeek: integer("confidence_bets_per_week").notNull().default(5),
 });
+
+/**
+ * Failed admin-unlock attempts, one row per user (user_id set) and one per client IP (ip set).
+ * 5 failures inside 15 minutes lock that user / IP out of unlock for 15 minutes.
+ */
+export const adminUnlockAttempts = pgTable(
+  "admin_unlock_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    ip: text("ip"),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    failures: integer("failures").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("admin_unlock_attempts_user_id_idx").on(t.userId),
+    uniqueIndex("admin_unlock_attempts_ip_idx").on(t.ip),
+  ],
+);
 
 export type User = typeof users.$inferSelect;
 export type Game = typeof games.$inferSelect;

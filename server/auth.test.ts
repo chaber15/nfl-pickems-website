@@ -68,3 +68,36 @@ describe("reserved usernames", () => {
     assert.equal(normalizeNewUsername("  Trimmed  "), "Trimmed");
   });
 });
+
+describe("registerOrLogin: same name created concurrently in another casing", () => {
+  it("signs in as the account that won instead of failing", async () => {
+    const { installFakeDb } = await import("./testDb");
+    const { registerOrLogin } = await import("./auth");
+    let userSelects = 0;
+    const dad = {
+      id: "user-dad",
+      username: "Dad",
+      display_name: "Dad",
+      is_admin: false,
+      is_super_admin: false,
+      is_banned: false,
+      created_at: new Date().toISOString(),
+    };
+    const fake = installFakeDb(({ sql }) => {
+      if (/^select .* from "users" where lower/s.test(sql)) return userSelects++ === 0 ? [] : [dad];
+      if (/from "site_settings"/.test(sql)) return [{ id: 1, registration_open: true }];
+      if (/^insert into "users"/.test(sql)) return []; // ON CONFLICT DO NOTHING: "Dad" already exists
+      if (/^insert into "sessions"/.test(sql)) return [{ token: "t" }];
+      return [];
+    });
+    try {
+      const res = await registerOrLogin("dad", { create: true });
+      assert.equal(res.created, false);
+      assert.equal(res.user.id, "user-dad");
+      assert.equal(typeof res.token, "string");
+      assert.ok(fake.queries.some((q) => /^insert into "sessions"/.test(q.sql)));
+    } finally {
+      fake.reset();
+    }
+  });
+});

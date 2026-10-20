@@ -9,8 +9,10 @@ import {
   constantTimeEqual,
   evaluateUnlock,
   getTierPin,
+  recordUnlockFailure,
   resolveAdminTier,
   signAdminToken,
+  unlockLockedUntil,
   verifyAdminCookie,
   type AdminAction,
   type AdminTier,
@@ -236,5 +238,39 @@ describe("admin permission matrix", () => {
       assert.equal(code(() => assertAdminPermission(a, actor("super"), self, {})), "SELF_ACTION", a);
     }
     assert.equal(code(() => assertAdminPermission("set_display_name", actor("super"), self, {})), null);
+  });
+});
+
+describe("unlock lockout", () => {
+  const t0 = new Date("2026-10-20T12:00:00Z");
+  const at = (min: number) => new Date(t0.getTime() + min * 60_000);
+
+  it("5 failures inside 15 min lock for 15 min; the 4th doesn't", () => {
+    let a = null as ReturnType<typeof recordUnlockFailure> | null;
+    for (let i = 0; i < 4; i++) a = recordUnlockFailure(a, at(i));
+    assert.equal(a!.failures, 4);
+    assert.equal(a!.lockedUntil, null);
+    assert.equal(unlockLockedUntil([a], at(4)), null);
+    a = recordUnlockFailure(a, at(4));
+    assert.deepEqual(a.lockedUntil, at(19));
+    assert.deepEqual(unlockLockedUntil([a], at(5)), at(19));
+    assert.equal(unlockLockedUntil([a], at(19)), null);
+  });
+
+  it("an old window or a finished lockout starts counting again from 1", () => {
+    const old = { windowStart: at(0), failures: 4, lockedUntil: null };
+    assert.equal(recordUnlockFailure(old, at(15)).failures, 1);
+    assert.equal(recordUnlockFailure(old, at(14)).failures, 5);
+    const lockedOut = { windowStart: at(0), failures: 5, lockedUntil: at(15) };
+    assert.deepEqual(recordUnlockFailure(lockedOut, at(16)), { windowStart: at(16), failures: 1, lockedUntil: null });
+  });
+
+  it("either the user row or the IP row can lock; the later lockout wins", () => {
+    const user = { windowStart: at(0), failures: 5, lockedUntil: at(10) };
+    const ip = { windowStart: at(0), failures: 5, lockedUntil: at(12) };
+    assert.deepEqual(unlockLockedUntil([user, null], at(1)), at(10));
+    assert.deepEqual(unlockLockedUntil([user, ip], at(1)), at(12));
+    assert.deepEqual(unlockLockedUntil([null, ip], at(11)), at(12));
+    assert.equal(unlockLockedUntil([undefined, null], at(1)), null);
   });
 });

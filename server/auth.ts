@@ -110,16 +110,26 @@ export async function getUserFromSession(token: string | undefined) {
  * Unknown user → 404 USER_NOT_FOUND unless `create` is true, in which case a
  * new account is made (if registration is open and the name isn't reserved).
  */
+function isUniqueViolation(err: unknown): boolean {
+  const e = err as { code?: string; cause?: { code?: string } } | null;
+  return e?.code === "23505" || e?.cause?.code === "23505";
+}
+
+async function findUserByLoginKey(key: string) {
+  const [row] = await getDb()
+    .select()
+    .from(schema.users)
+    .where(sql`lower(${schema.users.username}) = ${key}`)
+    .limit(1);
+  return row ?? null;
+}
+
 export async function registerOrLogin(username: unknown, options: { create?: boolean } = {}) {
   const db = getDb();
   const loginName = validUsername(username, false);
   const key = loginName.toLowerCase();
 
-  const [existing] = await db
-    .select()
-    .from(schema.users)
-    .where(sql`lower(${schema.users.username}) = ${key}`)
-    .limit(1);
+  const existing = await findUserByLoginKey(key);
 
   if (existing) {
     if (existing.isBanned) throw new HttpError(403, "This account is banned", "BANNED");
@@ -152,7 +162,15 @@ export async function registerOrLogin(username: unknown, options: { create?: boo
     .values({ username: newName, displayName: newName })
     .onConflictDoNothing()
     .returning();
-  if (!user) throw new HttpError(409, "Username already taken", "USERNAME_TAKEN");
+  if (!user) {
+    // Someone created the same name (in any casing) a moment ago — e.g. "Dad" and "dad" signing
+    // up together. users_username_lower_idx kept it to one account; sign in as that one.
+    const winner = await findUserByLoginKey(key);
+    if (!winner) throw new HttpError(409, "Username already taken", "USERNAME_TAKEN");
+    if (winner.isBanned) throw new HttpError(403, "This account is banned", "BANNED");
+    const token = await createSession(winner.id);
+    return { user: winner, token, created: false };
+  }
 
   const token = await createSession(user.id);
   return { user, token, created: true };
@@ -182,14 +200,21 @@ export async function changeUsername(userId: string, nextUsername: unknown) {
   const displayWasDefault =
     !prevDisplay || prevDisplay.toLowerCase() === current.username.toLowerCase();
 
-  const [updated] = await db
-    .update(schema.users)
-    .set({
-      username: loginName,
-      ...(displayWasDefault ? { displayName: loginName } : {}),
-    })
-    .where(eq(schema.users.id, userId))
-    .returning();
+  let updated: typeof current | undefined;
+  try {
+    [updated] = await db
+      .update(schema.users)
+      .set({
+        username: loginName,
+        ...(displayWasDefault ? { displayName: loginName } : {}),
+      })
+      .where(eq(schema.users.id, userId))
+      .returning();
+  } catch (err) {
+    // Lost a race for the name to another account (case-insensitive unique index).
+    if (isUniqueViolation(err)) throw new HttpError(409, "Username already taken", "USERNAME_TAKEN");
+    throw err;
+  }
 
   return updated ?? current;
 }

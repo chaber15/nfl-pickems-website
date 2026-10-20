@@ -11,6 +11,7 @@ import {
   evaluateUnlock,
   isAdminAction,
   resolveAdminTier,
+  unlockLockedUntil,
   type AdminAction,
   type AdminTier,
 } from "../adminAuth";
@@ -18,7 +19,8 @@ import { normalizeDisplayName, publicDisplayName } from "../../shared/userDispla
 import { BADGE_CATALOG, isDisplayableBadgeAward } from "../../shared/badges";
 import { allBadgeRows } from "../badges";
 import { HttpError } from "./errors";
-import { getCookies, isSecure, isUuid, json, parseJsonBody, requireUser } from "./http";
+import { clearUnlockAttempts, loadUnlockAttempts, saveUnlockFailure } from "../unlockAttempts";
+import { clientIp, getCookies, isSecure, isUuid, json, parseJsonBody, requireUser } from "./http";
 import { isValidWeekParams } from "./policy";
 
 const BAD_PIN_DELAY_MS = 1000;
@@ -56,11 +58,29 @@ export async function handleAdmin(path: string, event: HandlerEvent) {
 
   if (path === "admin/unlock" && event.httpMethod === "POST") {
     const body = parseJsonBody(event);
+    const ip = clientIp(event);
+    const now = new Date();
+    // Too many wrong passphrases for this account or this IP: refuse before checking (no delay).
+    const attempts = await loadUnlockAttempts(user.id, ip);
+    const lockedUntil = unlockLockedUntil([attempts.user, attempts.ip], now);
+    if (lockedUntil) {
+      const seconds = Math.ceil((lockedUntil.getTime() - now.getTime()) / 1000);
+      const minutes = Math.max(1, Math.ceil(seconds / 60));
+      return json(
+        429,
+        { error: `Too many wrong passphrases — try again in ${minutes} minute${minutes === 1 ? "" : "s"}`, code: "UNLOCK_LOCKED" },
+        { "Retry-After": String(seconds) },
+      );
+    }
     const result = evaluateUnlock(user, body.pin);
     if (!result.ok) {
-      if (result.code === "BAD_PIN") await adminTiming.sleep(BAD_PIN_DELAY_MS);
+      if (result.code === "BAD_PIN") {
+        await saveUnlockFailure(user.id, ip, attempts, now);
+        await adminTiming.sleep(BAD_PIN_DELAY_MS);
+      }
       throw new HttpError(result.status, result.error, result.code);
     }
+    if (attempts.user || attempts.ip) await clearUnlockAttempts(user.id, ip);
     return json(
       200,
       { ok: true, tier: result.tier },

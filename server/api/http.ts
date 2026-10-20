@@ -47,6 +47,15 @@ export function getHeader(
   return undefined;
 }
 
+/** Client IP as Netlify reports it (falls back to the first X-Forwarded-For hop); null if unknown. */
+export function clientIp(event: HandlerEvent): string | null {
+  const raw =
+    getHeader(event.headers, "x-nf-client-connection-ip") ??
+    getHeader(event.headers, "x-forwarded-for")?.split(",")[0];
+  const ip = raw?.trim();
+  return ip ? ip.slice(0, 64) : null;
+}
+
 export function isSecure(event: HandlerEvent) {
   return getHeader(event.headers, "x-forwarded-proto") === "https";
 }

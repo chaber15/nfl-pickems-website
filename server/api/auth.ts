@@ -8,9 +8,9 @@ import {
   logout,
   toPublicUser,
 } from "../auth";
-import { clearAdminCookies } from "../adminAuth";
+import { clearAdminCookies, resolveAdminTier } from "../adminAuth";
 import { HttpError } from "./errors";
-import { json, isSecure, getSessionToken, parseJsonBody } from "./http";
+import { json, isSecure, getCookies, getSessionToken, parseJsonBody } from "./http";
 
 export async function handleAuth(path: string, event: HandlerEvent) {
   const secure = isSecure(event);
@@ -43,6 +43,11 @@ export async function handleAuth(path: string, event: HandlerEvent) {
   if (path === "auth/username" && event.httpMethod === "POST") {
     const user = await getUserFromSession(token);
     if (!user) throw new HttpError(401, "Unauthorized", "UNAUTHORIZED");
+    // Login is username-only, so anyone who knows an admin's name could otherwise rename the
+    // account out from under them. Renaming an admin needs that browser's Admin unlock.
+    if (user.isAdmin && !resolveAdminTier(user, token, getCookies(event))) {
+      throw new HttpError(403, "Unlock Admin (with the admin passphrase) to change an admin's username", "ADMIN_LOCKED");
+    }
     const body = parseJsonBody(event);
     const updated = await changeUsername(user.id, body.username);
     return json(200, { user: toPublicUser(updated) });

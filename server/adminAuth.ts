@@ -193,3 +193,36 @@ export function assertAdminPermission(
     }
   }
 }
+
+/* ───────────── Unlock lockout (admin_unlock_attempts) ───────────── */
+
+/** Wrong passphrases allowed per user, and per client IP, inside one window. */
+export const UNLOCK_MAX_FAILURES = 5;
+/** Failure-counting window, and how long a lockout lasts. */
+export const UNLOCK_WINDOW_MS = 15 * 60 * 1000;
+
+export type UnlockAttempt = { windowStart: Date; failures: number; lockedUntil: Date | null };
+
+/** When unlock opens again for these attempt rows (user and/or IP), or null if not locked now. */
+export function unlockLockedUntil(attempts: Array<UnlockAttempt | null | undefined>, now: Date): Date | null {
+  let until: Date | null = null;
+  for (const a of attempts) {
+    if (a?.lockedUntil && a.lockedUntil > now && (!until || a.lockedUntil > until)) until = a.lockedUntil;
+  }
+  return until;
+}
+
+/** The attempt row after one more wrong passphrase: a fresh window once the last one (or its lockout) is over. */
+export function recordUnlockFailure(prev: UnlockAttempt | null | undefined, now: Date): UnlockAttempt {
+  const expired =
+    !prev ||
+    (prev.lockedUntil != null && prev.lockedUntil <= now) ||
+    now.getTime() - prev.windowStart.getTime() >= UNLOCK_WINDOW_MS;
+  const base = expired ? { windowStart: now, failures: 0 } : prev;
+  const failures = base.failures + 1;
+  return {
+    windowStart: base.windowStart,
+    failures,
+    lockedUntil: failures >= UNLOCK_MAX_FAILURES ? new Date(now.getTime() + UNLOCK_WINDOW_MS) : null,
+  };
+}

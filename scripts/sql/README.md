@@ -30,3 +30,9 @@ Dev (Neon dev branch, reset from prod on 2026-10-19, so ≈ prod), run 2026-10-1
 | Q4 duplicate lower(username) | 0 (no rows) |
 
 Prod: not run (for Caleb to run with the same file).
+
+## Batch 4 (`b4-prod.sql`, `b4-rollback.sql`)
+
+`b4-prod.sql` must run on **prod before deploying Batch 4** (Neon SQL editor, paste the whole file). It is additive (one table, four indexes), safe to re-run, and stops with an error if two usernames differ only by case. Its last two queries should show 4 index names and `0` attempt rows. `b4-rollback.sql` drops only what it created.
+
+Dev (2026-10-19): applied with `psql -v ON_ERROR_STOP=1 --single-transaction -f scripts/sql/b4-prod.sql` — 4 indexes, 0 rows, no duplicate usernames.
