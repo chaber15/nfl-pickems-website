@@ -148,7 +148,7 @@ export function GameCard({
             venue="away"
             game={game}
             selected={awayPick != null && pick === awayPick}
-            disabled={!hasLine || awayPick == null}
+            disabled={!hasLine || awayPick == null || postponed}
             busy={saving}
             onClick={() => onPickVenue("away")}
           />
@@ -156,7 +156,7 @@ export function GameCard({
             venue="home"
             game={game}
             selected={homePick != null && pick === homePick}
-            disabled={!hasLine || homePick == null}
+            disabled={!hasLine || homePick == null || postponed}
             busy={saving}
             onClick={() => onPickVenue("home")}
           />
@@ -181,7 +181,7 @@ export function GameCard({
       {!locked && hasLine && !isPlayoff && (
         <button
           type="button"
-          disabled={!pick || confidenceDisabled || saving}
+          disabled={!pick || confidenceDisabled || saving || (postponed && !isConfidence)}
           aria-pressed={isConfidence}
           onClick={() => onSetConfidence(!isConfidence)}
           className={`mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border-2 px-4 text-sm font-bold transition-colors ${
@@ -195,7 +195,7 @@ export function GameCard({
         </button>
       )}
 
-      {!pick && !locked && hasLine && (
+      {!pick && !locked && hasLine && !postponed && (
         <p className="mt-3 text-xs font-medium text-[var(--accent-red)]">No pick yet - counts as wrong at kickoff</p>
       )}
     </article>
