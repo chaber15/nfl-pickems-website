@@ -6,7 +6,7 @@ import { shortWeekLabel } from "@shared/weekUtils";
 import { apiLeaderboard, errorMessage } from "../lib/api";
 import { fetchCached, leaderboardCacheKey } from "../lib/cache";
 import { useWeek, useWeekSearch } from "../lib/weekContext";
-import { isPlIdle, sortBoard, type BoardMode } from "../lib/leaderboardSort";
+import { boardRanks, isPlIdle, sortBoard, type BoardMode } from "../lib/leaderboardSort";
 import { ErrorState } from "./ErrorState";
 import { PL_HELP } from "./HelpTip";
 
@@ -53,6 +53,8 @@ export function MiniWeeklyLeaderboard() {
   }, [load]);
 
   const top = useMemo(() => sortBoard(entries, sortBy).slice(0, TOP_N), [entries, sortBy]);
+  // Ranks depend only on earlier rows, so ranking the sliced top list matches the full board.
+  const topRanks = useMemo(() => boardRanks(top, sortBy), [top, sortBy]);
 
   const sortBtn = (mode: SortMode, label: string) => (
     <button
@@ -100,6 +102,7 @@ export function MiniWeeklyLeaderboard() {
             {top.map((e, i) => {
               // No ★ this week: greyed out at the bottom of the P/L order.
               const idle = sortBy === "pl" && isPlIdle(e);
+              const rank = topRanks[i];
               return (
                 <li
                   key={e.userId}
@@ -107,10 +110,10 @@ export function MiniWeeklyLeaderboard() {
                     idle ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"
                   }`}
                 >
-                  <span className="w-4 shrink-0 font-mono text-[var(--text-muted)]">{idle ? "—" : i + 1}</span>
+                  <span className="w-4 shrink-0 font-mono text-[var(--text-muted)]">{idle ? "—" : rank}</span>
                   <span className="min-w-0 flex-1 truncate">
                     {e.displayName || e.username}
-                    {i === 0 && !idle && (
+                    {rank === 1 && !idle && (
                       <Crown size={12} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
                     )}
                   </span>

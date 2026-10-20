@@ -10,7 +10,7 @@ import { HelpTip, PL_HELP } from "../components/HelpTip";
 import { apiLeaderboard, errorMessage } from "../lib/api";
 import { fetchCached, leaderboardCacheKey } from "../lib/cache";
 import { useWeek } from "../lib/weekContext";
-import { isPlIdle, sortBoard, weekStarsTag } from "../lib/leaderboardSort";
+import { boardRanks, isPlIdle, sortBoard, weekStarsTag } from "../lib/leaderboardSort";
 import {
   isCrowdNameVisible,
   markTutorialDone,
@@ -84,6 +84,8 @@ export function LeaderboardPage() {
     void visibilityTick;
     return sortBoard(entries, mode);
   }, [entries, mode, visibilityTick]);
+
+  const ranks = useMemo(() => boardRanks(sorted, mode), [sorted, mode]);
 
   /** Greyed-out row on the ★ P/L board (never in win % mode). */
   const idleRow = (entry: LeaderboardEntry) => mode === "pl" && isPlIdle(entry);
@@ -265,11 +267,12 @@ export function LeaderboardPage() {
                     const rowBadges = badgesForEntry(entry);
                     const idle = idleRow(entry);
                     const tag = plTag(entry);
+                    const rank = ranks[i];
                     return (
                       <tr
                         key={entry.userId}
                         className={`whitespace-nowrap border-t border-[var(--border-card)]/60 ${
-                          idle ? "text-[var(--text-muted)]" : i === 0 ? "bg-[var(--accent-gold)]/10" : ""
+                          idle ? "text-[var(--text-muted)]" : rank === 1 ? "bg-[var(--accent-gold)]/10" : ""
                         }`}
                       >
                         <td className="px-4 py-3 text-center">
@@ -282,8 +285,8 @@ export function LeaderboardPage() {
                           />
                         </td>
                         <td className="px-4 py-3 font-mono">
-                          {idle ? "—" : i + 1}
-                          {i === 0 && !idle && (
+                          {idle ? "—" : rank}
+                          {rank === 1 && !idle && (
                             <Crown size={16} weight="fill" className="ml-1 inline text-[var(--accent-gold)]" />
                           )}
                         </td>
@@ -320,13 +323,14 @@ export function LeaderboardPage() {
                 const rowBadges = badgesForEntry(entry);
                 const idle = idleRow(entry);
                 const tag = plTag(entry);
+                const rank = ranks[i];
                 return (
                   <article
                     key={entry.userId}
                     className={`overflow-visible rounded-2xl border-2 p-4 ${
                       idle
                         ? "border-dashed border-[var(--border-card)] bg-[var(--bg-card)] text-[var(--text-muted)]"
-                        : i === 0
+                        : rank === 1
                           ? "border-[var(--accent-gold)] bg-[var(--accent-gold)]/10"
                           : "border-[var(--border-card)] bg-[var(--bg-card)]"
                     }`}
@@ -340,9 +344,9 @@ export function LeaderboardPage() {
                           onChange={(e) => toggleLean(entry.username, e.target.checked)}
                           aria-label={`Show ${entry.username} on pick lean`}
                         />
-                        <span className="font-mono text-lg font-bold">{idle ? "—" : `#${i + 1}`}</span>
+                        <span className="font-mono text-lg font-bold">{idle ? "—" : `#${rank}`}</span>
                       </label>
-                      {i === 0 && !idle && <Crown size={20} weight="fill" className="text-[var(--accent-gold)]" />}
+                      {rank === 1 && !idle &&<Crown size={20} weight="fill" className="text-[var(--accent-gold)]" />}
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Link
