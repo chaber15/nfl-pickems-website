@@ -2,6 +2,7 @@ import type { HandlerEvent } from "@netlify/functions";
 import { eq, and, asc, sql } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { dbGameToGameData, findWeekRow, getGamesForWeek } from "../espn/sync";
+import { isPostponed } from "../../shared/gameStatus";
 import { isPlayoffPhase } from "../../shared/scoring";
 import { CONFIDENCE_BETS_PER_WEEK } from "../../shared/types";
 import { publicDisplayName } from "../../shared/userDisplay";
@@ -65,6 +66,8 @@ export async function handlePicks(event: HandlerEvent) {
   if (new Date() >= new Date(game.kickoffAt)) {
     throw new HttpError(400, "Game locked at kickoff", "GAME_LOCKED");
   }
+  // A postponed game can't take a new side or ★ (a guaranteed 0-unit ★); clearing a ★ still works.
+  const postponed = isPostponed(game);
 
   if (confidenceTarget !== null) {
     const [existing] = await db
@@ -82,6 +85,7 @@ export async function handlePicks(event: HandlerEvent) {
     const next = confidenceTarget === "toggle" ? !existing.isConfidenceBet : confidenceTarget;
     // Idempotent: already in the requested state.
     if (next === existing.isConfidenceBet) return json(200, { pick: existing });
+    if (next && postponed) throw new HttpError(400, "Game is postponed", "GAME_POSTPONED");
 
     if (!next) {
       const [updated] = await db
@@ -92,24 +96,29 @@ export async function handlePicks(event: HandlerEvent) {
       return json(200, { pick: updated ?? existing });
     }
 
-    // Cap check and update in one statement so two quick taps can't both slip under the cap.
-    const [updated] = await db
-      .update(schema.picks)
-      .set({ isConfidenceBet: true, updatedAt: new Date() })
-      .where(
-        and(
-          eq(schema.picks.id, existing.id),
-          sql`(
-            select count(*) from ${schema.picks} p
-            inner join ${schema.games} g on g.id = p.game_id
-            where p.user_id = ${user.id}
-              and g.week_id = ${row.week.id}
-              and p.is_confidence_bet
-              and p.id <> ${existing.id}
-          ) < ${CONFIDENCE_BETS_PER_WEEK}`,
-        ),
-      )
-      .returning();
+    // Cap check and update in one statement, behind a per-user advisory lock held for the
+    // batch's transaction: ★ changes for one user serialize, so two requests for different
+    // games can't both count 4 and both land a 5th.
+    const [, [updated]] = await db.batch([
+      db.execute(sql`select pg_advisory_xact_lock(hashtext('pickems:stars'), hashtext(${user.id}::text))`),
+      db
+        .update(schema.picks)
+        .set({ isConfidenceBet: true, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.picks.id, existing.id),
+            sql`(
+              select count(*) from ${schema.picks} p
+              inner join ${schema.games} g on g.id = p.game_id
+              where p.user_id = ${user.id}
+                and g.week_id = ${row.week.id}
+                and p.is_confidence_bet
+                and p.id <> ${existing.id}
+            ) < ${CONFIDENCE_BETS_PER_WEEK}`,
+          ),
+        )
+        .returning(),
+    ]);
     if (!updated) {
       throw new HttpError(
         400,
@@ -120,6 +129,7 @@ export async function handlePicks(event: HandlerEvent) {
     return json(200, { pick: updated });
   }
 
+  if (postponed) throw new HttpError(400, "Game is postponed", "GAME_POSTPONED");
   if (game.spread == null || !game.favoriteSide) {
     throw new HttpError(400, "Line not posted yet", "NO_LINE");
   }

@@ -8,17 +8,21 @@ import * as schema from "./db/schema";
 import { setDbForTests } from "./db";
 
 export type RecordedQuery = { sql: string; params: unknown[]; batch: number | null };
-/** Rows keyed by column name (converted to arrays for Drizzle), or raw arrays. */
+/**
+ * Rows keyed by column name — `"table.column"` wins over bare `"column"`, for joins where
+ * both tables have e.g. `id` — converted to arrays for Drizzle; or raw arrays.
+ */
 type Row = Record<string, unknown> | unknown[];
 export type Responder = (q: { sql: string; params: unknown[] }) => Row[] | undefined;
 
-/** Column names of the top-level `select … from` or `returning …` list, in order. */
-function selectedColumns(sql: string): string[] {
+/** `[table, column]` of the top-level `select … from` or `returning …` list, in order. */
+function selectedColumns(sql: string): Array<[string | null, string]> {
   const m = /\breturning\s+(.+)$/is.exec(sql) ?? /^\s*select\s+(?:distinct\s+)?(.+?)\s+from\s/is.exec(sql);
   if (!m) return [];
   return m[1].split(/,\s*/).map((item) => {
-    const ids = item.match(/"([^"]+)"/g);
-    return ids ? ids[ids.length - 1].slice(1, -1) : item.trim();
+    const ids = (item.match(/"([^"]+)"/g) ?? []).map((id) => id.slice(1, -1));
+    if (ids.length === 0) return [null, item.trim()];
+    return [ids.length > 1 ? ids[ids.length - 2] : null, ids[ids.length - 1]];
   });
 }
 
@@ -30,9 +34,10 @@ export function installFakeDb(respond: Responder = () => []) {
     queries.push({ sql, params, batch: null });
     const rows = respond({ sql, params }) ?? [];
     const cols = selectedColumns(sql);
-    const out = rows.map((r) =>
-      Array.isArray(r) || !opts.arrayMode ? r : cols.map((c) => (r as Record<string, unknown>)[c] ?? null),
-    );
+    const out = rows.map((r) => {
+      if (Array.isArray(r) || !opts.arrayMode) return r;
+      return cols.map(([table, col]) => (table && `${table}.${col}` in r ? r[`${table}.${col}`] : (r[col] ?? null)));
+    });
     return Promise.resolve({ rows: out, fields: [], rowCount: out.length, command: "" });
   };
   const client = Object.assign(query, {

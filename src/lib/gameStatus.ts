@@ -2,15 +2,11 @@ import type { AtsResult, FavoriteSide, GameData, PickSide } from "@shared/types"
 import { computeAtsResult } from "@shared/scoring";
 import { computeLineLockAt, hasCompleteLine, isPastLineLock, snapshotLine } from "@shared/lineLock";
 
+export { isPostponed } from "@shared/gameStatus";
+
 export type Venue = FavoriteSide;
 export type ResultTone = "win" | "loss" | "push" | null;
 export type GradeLabel = "Push" | "Correct" | "Wrong";
-
-/** Postponed / canceled / suspended games stay "scheduled" with an explanatory statusDetail. */
-export function isPostponed(game: Pick<GameData, "status" | "statusDetail">): boolean {
-  if (game.status !== "scheduled") return false;
-  return /postpon|cancel|suspend/i.test(game.statusDetail ?? "");
-}
 
 /** favorite/underdog → the team slot (away/home) it refers to. */
 export function venueForPick(
