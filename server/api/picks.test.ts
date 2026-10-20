@@ -2,7 +2,8 @@ import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { HandlerEvent } from "@netlify/functions";
 import { installFakeDb } from "../testDb";
-import { handlePicks } from "./picks";
+import { handlePicks, handleWeekPicks } from "./picks";
+import { invalidateActiveSeasonCache } from "../espn/sync";
 import { HttpError } from "./errors";
 
 const FUTURE = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
@@ -167,5 +168,32 @@ describe("handlePicks: venue protocol", () => {
     fake = setup();
     await rejectsWith(handlePicks(post({ venue: "left" })), "INVALID_REQUEST");
     assert.ok(!fake.queries.some((q) => /from "games"/.test(q.sql)));
+  });
+});
+
+describe("handleWeekPicks", () => {
+  it("returns players/seasonType/week with no games and runs no games-slate query", async () => {
+    invalidateActiveSeasonCache();
+    fake = installFakeDb(({ sql }) => {
+      if (/from "sessions"/.test(sql)) return [USER];
+      if (/from "site_settings"/.test(sql)) return [{ current_season_id: "season-1" }];
+      if (/from "users"/.test(sql)) {
+        return [{ id: "user-1", username: "cal", display_name: "Cal", is_banned: false }];
+      }
+      return [];
+    });
+    const res = await handleWeekPicks({
+      httpMethod: "GET",
+      headers: { cookie: "pickems_session=tok" },
+      queryStringParameters: { seasonType: "2", week: "7" },
+    } as unknown as HandlerEvent);
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.equal(body.seasonType, 2);
+    assert.equal(body.week, 7);
+    assert.equal(body.players.length, 1);
+    assert.ok(!("games" in body));
+    assert.ok(!fake.queries.some((q) => /from "games"/.test(q.sql) && !/"picks"/.test(q.sql)));
+    invalidateActiveSeasonCache();
   });
 });

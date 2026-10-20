@@ -1,7 +1,7 @@
 import type { HandlerEvent } from "@netlify/functions";
 import { eq, and, asc, sql } from "drizzle-orm";
 import { getDb, schema } from "../db";
-import { dbGameToGameData, findWeekRow, getGamesForWeek } from "../espn/sync";
+import { dbGameToGameData, findWeekRow } from "../espn/sync";
 import { isPostponed } from "../../shared/gameStatus";
 import { isPlayoffPhase } from "../../shared/scoring";
 import { CONFIDENCE_BETS_PER_WEEK, type FavoriteSide } from "../../shared/types";
@@ -188,8 +188,6 @@ export async function handleWeekPicks(event: HandlerEvent) {
   const { seasonType, week } = parseWeekQuery(event.queryStringParameters ?? {});
   const db = getDb();
 
-  const games = await getGamesForWeek(seasonType, week);
-
   const users = await db
     .select({
       id: schema.users.id,
@@ -233,5 +231,5 @@ export async function handleWeekPicks(event: HandlerEvent) {
     picks: byUser.get(u.id) ?? {},
   }));
 
-  return json(200, { games, players, seasonType, week });
+  return json(200, { players, seasonType, week });
 }

@@ -22,7 +22,9 @@ import { pickSideForVenue, weekLineLock, type Venue } from "../lib/gameStatus";
 import { usePageVisible, useTabReturn } from "../lib/visibility";
 
 /** Crowd lean refresh while picks can still change (tab visible only). */
-const CROWD_POLL_MS = 60_000;
+const CROWD_POLL_FAST_MS = 60_000; // some game kicks off within the next hour
+const CROWD_POLL_SLOW_MS = 5 * 60_000;
+const CROWD_FAST_WINDOW_MS = 60 * 60_000;
 
 type PicksState = { key: string | null; picks: Record<string, UserPick>; error: string | null };
 type CrowdState = { key: string | null; players: WeekComparePlayer[]; error: string | null };
@@ -39,6 +41,7 @@ export function PicksPage() {
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const savingRef = useRef(new Set<string>());
+  const crowdFetchedAt = useRef(0);
   const picksReq = useRef(0);
   const crowdReq = useRef(0);
 
@@ -59,6 +62,7 @@ export function PicksPage() {
   const loadCrowd = useCallback(async () => {
     if (!ready) return;
     const id = ++crowdReq.current;
+    crowdFetchedAt.current = Date.now();
     const k = weekKeyOf(seasonType, week);
     try {
       const res = await apiWeekPicks(seasonType, week);
@@ -96,9 +100,29 @@ export function PicksPage() {
 
   useEffect(() => {
     if (!contentReady || allLocked || games.length === 0 || !visible) return;
-    const id = window.setInterval(() => void loadCrowd(), CROWD_POLL_MS);
-    return () => window.clearInterval(id);
-  }, [contentReady, allLocked, games.length, visible, loadCrowd]);
+    // One self-rescheduling timer instead of a fixed interval: each wake-up re-reads the clock, so
+    // the cadence is 5 min normally and 60 s once a kickoff is within the hour. clockTick only
+    // moves AT kickoffs, so the wake-up is also capped at the next "kickoff - 1 h" boundary
+    // (otherwise the switch to 60 s could be up to 5 min late). Deps include clockTick so a
+    // kickoff restarts the schedule; crowdFetchedAt (a ref) keeps restarts from delaying polls.
+    let timer = 0;
+    const schedule = () => {
+      const now = Date.now();
+      const untilKickoffs = games.map((g) => Date.parse(g.kickoffAt) - now).filter((ms) => ms > 0);
+      const nextKickoff = untilKickoffs.length > 0 ? Math.min(...untilKickoffs) : Infinity;
+      const fast = nextKickoff <= CROWD_FAST_WINDOW_MS;
+      const interval = fast ? CROWD_POLL_FAST_MS : CROWD_POLL_SLOW_MS;
+      const untilFetch = Math.max(0, crowdFetchedAt.current + interval - now);
+      const untilBoundary = fast ? Infinity : nextKickoff - CROWD_FAST_WINDOW_MS;
+      timer = window.setTimeout(() => {
+        // At the "kickoff - 1 h" boundary this isn't due yet; the re-schedule then runs fast and fetches.
+        if (Date.now() - crowdFetchedAt.current >= interval - 50) void loadCrowd();
+        schedule();
+      }, Math.max(1000, Math.min(untilFetch, untilBoundary)));
+    };
+    schedule();
+    return () => window.clearTimeout(timer);
+  }, [contentReady, allLocked, games, clockTick, visible, loadCrowd]);
 
   useTabReturn(() => {
     if (allLocked) return;

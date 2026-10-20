@@ -148,7 +148,6 @@ export interface WeekComparePlayer {
 }
 
 export interface WeekCompareResponse {
-  games: GameData[];
   players: WeekComparePlayer[];
   seasonType: number;
   week: number;
