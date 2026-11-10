@@ -61,7 +61,13 @@ export function buildLeaderboardEntries(
   users: Array<{ id: string; username: string; displayName: string | null }>,
   games: GameData[],
   picks: LeaderboardPick[],
-  opts: { weekly: boolean; now?: Date; joinedBefore?: ReadonlySet<string> },
+  opts: {
+    weekly: boolean;
+    now?: Date;
+    joinedBefore?: ReadonlySet<string>;
+    /** Weekly board: players greyed out on the season board right now (★ dropouts). */
+    seasonIdle?: ReadonlySet<string>;
+  },
 ): LeaderboardEntry[] {
   type GameInfo = { g: GameData; graded: boolean; weekKey: string };
   type WeekInfo = {
@@ -168,9 +174,11 @@ export function buildLeaderboardEntries(
     // Skip users with no graded games in a weekly board (keeps mini board clean)
     if (opts.weekly && total === 0 && confidencePl === 0) continue;
 
-    // Weekly: no ★ in the (closed) week. Season: no ★ in the last few closed weeks and none placed since.
+    // Weekly: no ★ in the week, and either the week is closed or they're a season dropout
+    // (greyed out on the season board) — the first ★ brings them back on both boards.
+    // Season: no ★ in the last few closed weeks and none placed since.
     const idle = opts.weekly
-      ? stars === 0 && weeks.every((w) => w.closed)
+      ? stars === 0 && (weeks.every((w) => w.closed) || (opts.seasonIdle?.has(u.id) ?? false))
       : openWeekStars === 0 && isStarDropout(starless);
 
     entries.push({
@@ -262,9 +270,15 @@ export async function computeLeaderboard(filter?: {
   ]);
 
   const games = gameRows.map(({ game, week }) => dbGameToGameData(game, week));
+  // A week still open: season dropouts with no ★ yet are pinned to the bottom here too.
+  const seasonIdle =
+    filter && games.length > 0 && !isWeekClosed(games)
+      ? new Set((await computeLeaderboard()).filter((e) => e.plStatus === "idle").map((e) => e.userId))
+      : undefined;
   const entries = buildLeaderboardEntries(activeUsers, games, pickRows, {
     weekly: !!filter,
     joinedBefore: new Set(earlierPickers.map((p) => p.userId)),
+    seasonIdle,
   });
 
   const badgesByUser = new Map<string, typeof badgeRows>();

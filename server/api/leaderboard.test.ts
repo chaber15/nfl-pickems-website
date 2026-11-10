@@ -185,6 +185,29 @@ test("buildLeaderboardEntries: no ★ in the last 3 closed weeks = dropout until
   assert.equal(r2(back.get("quit")!.confidencePl), -11.5);
 });
 
+test("buildLeaderboardEntries: season dropouts stay greyed out on an open week's board until their first ★", () => {
+  // Thursday's game is graded, Sunday's hasn't kicked off
+  const open = [
+    makeGame("w5g0", { weekNumber: 5 }),
+    makeGame("w5g1", { weekNumber: 5, status: "scheduled", atsResult: null, kickoffAt: "2099-01-01T00:00:00.000Z" }),
+  ];
+  const users = ["quit", "back", "stay"].map(player);
+  const picks: LeaderboardPick[] = [
+    { userId: "quit", gameId: "w5g0", pick: "favorite", isConfidenceBet: false },
+    { userId: "back", gameId: "w5g0", pick: "favorite", isConfidenceBet: true },
+  ];
+  const e = byId(
+    buildLeaderboardEntries(users, open, picks, {
+      weekly: true,
+      joinedBefore: new Set(["quit", "back", "stay"]),
+      seasonIdle: new Set(["quit", "back"]),
+    }),
+  );
+  assert.equal(e.get("quit")!.plStatus, "idle");
+  assert.equal(e.get("back")!.plStatus, "ranked");
+  assert.equal(e.get("stay")!.plStatus, "ranked"); // not a dropout: the open week charges nothing yet
+});
+
 test(
   "buildLeaderboardEntries: a final game without a line doesn't count",
   { skip: noLineFinalsUngraded ? false : "needs isGradedForStandings to require atsResult (Agent A)" },

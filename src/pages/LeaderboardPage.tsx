@@ -97,7 +97,8 @@ export function LeaderboardPage() {
   };
   const plTag = (entry: LeaderboardEntry) => {
     if (mode !== "pl") return null;
-    if (scope === "week") return weekStarsTag(entry);
+    // An open week charges nothing yet, so a season dropout with no ★ gets the season tag.
+    if (scope === "week") return weekStarsTag(entry) ?? (isPlIdle(entry) ? "no recent ★" : null);
     return isPlIdle(entry) ? "no recent ★" : null;
   };
 
