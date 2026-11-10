@@ -119,16 +119,6 @@ export const BADGES: BadgeRule[] = [
     earned: (w) => w.streak.conf === 5,
   },
   {
-    id: "giant_killer",
-    name: "Giant Killer",
-    icon: "🗡️",
-    description: "Star an underdog getting 10 or more points that wins the game outright.",
-    rarity: "epic",
-    kind: "weekly",
-    earned: (w) =>
-      w.starred.some((p) => p.side === "underdog" && p.dogWonOutright === true && (p.game.spread ?? 0) >= 10),
-  },
-  {
     id: "contrarian",
     name: "Contrarian",
     icon: "🙃",
@@ -143,6 +133,16 @@ export const BADGES: BadgeRule[] = [
   },
 
   // —— Rare ——
+  {
+    id: "giant_killer",
+    name: "Giant Killer",
+    icon: "🗡️",
+    description: "Star an underdog getting 10 or more points that wins the game outright.",
+    rarity: "rare",
+    kind: "weekly",
+    earned: (w) =>
+      w.starred.some((p) => p.side === "underdog" && p.dogWonOutright === true && (p.game.spread ?? 0) >= 10),
+  },
   {
     id: "five_star_general",
     name: "Five-Star General",
@@ -280,10 +280,10 @@ export const BADGES: BadgeRule[] = [
     id: "creature_of_habit",
     name: "Creature of Habit",
     icon: "🐑",
-    description: "Pick the same side (favorites or underdogs) on 80% or more of a full week.",
+    description: "Pick the same side (favorites or underdogs) on 85% or more of a full week.",
     rarity: "uncommon",
     kind: "weekly",
-    earned: (w) => fullWeek(w) && Math.max(sideShare(w, "favorite"), sideShare(w, "underdog")) >= 0.8,
+    earned: (w) => fullWeek(w) && Math.max(sideShare(w, "favorite"), sideShare(w, "underdog")) >= 0.85,
   },
 
   // —— Common ——
